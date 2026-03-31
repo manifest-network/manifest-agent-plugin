@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "manifest-chain": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "chain"]
+    },
+    "manifest-lease": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "lease"]
+    },
+    "manifest-fred": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "fred"]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "manifest-agent-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dependencies for the manifest-agent Claude Code plugin",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@cosmjs/proto-signing": "0.32.4",
+    "@manifest-network/manifest-mcp-node": "^0.3.4"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "manifest-agent",
+  "version": "0.1.0",
+  "description": "Set up Manifest blockchain MCP tooling for an autonomous agent — keypair management, chain configuration, and registry data",
+  "author": {
+    "name": "The Lifted Initiative",
+    "url": "https://liftedinit.org"
+  },
+  "repository": "https://github.com/liftedinit/manifest-agent-plugin",
+  "license": "MIT",
+  "keywords": [
+    "manifest",
+    "blockchain",
+    "cosmos",
+    "mcp",
+    "agent",
+    "wallet"
+  ]
+}
