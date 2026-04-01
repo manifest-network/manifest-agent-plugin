@@ -113,12 +113,12 @@ Chain data (endpoints, gas prices, explorer URLs) is fetched live from the [Cosm
 - Keyfiles are encrypted using CosmJS wallet serialization (Argon2id + XChaCha20-Poly1305) with a random 32-byte password
 - Keyfiles are written with `0600` permissions; the keys directory with `0700`
 - `config.json` is written with `0600` permissions (contains the key password)
-- Mnemonics are passed via stdin (heredoc), never as command-line arguments
+- Mnemonics are imported from a user-created file via pipe — they never enter Claude's conversation context
+- The key password flows between scripts via pipe and never enters the conversation
 - The plugin root is never written to
 
 **Known trade-offs:**
 - The key password is stored in plaintext in `config.json` (protected by file permissions). A future version may use the OS keychain.
-- When using `import-key`, the mnemonic appears in Claude's conversation context. The skill warns about this.
 
 ## License
 

@@ -71,7 +71,7 @@ function readChainFile(network) {
     process.exit(1);
   }
 
-  const { address, keyfile, password, agentId } = keyData;
+  const { address, keyfile, password } = keyData;
   if (!address || !keyfile || !password) {
     console.error('Key JSON missing required fields (address, keyfile, password).');
     process.exit(1);
@@ -113,7 +113,7 @@ function readChainFile(network) {
   console.error(`Active chain: ${args.chain}`);
 
   // Output safe JSON to stdout (NO password)
-  console.log(JSON.stringify({ address, activeChain: args.chain, keyfile }));
+  console.log(JSON.stringify({ address, activeChain: args.chain }));
 })().catch((err) => {
   console.error(err.message);
   process.exit(1);
