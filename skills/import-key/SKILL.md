@@ -3,13 +3,14 @@ name: import-key
 description: >
   Import an existing mnemonic phrase into the Manifest agent config.
   Use when the user wants to re-use an existing blockchain identity.
-allowed-tools: Bash(*), Read, Write
+  The mnemonic never enters the conversation.
+allowed-tools: Bash(*)
 ---
 
 # Import Existing Key
 
 You are importing an existing mnemonic phrase into the Manifest agent
-configuration. Follow these steps exactly.
+configuration. The mnemonic must NEVER appear in this conversation.
 
 ## Step 0 — Verify environment
 
@@ -22,57 +23,57 @@ If the output is empty, tell the user to restart Claude Code and stop.
 
 ## Step 1 — Check config exists
 
-Check if `~/.manifest-agent/config.json` exists by reading it.
+Run:
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
+```
 
-If it does not exist, tell the user:
+If the command fails, tell the user:
 > No agent configuration found. Run `/manifest-agent:init-agent` first to set up
 > the chain configuration and install dependencies.
 
 Stop here.
 
-## Step 2 — Get mnemonic
+Parse the JSON output to get `activeChain` — you will need it in Step 3.
 
-Ask the user to paste their mnemonic phrase (12 or 24 words).
+**IMPORTANT**: Do NOT read `~/.manifest-agent/config.json` directly — it contains
+the key password. Always use `update-config.cjs --status` to read safe fields.
 
-**Warn them**: The mnemonic will appear in the conversation context.
+## Step 2 — Get mnemonic file path
 
-## Step 3 — Import key
-
-Run (replacing the words with the user's mnemonic):
-
-```bash
-NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest <<'EOF'
-word1 word2 word3 ... word24
-EOF
-```
-
-**CRITICAL**: Use `<<'EOF'` (single-quoted delimiter) to prevent shell expansion.
-
-Parse the JSON output to get `address`, `keyfile`, `password`, and `agentId`.
-
-**After receiving the mnemonic, NEVER echo it back in any output.**
-
-## Step 4 — Update config
-
-Read `~/.manifest-agent/config.json`, update the `agent` section:
-
-```json
-{
-  "agent": {
-    "keyFile": "<keyfile path from step 3>",
-    "keyPassword": "<password from step 3>",
-    "address": "<address from step 3>"
-  }
-}
-```
-
-Write the updated config back, then:
+Ask the user to provide the **path to a file** containing their mnemonic. They
+should create this file themselves in a separate terminal, e.g.:
 
 ```bash
-chmod 600 ~/.manifest-agent/config.json
+cat > /tmp/mnemonic.txt
+# paste mnemonic, press Enter, then Ctrl+D
+chmod 600 /tmp/mnemonic.txt
 ```
 
-## Step 5 — Report
+**Do NOT use `echo` — it appears in shell history.**
+
+Wait for the user to provide the file path before proceeding.
+
+**CRITICAL**: Do NOT ask the user to paste the mnemonic in the conversation.
+Do NOT read the mnemonic file. The file content must never enter Claude's context.
+
+## Step 3 — Import key and update config
+
+Run (replacing `MNEMONIC_FILE` with the user's file path and `ACTIVE_CHAIN`
+with the `activeChain` from Step 1):
+
+```bash
+cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain ACTIVE_CHAIN
+```
+
+The mnemonic flows through the pipe (file → import-key → write-config).
+Claude only sees `write-config.cjs`'s safe stdout JSON.
+
+Parse the JSON output to get `address`, `activeChain`, and `keyfile`.
+
+Suggest the user delete their mnemonic file after a successful import.
+
+## Step 4 — Report
 
 Tell the user:
 1. Their imported agent address
@@ -81,6 +82,9 @@ Tell the user:
 
 ## Security notes
 
-- NEVER display the mnemonic after receiving it
-- The mnemonic is piped via stdin to avoid appearing in process listings
-- Warn the user that the mnemonic should be stored securely offline
+- The mnemonic NEVER appears in this conversation. The user creates a file
+  containing it, and the skill pipes that file through scripts without Claude
+  ever seeing the content.
+- The key password also never appears — it flows via pipe from import-key to
+  write-config.
+- Do NOT read the mnemonic file or `~/.manifest-agent/config.json`.

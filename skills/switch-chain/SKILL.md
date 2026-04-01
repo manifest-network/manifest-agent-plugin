@@ -19,16 +19,23 @@ echo "$MANIFEST_PLUGIN_ROOT"
 
 If the output is empty, tell the user to restart Claude Code and stop.
 
-## Step 1 — Read current config
+## Step 1 — Read current status
 
-Read `~/.manifest-agent/config.json`.
+Run:
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
+```
 
-If it does not exist, tell the user:
+If the command fails, tell the user:
 > No agent configuration found. Run `/manifest-agent:init-agent` first.
 
 Stop here.
 
-Show the user their current active chain and agent address.
+Parse the JSON output to get `activeChain` and `address`. Show the user their
+current active chain and agent address.
+
+**IMPORTANT**: Do NOT read `~/.manifest-agent/config.json` directly — it contains
+the key password. Always use `update-config.cjs --status` to read safe fields.
 
 ## Step 2 — Choose new chain
 
@@ -57,24 +64,20 @@ Wait for confirmation. If the user declines, stop.
 
 ## Step 5 — Update config
 
-Read the fresh chain data from `~/.manifest-agent/chains/mainnet.json` and
-`~/.manifest-agent/chains/testnet.json`.
-
-Update `~/.manifest-agent/config.json`:
-- Set `activeChain` to the new chain
-- Update the `chains` object with the fresh data from both files
-
-Write the config back, then:
-
+Run:
 ```bash
-chmod 600 ~/.manifest-agent/config.json
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain CHOSEN_CHAIN --refresh-chains
 ```
+
+Replace `CHOSEN_CHAIN` with `testnet` or `mainnet`.
+
+Parse the JSON output to confirm the chain was switched.
 
 ## Step 6 — Report
 
 Tell the user:
 1. Active chain is now `<new chain>`
-2. Chain ID, RPC URL, REST URL, and explorer URL
+2. Chain ID, RPC URL, REST URL, and explorer URL (from the JSON output)
 3. MCP servers need to be restarted to connect to the new chain
 4. Their agent address remains the same (same key works on both chains, but
    balances differ)

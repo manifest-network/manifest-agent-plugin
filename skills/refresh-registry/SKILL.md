@@ -29,27 +29,24 @@ Parse the JSON output to see the updated chain data for both mainnet and testnet
 
 ## Step 2 — Update config (if it exists)
 
-Check if `~/.manifest-agent/config.json` exists.
-
-If it does, read the current config and read the fresh chain files from
-`~/.manifest-agent/chains/mainnet.json` and `~/.manifest-agent/chains/testnet.json`.
-
-Compare the old `chains` section with the new data. Note any differences
-(changed RPC URLs, gas prices, explorer URLs, etc.).
-
-Update the `chains` section in config.json with the fresh data. Write it back,
-then:
-
+Run:
 ```bash
-chmod 600 ~/.manifest-agent/config.json
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --refresh-chains
 ```
 
-If config.json does not exist, that's fine — the chain data files are still
-written to `~/.manifest-agent/chains/` for future use by `/manifest-agent:init-agent`.
+If the command fails because config.json doesn't exist, that's fine — the chain
+data files are still written to `~/.manifest-agent/chains/` for future use by
+`/manifest-agent:init-agent`.
+
+If it succeeds, parse the JSON output to see the updated chains data.
+
+**IMPORTANT**: Do NOT read `~/.manifest-agent/config.json` directly — it contains
+the key password. Use the scripts above which never expose the password.
 
 ## Step 3 — Report
 
 Tell the user what was updated:
-- If anything changed, list the specific fields that differ
+- If anything changed, list the specific fields that differ (compare the output
+  from Step 1 with the previous chain data shown in Step 2)
 - If nothing changed, confirm that the chain data is already up to date
 - If config.json was updated, remind the user to restart MCP servers

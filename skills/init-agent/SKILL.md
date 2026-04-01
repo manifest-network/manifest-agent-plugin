@@ -50,83 +50,79 @@ Ask the user which chain they want to use:
 - **testnet** (`manifest-ledger-testnet`) — recommended for development and testing
 - **mainnet** (`manifest-ledger-mainnet`) — real assets, use with care
 
-Wait for the user's answer before proceeding.
+Wait for the user's answer before proceeding. Store their choice as `CHOSEN_CHAIN`
+(either `testnet` or `mainnet`).
 
 ## Step 4 — Check for existing agent
 
-Read `~/.manifest-agent/config.json`. If it exists and has an `agent` section,
+Run:
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status 2>/dev/null
+```
+
+If the command succeeds and the JSON output has a non-null `address` field,
 warn the user:
 
-> An agent key already exists at `<keyFile>` with address `<address>`.
+> An agent key already exists with address `<address>`.
 > Proceeding will generate a new key. The old key's password will be lost
 > (the old keyfile stays on disk but becomes unrecoverable without the password).
 
 Ask for confirmation before continuing.
 
-## Step 5 — Generate or import key
+If the command fails (no config.json yet), that's fine — skip the warning and
+proceed.
+
+**IMPORTANT**: Do NOT read `~/.manifest-agent/config.json` directly — it contains
+the key password. Always use `update-config.cjs --status` to read safe fields.
+
+## Step 5 — Generate or import key and write config
 
 Ask the user: **Generate a new key** or **import an existing mnemonic**?
 
 ### If generating a new key:
 
+The key script pipes directly into write-config so the password never enters the
+conversation:
+
 ```bash
-NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest
+NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN
 ```
 
-Parse the JSON output to get `address`, `keyfile`, `password`, and `agentId`.
+Replace `CHOSEN_CHAIN` with the user's choice from Step 3 (`testnet` or `mainnet`).
+
+Parse the JSON output from stdout to get `address`, `activeChain`, and `keyfile`.
 
 ### If importing an existing mnemonic:
 
-Ask the user to provide their mnemonic phrase (12 or 24 words).
-
-**Security warning**: Tell the user the mnemonic will appear in the conversation
-context.
-
-Then run (replacing the mnemonic words):
+The mnemonic must NEVER appear in this conversation. Ask the user to provide
+the **path to a file** containing their mnemonic. They should create this file
+themselves in a separate terminal, e.g.:
 
 ```bash
-NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest <<'EOF'
-word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24
-EOF
+cat > /tmp/mnemonic.txt
+# paste mnemonic, press Enter, then Ctrl+D
+chmod 600 /tmp/mnemonic.txt
 ```
 
-**CRITICAL**: Use `<<'EOF'` (single-quoted delimiter) to prevent shell expansion.
+**Do NOT use `echo` — it appears in shell history.**
 
-Parse the JSON output to get `address`, `keyfile`, `password`, and `agentId`.
+Wait for the user to provide the file path before proceeding.
 
-**After receiving the mnemonic, NEVER echo it back in any output.**
+**CRITICAL**: Do NOT ask the user to paste the mnemonic in the conversation.
+Do NOT read the mnemonic file.
 
-## Step 6 — Write config
-
-Read the chain data from `~/.manifest-agent/chains/<chosen-chain>.json` (where
-`<chosen-chain>` is `mainnet` or `testnet`).
-
-Also read the other chain's file if it exists (so both are stored in config).
-
-Write `~/.manifest-agent/config.json` with:
-
-```json
-{
-  "activeChain": "<testnet|mainnet>",
-  "chains": {
-    "mainnet": { "<contents of mainnet.json>" },
-    "testnet": { "<contents of testnet.json>" }
-  },
-  "agent": {
-    "keyFile": "<keyfile path from step 5>",
-    "keyPassword": "<password from step 5>",
-    "address": "<address from step 5>"
-  }
-}
-```
-
-Then set permissions:
+Then run (replacing `MNEMONIC_FILE` with the user's file path and `CHOSEN_CHAIN`
+with the user's choice from Step 3):
 
 ```bash
-chmod 600 ~/.manifest-agent/config.json
+cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN
 ```
 
-## Step 7 — Report results
+Parse the JSON output from stdout to get `address`, `activeChain`, and `keyfile`.
+
+Suggest the user delete their mnemonic file after a successful import.
+
+## Step 6 — Report results
 
 Tell the user:
 1. Their agent address
@@ -135,14 +131,16 @@ Tell the user:
 4. That MCP servers need to be restarted to use the new config — they can do
    this by running `/mcp` and reconnecting, or by restarting Claude Code
 
-## Step 8 — Offer testnet funding
+## Step 7 — Offer testnet funding
 
 If the user chose testnet, suggest requesting faucet funds to the new address
 using the `mcp__manifest-chain__request_faucet` tool if it is available.
 
 ## Security notes
 
-- Never display the mnemonic or password in conversation output
-- The keyfile is encrypted; the password is stored only in config.json (0600)
+- The key password NEVER appears in this conversation. It flows directly from
+  the key script to write-config via pipe.
+- Never display the mnemonic or password in conversation output.
+- The keyfile is encrypted; the password is stored only in config.json (0600).
 - Never log or display the mnemonic. Only the address and keyfile path are safe
   to show.

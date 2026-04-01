@@ -62,7 +62,14 @@ Once configured, the plugin provides three MCP servers:
 | `manifest-lease` | `@manifest-network/manifest-mcp-lease` | Compute leasing |
 | `manifest-fred` | `@manifest-network/manifest-mcp-fred` | Token factory |
 
-The servers start automatically when Claude Code launches. Before running `init-agent`, they will show an error — this is expected.
+The servers start automatically when Claude Code launches but **will fail until the plugin is initialized**. This is expected — run `/manifest-agent:init-agent` to set up the agent, then restart Claude Code to connect the servers.
+
+### Troubleshooting
+
+**MCP servers show "failed":**
+
+- **Before init-agent**: Expected. The servers need `~/.manifest-agent/config.json` which doesn't exist yet. Run `/manifest-agent:init-agent` first, then restart.
+- **After init-agent**: Check your Node.js version. The MCP servers require **Node.js 18+**. If your system default `node` is an older version (e.g., Node 16), the servers will fail silently. Verify with `node --version` and update if needed. If you use nvm, run `nvm alias default 22` to set the default.
 
 ## Supported Chains
 
