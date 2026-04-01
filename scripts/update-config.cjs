@@ -72,6 +72,7 @@ function readChainFile(network) {
   if (args.status) {
     const safeOutput = {
       activeChain: config.activeChain,
+      gasPrice: config.gasPrice || null,
       address: config.agent?.address || null,
       chains: config.chains,
     };
@@ -108,6 +109,7 @@ function readChainFile(network) {
   // Output safe JSON (NO password)
   const safeOutput = {
     activeChain: config.activeChain,
+    gasPrice: config.gasPrice || null,
     address: config.agent?.address || null,
     chains: config.chains,
   };

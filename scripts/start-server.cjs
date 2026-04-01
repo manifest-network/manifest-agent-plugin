@@ -60,14 +60,19 @@ try {
 }
 
 // --- Validate config fields ---
-const { activeChain, chains, agent } = config;
+const { activeChain, gasPrice, chains, agent } = config;
 if (!activeChain || !chains || !chains[activeChain]) {
   console.error(`Invalid config: missing activeChain or chains.${activeChain}`);
   process.exit(1);
 }
 
+if (!gasPrice) {
+  console.error('Invalid config: missing gasPrice. Re-run /manifest-agent:init-agent.');
+  process.exit(1);
+}
+
 const chain = chains[activeChain];
-const missing = ['chainId', 'rpcUrl', 'gasPrice'].filter((k) => !chain[k]);
+const missing = ['chainId', 'rpcUrl'].filter((k) => !chain[k]);
 if (missing.length > 0) {
   console.error(`Invalid config: chains.${activeChain} missing fields: ${missing.join(', ')}`);
   process.exit(1);
@@ -86,7 +91,7 @@ const env = {
   ...process.env,
   COSMOS_CHAIN_ID: chain.chainId,
   COSMOS_RPC_URL: chain.rpcUrl,
-  COSMOS_GAS_PRICE: chain.gasPrice,
+  COSMOS_GAS_PRICE: gasPrice,
 };
 
 if (chain.restUrl) env.COSMOS_REST_URL = chain.restUrl;

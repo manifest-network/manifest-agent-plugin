@@ -59,17 +59,18 @@ Do NOT read the mnemonic file. The file content must never enter Claude's contex
 
 ## Step 3 — Import key and update config
 
-Run (replacing `MNEMONIC_FILE` with the user's file path and `ACTIVE_CHAIN`
-with the `activeChain` from Step 1):
+Run (replacing `MNEMONIC_FILE` with the user's file path, `ACTIVE_CHAIN` with
+the `activeChain` from Step 1, and `CURRENT_GAS_PRICE` with the `gasPrice` from
+Step 1):
 
 ```bash
-cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain ACTIVE_CHAIN
+cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain ACTIVE_CHAIN --gas-price CURRENT_GAS_PRICE
 ```
 
 The mnemonic flows through the pipe (file → import-key → write-config).
 Claude only sees `write-config.cjs`'s safe stdout JSON.
 
-Parse the JSON output to get `address`, `activeChain`, and `keyfile`.
+Parse the JSON output to get `address` and `activeChain`.
 
 Suggest the user delete their mnemonic file after a successful import.
 

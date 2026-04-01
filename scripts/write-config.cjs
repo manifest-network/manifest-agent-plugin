@@ -9,8 +9,8 @@
  * Writes config.json with the password — so the password never enters the conversation.
  *
  * Usage:
- *   node gen-agent-key.cjs --prefix manifest | node write-config.cjs --chain testnet
- *   echo "mnemonic" | node import-key.cjs --prefix manifest | node write-config.cjs --chain testnet
+ *   node gen-agent-key.cjs | node write-config.cjs --chain testnet --gas-price 1umfx
+ *   cat mnemonic.txt | node import-key.cjs | node write-config.cjs --chain testnet --gas-price 1umfx
  *
  * Outputs JSON to stdout (safe to show): { "address": "manifest1...", "activeChain": "testnet" }
  * The password is NOT included in stdout.
@@ -25,9 +25,10 @@ const CONFIG_PATH = join(AGENT_DIR, 'config.json');
 const CHAINS_DIR = join(AGENT_DIR, 'chains');
 
 function parseArgs(argv) {
-  const args = { chain: null };
+  const args = { chain: null, gasPrice: null };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--chain' && argv[i + 1]) args.chain = argv[++i];
+    else if (argv[i] === '--gas-price' && argv[i + 1]) args.gasPrice = argv[++i];
   }
   return args;
 }
@@ -52,7 +53,12 @@ function readChainFile(network) {
   const args = parseArgs(process.argv);
 
   if (!args.chain || !['testnet', 'mainnet'].includes(args.chain)) {
-    console.error('Usage: ... | node write-config.cjs --chain <testnet|mainnet>');
+    console.error('Usage: ... | node write-config.cjs --chain <testnet|mainnet> --gas-price <price><denom>');
+    process.exit(1);
+  }
+
+  if (!args.gasPrice) {
+    console.error('--gas-price is required (e.g., "1umfx").');
     process.exit(1);
   }
 
@@ -94,6 +100,7 @@ function readChainFile(network) {
 
   const config = {
     activeChain: args.chain,
+    gasPrice: args.gasPrice,
     chains,
     agent: {
       keyFile: keyfile,

@@ -22,8 +22,14 @@ const { homedir } = require('node:os');
 
 const REGISTRY_BASE = 'https://raw.githubusercontent.com/cosmos/chain-registry/master';
 const CHAINS = {
-  mainnet: `${REGISTRY_BASE}/manifest/chain.json`,
-  testnet: `${REGISTRY_BASE}/testnets/manifesttestnet/chain.json`,
+  mainnet: {
+    chain: `${REGISTRY_BASE}/manifest/chain.json`,
+    assets: `${REGISTRY_BASE}/manifest/assetlist.json`,
+  },
+  testnet: {
+    chain: `${REGISTRY_BASE}/testnets/manifesttestnet/chain.json`,
+    assets: `${REGISTRY_BASE}/testnets/manifesttestnet/assetlist.json`,
+  },
 };
 
 function parseArgs(argv) {
@@ -34,20 +40,35 @@ function parseArgs(argv) {
   return args;
 }
 
-function extractChainData(raw) {
-  const rpc = raw.apis?.rpc?.[0]?.address;
-  const rest = raw.apis?.rest?.[0]?.address;
-  const feeToken = raw.fees?.fee_tokens?.[0];
-  const gasPrice = feeToken
-    ? `${Number(feeToken.fixed_min_gas_price)}${feeToken.denom}`
-    : undefined;
-  const explorerUrl = raw.explorers?.[0]?.url;
+function buildDenomSymbolMap(assetList) {
+  const map = {};
+  for (const asset of assetList?.assets || []) {
+    if (asset.base && asset.symbol) {
+      map[asset.base] = asset.symbol;
+    }
+  }
+  return map;
+}
+
+function extractChainData(chainRaw, assetList) {
+  const rpc = chainRaw.apis?.rpc?.[0]?.address;
+  const rest = chainRaw.apis?.rest?.[0]?.address;
+  const symbolMap = buildDenomSymbolMap(assetList);
+  const feeTokens = (chainRaw.fees?.fee_tokens || []).map((t) => ({
+    denom: t.denom,
+    symbol: symbolMap[t.denom] || t.denom,
+    fixedMinGasPrice: Number(t.fixed_min_gas_price),
+    lowGasPrice: Number(t.low_gas_price),
+    averageGasPrice: Number(t.average_gas_price),
+    highGasPrice: Number(t.high_gas_price),
+  }));
+  const explorerUrl = chainRaw.explorers?.[0]?.url;
 
   return {
-    chainId: raw.chain_id,
+    chainId: chainRaw.chain_id,
     rpcUrl: rpc,
     restUrl: rest,
-    gasPrice,
+    feeTokens,
     explorerUrl,
   };
 }
@@ -62,16 +83,20 @@ function extractChainData(raw) {
 
   const result = {};
 
-  for (const [network, url] of Object.entries(CHAINS)) {
+  for (const [network, urls] of Object.entries(CHAINS)) {
     console.error(`Fetching ${network} chain data...`);
     try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        console.error(`  Failed: HTTP ${res.status} for ${url}`);
+      const [chainRes, assetRes] = await Promise.all([
+        fetch(urls.chain),
+        fetch(urls.assets),
+      ]);
+      if (!chainRes.ok) {
+        console.error(`  Failed: HTTP ${chainRes.status} for ${urls.chain}`);
         continue;
       }
-      const raw = await res.json();
-      const data = extractChainData(raw);
+      const chainRaw = await chainRes.json();
+      const assetList = assetRes.ok ? await assetRes.json() : null;
+      const data = extractChainData(chainRaw, assetList);
       result[network] = data;
 
       const outPath = join(chainsDir, `${network}.json`);

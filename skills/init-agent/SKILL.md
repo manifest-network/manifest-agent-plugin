@@ -12,6 +12,9 @@ allowed-tools: Bash(*), Read, Write, Glob, Grep
 You are interactively setting up a Manifest blockchain agent. Follow these steps
 exactly, asking the user questions where indicated.
 
+**For all user choices in this skill, use the AskUserQuestion tool to present
+the options so the user can select from a list instead of typing.**
+
 ## Step 0 — Verify environment
 
 Run:
@@ -45,13 +48,28 @@ Cosmos chain registry.
 
 ## Step 3 — Choose chain
 
-Ask the user which chain they want to use:
+Use AskUserQuestion to ask which chain to use, with these options:
 
-- **testnet** (`manifest-ledger-testnet`) — recommended for development and testing
-- **mainnet** (`manifest-ledger-mainnet`) — real assets, use with care
+- **testnet** — manifest-ledger-testnet (recommended for development)
+- **mainnet** — manifest-ledger-mainnet (real assets, use with care)
 
-Wait for the user's answer before proceeding. Store their choice as `CHOSEN_CHAIN`
-(either `testnet` or `mainnet`).
+Store the answer as `CHOSEN_CHAIN` (`testnet` or `mainnet`).
+
+## Step 3b — Choose gas fee token
+
+Look at the `feeTokens` array for the chosen chain from the Step 2 output.
+Each fee token has a `symbol` (human-readable name like "MFX" or "PWR") and
+a `fixedMinGasPrice`.
+
+Use AskUserQuestion to ask which token to use for gas fees, showing the
+**symbol** and **min gas price** for each. For example:
+
+- **MFX** (min gas price: 1)
+- **PWR** (min gas price: 0.37)
+
+After the user selects, compose the gas price string from the selected token's
+`fixedMinGasPrice` and `denom` (the raw on-chain denom, NOT the symbol) as
+`<fixedMinGasPrice><denom>` (e.g., `1umfx`). Store this as `GAS_PRICE`.
 
 ## Step 4 — Check for existing agent
 
@@ -77,7 +95,10 @@ the key password. Always use `update-config.cjs --status` to read safe fields.
 
 ## Step 5 — Generate or import key and write config
 
-Ask the user: **Generate a new key** or **import an existing mnemonic**?
+Use AskUserQuestion to ask the user:
+
+- **Generate a new key** — create a fresh keypair
+- **Import an existing mnemonic** — use a key you already have
 
 ### If generating a new key:
 
@@ -85,12 +106,13 @@ The key script pipes directly into write-config so the password never enters the
 conversation:
 
 ```bash
-NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN
+NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-price GAS_PRICE
 ```
 
-Replace `CHOSEN_CHAIN` with the user's choice from Step 3 (`testnet` or `mainnet`).
+Replace `CHOSEN_CHAIN` with the user's choice from Step 3 and `GAS_PRICE` with
+the composed gas price string from Step 3b (e.g., `1umfx`).
 
-Parse the JSON output from stdout to get `address`, `activeChain`, and `keyfile`.
+Parse the JSON output from stdout to get `address` and `activeChain`.
 
 ### If importing an existing mnemonic:
 
@@ -111,14 +133,15 @@ Wait for the user to provide the file path before proceeding.
 **CRITICAL**: Do NOT ask the user to paste the mnemonic in the conversation.
 Do NOT read the mnemonic file.
 
-Then run (replacing `MNEMONIC_FILE` with the user's file path and `CHOSEN_CHAIN`
-with the user's choice from Step 3):
+Then run (replacing `MNEMONIC_FILE` with the user's file path, `CHOSEN_CHAIN`
+with the user's choice from Step 3, and `GAS_PRICE` with the gas price from
+Step 3b):
 
 ```bash
-cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN
+cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-price GAS_PRICE
 ```
 
-Parse the JSON output from stdout to get `address`, `activeChain`, and `keyfile`.
+Parse the JSON output from stdout to get `address` and `activeChain`.
 
 Suggest the user delete their mnemonic file after a successful import.
 
@@ -128,7 +151,8 @@ Tell the user:
 1. Their agent address
 2. The keyfile location
 3. Which chain is active
-4. That MCP servers need to be restarted to use the new config — they can do
+4. The gas fee token in use
+5. That MCP servers need to be restarted to use the new config — they can do
    this by running `/mcp` and reconnecting, or by restarting Claude Code
 
 ## Step 7 — Offer testnet funding

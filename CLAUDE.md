@@ -52,7 +52,7 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 |---|---|---|
 | `chains[activeChain].chainId` | `COSMOS_CHAIN_ID` | yes |
 | `chains[activeChain].rpcUrl` | `COSMOS_RPC_URL` | yes |
-| `chains[activeChain].gasPrice` | `COSMOS_GAS_PRICE` | yes |
+| `gasPrice` | `COSMOS_GAS_PRICE` | yes |
 | `chains[activeChain].restUrl` | `COSMOS_REST_URL` | no (omit if falsy) |
 | `agent.keyFile` | `MANIFEST_KEY_FILE` | no (omit if falsy) |
 | `agent.keyPassword` | `MANIFEST_KEY_PASSWORD` | no (omit if falsy) |
