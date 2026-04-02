@@ -42,6 +42,7 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **init-agent** — Full setup: install deps, fetch registry, choose chain, generate or import key, write config
 - **import-key** — Import existing mnemonic (requires init-agent first)
 - **switch-chain** — Switch testnet/mainnet with mainnet confirmation before write
+- **set-gas-price** — Change gas fee token, price, and/or gas multiplier
 - **refresh-registry** — Re-fetch chain data from Cosmos chain registry
 
 ## config.json → MCP env var mapping
@@ -52,8 +53,10 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 |---|---|---|
 | `chains[activeChain].chainId` | `COSMOS_CHAIN_ID` | yes |
 | `chains[activeChain].rpcUrl` | `COSMOS_RPC_URL` | yes |
-| `gasPrice` | `COSMOS_GAS_PRICE` | yes |
 | `chains[activeChain].restUrl` | `COSMOS_REST_URL` | no (omit if falsy) |
+| `chains[activeChain].converterAddress` | `MANIFEST_CONVERTER_ADDRESS` | no (omit if falsy) |
+| `gasPrice` | `COSMOS_GAS_PRICE` | yes |
+| `gasMultiplier` | `COSMOS_GAS_MULTIPLIER` | no (omit if falsy, default 1.5) |
 | `agent.keyFile` | `MANIFEST_KEY_FILE` | no (omit if falsy) |
 | `agent.keyPassword` | `MANIFEST_KEY_PASSWORD` | no (omit if falsy) |
 

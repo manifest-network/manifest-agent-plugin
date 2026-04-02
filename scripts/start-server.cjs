@@ -7,7 +7,7 @@
  * Reads ~/.manifest-agent/config.json, builds env vars, and spawns the
  * appropriate MCP server binary from ~/.manifest-agent/node_modules/.bin/.
  *
- * Usage: node start-server.cjs <chain|lease|fred>
+ * Usage: node start-server.cjs <chain|lease|fred|cosmwasm>
  */
 
 const major = parseInt(process.versions.node, 10);
@@ -21,7 +21,7 @@ const { join } = require('node:path');
 const { homedir } = require('node:os');
 const { spawn } = require('node:child_process');
 
-const VALID_SERVERS = ['chain', 'lease', 'fred'];
+const VALID_SERVERS = ['chain', 'lease', 'fred', 'cosmwasm'];
 const AGENT_DIR = join(homedir(), '.manifest-agent');
 const CONFIG_PATH = join(AGENT_DIR, 'config.json');
 
@@ -60,7 +60,7 @@ try {
 }
 
 // --- Validate config fields ---
-const { activeChain, gasPrice, chains, agent } = config;
+const { activeChain, gasPrice, gasMultiplier, chains, agent } = config;
 if (!activeChain || !chains || !chains[activeChain]) {
   console.error(`Invalid config: missing activeChain or chains.${activeChain}`);
   process.exit(1);
@@ -95,6 +95,8 @@ const env = {
 };
 
 if (chain.restUrl) env.COSMOS_REST_URL = chain.restUrl;
+if (chain.converterAddress) env.MANIFEST_CONVERTER_ADDRESS = chain.converterAddress;
+if (gasMultiplier) env.COSMOS_GAS_MULTIPLIER = String(gasMultiplier);
 if (agent?.keyFile) env.MANIFEST_KEY_FILE = agent.keyFile;
 if (agent?.keyPassword) env.MANIFEST_KEY_PASSWORD = agent.keyPassword;
 

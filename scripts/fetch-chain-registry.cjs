@@ -25,10 +25,12 @@ const CHAINS = {
   mainnet: {
     chain: `${REGISTRY_BASE}/manifest/chain.json`,
     assets: `${REGISTRY_BASE}/manifest/assetlist.json`,
+    converterAddress: 'manifest1wug8sewp6cedgkmrmvhl3lf3tulagm9hnvy8p0rppz9yjw0g4wtqdnm0gk',
   },
   testnet: {
     chain: `${REGISTRY_BASE}/testnets/manifesttestnet/chain.json`,
     assets: `${REGISTRY_BASE}/testnets/manifesttestnet/assetlist.json`,
+    converterAddress: 'manifest1c4p5p0eajlymxak8z5ugmksfpvp5zmm3scrwdrtd5a6mwxnhsa9qnsfftk',
   },
 };
 
@@ -97,6 +99,7 @@ function extractChainData(chainRaw, assetList) {
       const chainRaw = await chainRes.json();
       const assetList = assetRes.ok ? await assetRes.json() : null;
       const data = extractChainData(chainRaw, assetList);
+      if (urls.converterAddress) data.converterAddress = urls.converterAddress;
       result[network] = data;
 
       const outPath = join(chainsDir, `${network}.json`);

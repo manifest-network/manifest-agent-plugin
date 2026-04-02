@@ -10,10 +10,11 @@
  * Usage:
  *   node update-config.cjs --status                  # Read-only: show safe config fields
  *   node update-config.cjs --chain testnet           # Switch active chain
+ *   node update-config.cjs --gas-price 1umfx         # Change gas price
  *   node update-config.cjs --refresh-chains          # Update chains from chain files
- *   node update-config.cjs --chain mainnet --refresh-chains  # Both
+ *   node update-config.cjs --chain mainnet --refresh-chains  # Combine flags
  *
- * Outputs JSON to stdout (safe to show): { "activeChain": "...", "address": "...", "chains": {...} }
+ * Outputs JSON to stdout (safe to show): { "activeChain": "...", "gasPrice": "...", "address": "...", "chains": {...} }
  * The key password is NEVER output.
  */
 
@@ -26,9 +27,11 @@ const CONFIG_PATH = join(AGENT_DIR, 'config.json');
 const CHAINS_DIR = join(AGENT_DIR, 'chains');
 
 function parseArgs(argv) {
-  const args = { chain: null, refreshChains: false, status: false };
+  const args = { chain: null, gasPrice: null, gasMultiplier: null, refreshChains: false, status: false };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--chain' && argv[i + 1]) args.chain = argv[++i];
+    else if (argv[i] === '--gas-price' && argv[i + 1]) args.gasPrice = argv[++i];
+    else if (argv[i] === '--gas-multiplier' && argv[i + 1]) args.gasMultiplier = argv[++i];
     else if (argv[i] === '--refresh-chains') args.refreshChains = true;
     else if (argv[i] === '--status') args.status = true;
   }
@@ -44,8 +47,8 @@ function readChainFile(network) {
 (async () => {
   const args = parseArgs(process.argv);
 
-  if (!args.chain && !args.refreshChains && !args.status) {
-    console.error('Usage: node update-config.cjs [--status] [--chain <testnet|mainnet>] [--refresh-chains]');
+  if (!args.chain && !args.gasPrice && !args.gasMultiplier && !args.refreshChains && !args.status) {
+    console.error('Usage: node update-config.cjs [--status] [--chain <testnet|mainnet>] [--gas-price <price>] [--gas-multiplier <n>] [--refresh-chains]');
     process.exit(1);
   }
 
@@ -73,6 +76,7 @@ function readChainFile(network) {
     const safeOutput = {
       activeChain: config.activeChain,
       gasPrice: config.gasPrice || null,
+      gasMultiplier: config.gasMultiplier || null,
       address: config.agent?.address || null,
       chains: config.chains,
     };
@@ -83,6 +87,21 @@ function readChainFile(network) {
   // Update active chain
   if (args.chain) {
     config.activeChain = args.chain;
+  }
+
+  // Update gas price
+  if (args.gasPrice) {
+    config.gasPrice = args.gasPrice;
+  }
+
+  // Update gas multiplier
+  if (args.gasMultiplier) {
+    const val = Number(args.gasMultiplier);
+    if (!Number.isFinite(val) || val < 1) {
+      console.error('--gas-multiplier must be a number >= 1.');
+      process.exit(1);
+    }
+    config.gasMultiplier = val;
   }
 
   // Refresh chain data from files
@@ -110,6 +129,7 @@ function readChainFile(network) {
   const safeOutput = {
     activeChain: config.activeChain,
     gasPrice: config.gasPrice || null,
+    gasMultiplier: config.gasMultiplier || null,
     address: config.agent?.address || null,
     chains: config.chains,
   };
