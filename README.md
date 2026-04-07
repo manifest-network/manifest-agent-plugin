@@ -116,9 +116,11 @@ Chain data (endpoints, gas prices, explorer URLs) is fetched live from the [Cosm
 - Mnemonics are imported from a user-created file via pipe — they never enter Claude's conversation context
 - The key password flows between scripts via pipe and never enters the conversation
 - The plugin root is never written to
+- **Every broadcast transaction is double-confirmed.** A `SessionStart` hook injects a runtime policy telling the agent it must call `cosmos_estimate_fee` (or otherwise show an action + balance summary) and get your textual confirmation before broadcasting. A `PreToolUse` hook on every write tool then forces Claude Code to show its own permission prompt regardless of your pre-existing permission settings — a hard safety net on top of the agent's textual confirmation.
 
 **Known trade-offs:**
 - The key password is stored in plaintext in `config.json` (protected by file permissions). A future version may use the OS keychain.
+- **Bypass permissions mode is lost after the first broadcast.** If you launch Claude Code with `--dangerously-skip-permissions` (or its interactive equivalent), the first transaction's permission prompt — which the plugin forces via a `PreToolUse` hook returning `"ask"` — will correctly prompt you, but due to upstream bug [anthropics/claude-code#37420](https://github.com/anthropics/claude-code/issues/37420), Claude Code will permanently reset bypass mode for the rest of the session. Every subsequent tool call (even unrelated reads) will require manual approval until you restart the session. For this plugin's use case — broadcasting real transactions — we consider this an acceptable degradation: anyone skipping permissions while spending real funds is already in a risky posture, and falling back to interactive mode after the first broadcast is arguably safer than the alternative. If the bug is fixed upstream we will reassess.
 
 ## License
 
