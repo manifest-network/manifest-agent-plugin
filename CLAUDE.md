@@ -55,10 +55,20 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 | `chains[activeChain].rpcUrl` | `COSMOS_RPC_URL` | yes |
 | `chains[activeChain].restUrl` | `COSMOS_REST_URL` | no (omit if falsy) |
 | `chains[activeChain].converterAddress` | `MANIFEST_CONVERTER_ADDRESS` | no (omit if falsy) |
+| `chains[activeChain].faucetUrl` | `MANIFEST_FAUCET_URL` | no (omit if falsy — only set for testnet; chain server registers `request_faucet` when present) |
 | `gasPrice` | `COSMOS_GAS_PRICE` | yes |
 | `gasMultiplier` | `COSMOS_GAS_MULTIPLIER` | no (omit if falsy, default 1.5) |
 | `agent.keyFile` | `MANIFEST_KEY_FILE` | no (omit if falsy) |
 | `agent.keyPassword` | `MANIFEST_KEY_PASSWORD` | no (omit if falsy) |
+
+## Transaction Behavior
+
+**Pre-broadcast confirmation (mandatory)** — Each broadcast needs its own explicit user confirmation. Never infer approval from silence or from a prior approval.
+
+- For `cosmos_tx` calls, call `cosmos_estimate_fee` first with the same `module`, `subcommand`, `args`, and `gas_multiplier` you intend to pass to `cosmos_tx`. Show the returned gas + fee in human-readable form (amount + denom symbol, e.g. `0.0023 MFX`), then wait for confirmation.
+- For transaction tools without a matching estimate call (e.g. `convert_mfx_to_pwr`, `deploy_app`, `fund_credit`, `close_lease`), no programmatic fee number exists. Describe the action concretely (what, where, how much), query the agent's balance for the gas denom and show it alongside so the user has an upper bound on potential loss, and note that the exact fee will be determined at broadcast time. If the tool returns a pre-broadcast simulation in its output, include it.
+
+**Gas retry** — When a `cosmos_tx` fails with an out-of-gas error, retry **once** with `gas_multiplier` bumped by `0.1` from its current value (starting from the server-configured `gasMultiplier` in `config.json`, default `1.5`). Before the retry broadcast, re-run `cosmos_estimate_fee` with the new multiplier and get a fresh confirmation — the original approval was for a different fee. Do not retry a second time: if the retry also fails, report both failures and stop. If `cosmos_estimate_fee` itself throws while preparing the retry, surface that error alongside the original OOG and do not broadcast.
 
 ## Testing Changes
 
@@ -86,3 +96,4 @@ Fetched from the Cosmos chain registry (`cosmos/chain-registry` on GitHub):
 - Mainnet: `manifest/chain.json` — chain ID `manifest-ledger-mainnet`, RPC at `nodes.liftedinit.app`
 - Testnet: `testnets/manifesttestnet/chain.json` — chain ID `manifest-ledger-testnet`, RPC at `nodes.liftedinit.tech`
 - Gas: both `umfx` and factory `upwr` token are valid fee tokens. The plugin extracts `fees.fee_tokens[0]` (umfx) by default.
+- Faucet: testnet only. The chain registry does not advertise it, so `fetch-chain-registry.cjs` injects `https://faucet.testnet.manifest.network/` directly into the testnet chain data. See the env-var table above for how it propagates.

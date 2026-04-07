@@ -96,9 +96,19 @@ const env = {
 
 if (chain.restUrl) env.COSMOS_REST_URL = chain.restUrl;
 if (chain.converterAddress) env.MANIFEST_CONVERTER_ADDRESS = chain.converterAddress;
+if (chain.faucetUrl) env.MANIFEST_FAUCET_URL = chain.faucetUrl;
 if (gasMultiplier) env.COSMOS_GAS_MULTIPLIER = String(gasMultiplier);
 if (agent?.keyFile) env.MANIFEST_KEY_FILE = agent.keyFile;
 if (agent?.keyPassword) env.MANIFEST_KEY_PASSWORD = agent.keyPassword;
+
+// Warn loudly when a testnet config pre-dates the faucetUrl field — otherwise
+// `request_faucet` silently fails to register and the user has no signal why.
+if (serverName === 'chain' && activeChain === 'testnet' && !chain.faucetUrl) {
+  console.error(
+    'Warning: testnet config has no faucetUrl — the request_faucet tool will not be available. ' +
+    'Run /manifest-agent:refresh-registry to pick up the latest chain data.'
+  );
+}
 
 // Log env key names (not values) for diagnostics
 const envKeys = Object.keys(env).filter((k) => k.startsWith('COSMOS_') || k.startsWith('MANIFEST_'));

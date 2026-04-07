@@ -31,6 +31,7 @@ const CHAINS = {
     chain: `${REGISTRY_BASE}/testnets/manifesttestnet/chain.json`,
     assets: `${REGISTRY_BASE}/testnets/manifesttestnet/assetlist.json`,
     converterAddress: 'manifest1c4p5p0eajlymxak8z5ugmksfpvp5zmm3scrwdrtd5a6mwxnhsa9qnsfftk',
+    faucetUrl: 'https://faucet.testnet.manifest.network/',
   },
 };
 
@@ -100,6 +101,7 @@ function extractChainData(chainRaw, assetList) {
       const assetList = assetRes.ok ? await assetRes.json() : null;
       const data = extractChainData(chainRaw, assetList);
       if (urls.converterAddress) data.converterAddress = urls.converterAddress;
+      if (urls.faucetUrl) data.faucetUrl = urls.faucetUrl;
       result[network] = data;
 
       const outPath = join(chainsDir, `${network}.json`);
