@@ -61,14 +61,26 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 | `agent.keyFile` | `MANIFEST_KEY_FILE` | no (omit if falsy) |
 | `agent.keyPassword` | `MANIFEST_KEY_PASSWORD` | no (omit if falsy) |
 
-## Transaction Behavior
+## Transaction Behavior (runtime policy)
 
-**Pre-broadcast confirmation (mandatory)** — Each broadcast needs its own explicit user confirmation. Never infer approval from silence or from a prior approval.
+**Do not edit the policy text in this file.** The canonical, runtime-facing transaction policy lives in `scripts/session-start.sh` as a heredoc and is injected into every Claude session via the SessionStart hook. Plugin CLAUDE.md files are developer docs — they are not loaded into sessions that USE the plugin, so any policy written here never reaches the runtime agent. Edit `scripts/session-start.sh` if you need to change the rules.
 
-- For `cosmos_tx` calls, call `cosmos_estimate_fee` first with the same `module`, `subcommand`, `args`, and `gas_multiplier` you intend to pass to `cosmos_tx`. Show the returned gas + fee in human-readable form (amount + denom symbol, e.g. `0.0023 MFX`), then wait for confirmation.
-- For transaction tools without a matching estimate call (e.g. `convert_mfx_to_pwr`, `deploy_app`, `fund_credit`, `close_lease`), no programmatic fee number exists. Describe the action concretely (what, where, how much), query the agent's balance for the gas denom and show it alongside so the user has an upper bound on potential loss, and note that the exact fee will be determined at broadcast time. If the tool returns a pre-broadcast simulation in its output, include it.
+Two-layer enforcement:
 
-**Gas retry** — When a `cosmos_tx` fails with an out-of-gas error, retry **once** with `gas_multiplier` bumped by `0.1` from its current value (starting from the server-configured `gasMultiplier` in `config.json`, default `1.5`). Before the retry broadcast, re-run `cosmos_estimate_fee` with the new multiplier and get a fresh confirmation — the original approval was for a different fee. Do not retry a second time: if the retry also fails, report both failures and stop. If `cosmos_estimate_fee` itself throws while preparing the retry, surface that error alongside the original OOG and do not broadcast.
+1. **Runtime policy injection (SessionStart)** — `hooks/hooks.json` → `scripts/session-start.sh` writes the policy text to stdout. Claude Code adds stdout from SessionStart hooks to the session's context, so the rules are present from the first turn. This is how the agent learns to call `cosmos_estimate_fee` first, show the fee, and wait for textual confirmation.
+2. **Permission prompt safety net (PreToolUse)** — `hooks/hooks.json` → `scripts/pre-tool-use.sh` emits `{hookSpecificOutput.permissionDecision: "ask"}` for broadcast tools, forcing Claude Code to prompt the user regardless of pre-existing permission settings. Deny beats allow in the hook precedence, and "ask" cannot be loosened by settings.json, so this fires even for pre-approved tools.
+
+**Tools gated by the PreToolUse hook** (add to the matcher in `hooks/hooks.json` when new write tools ship — each alternative is anchored `^...$` so a future tool whose name contains one of these as a substring is not accidentally gated):
+
+- `mcp__manifest-chain__cosmos_tx`
+- `mcp__manifest-cosmwasm__convert_mfx_to_pwr`
+- `mcp__manifest-fred__deploy_app`
+- `mcp__manifest-fred__restart_app`
+- `mcp__manifest-fred__update_app`
+- `mcp__manifest-lease__fund_credit`
+- `mcp__manifest-lease__close_lease`
+
+Read-only tools and the testnet faucet (`mcp__manifest-chain__request_faucet`) are intentionally not gated.
 
 ## Testing Changes
 

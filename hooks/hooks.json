@@ -9,6 +9,17 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^mcp__manifest-chain__cosmos_tx$|^mcp__manifest-cosmwasm__convert_mfx_to_pwr$|^mcp__manifest-fred__deploy_app$|^mcp__manifest-fred__restart_app$|^mcp__manifest-fred__update_app$|^mcp__manifest-lease__fund_credit$|^mcp__manifest-lease__close_lease$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-use.sh"
+          }
+        ]
+      }
     ]
   }
 }
