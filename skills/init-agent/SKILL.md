@@ -31,7 +31,7 @@ Stop here if empty.
 ## Step 1 — Install dependencies
 
 ```bash
-mkdir -p ~/.manifest-agent && cp "$MANIFEST_PLUGIN_ROOT/package.json" ~/.manifest-agent/package.json && cd ~/.manifest-agent && npm install --production
+mkdir -p ~/.manifest-agent && cp "$MANIFEST_PLUGIN_ROOT/package.json" ~/.manifest-agent/package.json && cd ~/.manifest-agent && npm install --omit=dev
 ```
 
 **If npm install fails, STOP and report the error to the user. Do not proceed

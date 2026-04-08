@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax-check CJS scripts
+        run: |
+          shopt -s nullglob
+          files=(scripts/*.cjs)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ERROR: no CJS scripts found in scripts/" >&2
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            node --check "$f"
+          done
+
+      - name: Syntax-check shell scripts
+        run: |
+          for f in scripts/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: Validate JSON manifests
+        run: |
+          mapfile -t files < <(git ls-files '*.json')
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ERROR: no tracked JSON files found — checkout or working directory is wrong" >&2
+            exit 1
+          fi
+          echo "Validating ${#files[@]} JSON file(s)"
+          status=0
+          for f in "${files[@]}"; do
+            if ! node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$f"; then
+              echo "Invalid JSON: $f" >&2
+              status=1
+            fi
+          done
+          exit $status
+
+      - name: Verify version consistency across manifests
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          PLUGIN=$(node -p "require('./.claude-plugin/plugin.json').version")
+          if [ "$PKG" != "$PLUGIN" ]; then
+            echo "Version mismatch: package.json=$PKG .claude-plugin/plugin.json=$PLUGIN" >&2
+            exit 1
+          fi
+          echo "Both manifests at version $PKG"
+
+      - name: Verify PreToolUse matcher is anchored and matches the expected tool list
+        # The expected list below is the source of truth for CI. When adding
+        # or removing a broadcast tool, keep hooks/hooks.json, CLAUDE.md
+        # (Transaction Behavior section), and the list below in sync.
+        run: |
+          node -e '
+            const expected = new Set([
+              "mcp__manifest-chain__cosmos_tx",
+              "mcp__manifest-cosmwasm__convert_mfx_to_pwr",
+              "mcp__manifest-fred__deploy_app",
+              "mcp__manifest-fred__restart_app",
+              "mcp__manifest-fred__update_app",
+              "mcp__manifest-lease__fund_credit",
+              "mcp__manifest-lease__close_lease",
+            ]);
+            const h = require("./hooks/hooks.json");
+            const pre = (h.hooks && h.hooks.PreToolUse) || [];
+            if (pre.length === 0) { console.error("PreToolUse hook missing"); process.exit(1); }
+            const got = new Set();
+            for (const entry of pre) {
+              if (!entry.matcher) { console.error("Entry missing matcher"); process.exit(1); }
+              const alts = entry.matcher.split("|");
+              const bad = alts.filter(a => !/^\^.+\$$/.test(a));
+              if (bad.length) { console.error("Unanchored matcher alternatives:", bad); process.exit(1); }
+              for (const a of alts) got.add(a.replace(/^\^|\$$/g, ""));
+            }
+            const missing = [...expected].filter(t => !got.has(t));
+            const extra = [...got].filter(t => !expected.has(t));
+            if (missing.length || extra.length) {
+              console.error("PreToolUse matcher drift. missing:", missing, "extra:", extra);
+              process.exit(1);
+            }
+            console.log("PreToolUse matcher gates the 7 expected tools, all anchored");
+          '
+
+      - name: Verify session-start policy is emitted and references fee estimation
+        run: |
+          out=$(bash scripts/session-start.sh)
+          if [ -z "$out" ]; then
+            echo "session-start.sh produced no stdout" >&2
+            exit 1
+          fi
+          if ! grep -q "cosmos_estimate_fee" <<<"$out"; then
+            echo "session-start.sh policy is missing the cosmos_estimate_fee rule" >&2
+            exit 1
+          fi
+          echo "session-start.sh policy emitted ($(wc -c <<<"$out") bytes)"
+
+      - name: Install runtime deps into ~/.manifest-agent (mirrors plugin layout)
+        run: |
+          mkdir -p "$HOME/.manifest-agent"
+          cp package.json "$HOME/.manifest-agent/"
+          npm install --omit=dev --prefix "$HOME/.manifest-agent"
+
+      - name: Verify MCP binaries and NODE_PATH resolution
+        run: |
+          for bin in manifest-mcp-chain manifest-mcp-lease manifest-mcp-fred manifest-mcp-cosmwasm; do
+            path="$HOME/.manifest-agent/node_modules/.bin/$bin"
+            if [ ! -x "$path" ]; then
+              echo "Missing or non-executable MCP binary: $path" >&2
+              exit 1
+            fi
+          done
+          NODE_PATH="$HOME/.manifest-agent/node_modules" node -e "require('@cosmjs/proto-signing'); console.log('NODE_PATH resolution ok')"

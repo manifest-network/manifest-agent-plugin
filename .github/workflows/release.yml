@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify tag is reachable from main
+        run: |
+          git fetch origin main
+          # Dereference the tag ref to its target commit so we compare commits,
+          # not tag objects. Works for both lightweight and annotated tags.
+          TAG_COMMIT=$(git rev-parse "${GITHUB_REF_NAME}^{commit}")
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
+            echo "Tag $GITHUB_REF_NAME resolves to commit $TAG_COMMIT, which is not reachable from origin/main — refusing to release" >&2
+            exit 1
+          fi
+          echo "Tag $GITHUB_REF_NAME resolves to commit $TAG_COMMIT, reachable from main"
+
+      - name: Verify tag matches manifest versions
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          PLUGIN=$(node -p "require('./.claude-plugin/plugin.json').version")
+          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$PLUGIN" ]; then
+            echo "Version mismatch: tag=$TAG package.json=$PKG plugin.json=$PLUGIN" >&2
+            exit 1
+          fi
+          echo "All versions match: $TAG"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
