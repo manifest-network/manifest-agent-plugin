@@ -95,7 +95,7 @@ node scripts/fetch-chain-registry.cjs
 
 # Install deps (one-time, before testing key scripts or MCP wrapper)
 mkdir -p ~/.manifest-agent && cp package.json ~/.manifest-agent/
-npm install --production --prefix ~/.manifest-agent
+npm install --omit=dev --prefix ~/.manifest-agent
 
 # Test key generation
 NODE_PATH=$HOME/.manifest-agent/node_modules node scripts/gen-agent-key.cjs --prefix manifest

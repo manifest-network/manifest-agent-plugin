@@ -2,7 +2,7 @@
 
 A [Claude Code](https://claude.ai/code) plugin that sets up [Manifest](https://manifestai.org/) blockchain MCP tooling for an autonomous agent.
 
-It handles keypair generation and import, chain configuration (testnet/mainnet), live chain registry data from the [Cosmos chain registry](https://github.com/cosmos/chain-registry), and configuring three MCP servers ([manifest-mcp-chain](https://www.npmjs.com/package/@manifest-network/manifest-mcp-chain), [manifest-mcp-lease](https://www.npmjs.com/package/@manifest-network/manifest-mcp-lease), [manifest-mcp-fred](https://www.npmjs.com/package/@manifest-network/manifest-mcp-fred)) so the agent can interact with the configured chain.
+It handles keypair generation and import, chain configuration (testnet/mainnet), live chain registry data from the [Cosmos chain registry](https://github.com/cosmos/chain-registry), and configuring four MCP servers (all bundled in [@manifest-network/manifest-mcp-node](https://www.npmjs.com/package/@manifest-network/manifest-mcp-node)) so the agent can interact with the configured chain.
 
 ## Prerequisites
 
@@ -50,17 +50,19 @@ After setup, restart Claude Code (or run `/mcp` and reconnect) to start the MCP 
 | `/manifest-agent:init-agent` | Full interactive setup — install deps, choose chain, generate or import key |
 | `/manifest-agent:import-key` | Import an existing mnemonic phrase into the agent config |
 | `/manifest-agent:switch-chain` | Switch between testnet and mainnet |
+| `/manifest-agent:set-gas-price` | Change the gas fee token, price, and/or gas multiplier |
 | `/manifest-agent:refresh-registry` | Re-fetch chain data from the Cosmos chain registry |
 
 ## MCP Servers
 
-Once configured, the plugin provides three MCP servers:
+Once configured, the plugin provides four MCP servers, all launched from binaries bundled in `@manifest-network/manifest-mcp-node`:
 
-| Server | Package | Description |
-|---|---|---|
-| `manifest-chain` | `@manifest-network/manifest-mcp-chain` | Chain queries, bank send, faucet |
-| `manifest-lease` | `@manifest-network/manifest-mcp-lease` | Compute leasing |
-| `manifest-fred` | `@manifest-network/manifest-mcp-fred` | Token factory |
+| Server | Description |
+|---|---|
+| `manifest-chain` | Chain queries, bank send, testnet faucet |
+| `manifest-lease` | Compute leasing |
+| `manifest-fred` | Token factory |
+| `manifest-cosmwasm` | MFX ↔ PWR conversion via CosmWasm |
 
 The servers start automatically when Claude Code launches but **will fail until the plugin is initialized**. This is expected — run `/manifest-agent:init-agent` to set up the agent, then restart Claude Code to connect the servers.
 
@@ -69,7 +71,7 @@ The servers start automatically when Claude Code launches but **will fail until 
 **MCP servers show "failed":**
 
 - **Before init-agent**: Expected. The servers need `~/.manifest-agent/config.json` which doesn't exist yet. Run `/manifest-agent:init-agent` first, then restart.
-- **After init-agent**: Check your Node.js version. The MCP servers require **Node.js 18+**. If your system default `node` is an older version (e.g., Node 16), the servers will fail silently. Verify with `node --version` and update if needed. If you use nvm, run `nvm alias default 22` to set the default.
+- **After init-agent**: Check your Node.js version. The MCP servers require **Node.js 18+**. If your system default `node` is older, the wrapper exits with a `Node 18+ required (found vX.X.X)` error visible in the MCP server logs. Verify with `node --version` and update if needed. If you use nvm, run `nvm alias default 22` to set the default.
 
 ## Supported Chains
 
@@ -96,10 +98,11 @@ Chain data (endpoints, gas prices, explorer URLs) is fetched live from the [Cosm
                                             │
                                             v
                              ┌──────────────────────────┐
-                             │  MCP Servers (stdio)      │
-                             │  manifest-mcp-chain       │
-                             │  manifest-mcp-lease       │
-                             │  manifest-mcp-fred        │
+                             │  MCP Servers (stdio)     │
+                             │  manifest-mcp-chain      │
+                             │  manifest-mcp-lease      │
+                             │  manifest-mcp-fred       │
+                             │  manifest-mcp-cosmwasm   │
                              └──────────────────────────┘
 ```
 
