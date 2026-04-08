@@ -17,7 +17,16 @@ jobs:
           node-version: '20'
 
       - name: Syntax-check CJS scripts
-        run: node --check scripts/*.cjs
+        run: |
+          shopt -s nullglob
+          files=(scripts/*.cjs)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ERROR: no CJS scripts found in scripts/" >&2
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            node --check "$f"
+          done
 
       - name: Syntax-check shell scripts
         run: |
@@ -52,9 +61,10 @@ jobs:
           fi
           echo "Both manifests at version $PKG"
 
-      - name: Verify PreToolUse matcher is anchored and gates the exact CLAUDE.md tool list
-        # When adding or removing a broadcast tool, update hooks/hooks.json,
-        # CLAUDE.md (Transaction Behavior section), AND this list together.
+      - name: Verify PreToolUse matcher is anchored and matches the expected tool list
+        # The expected list below is the source of truth for CI. When adding
+        # or removing a broadcast tool, keep hooks/hooks.json, CLAUDE.md
+        # (Transaction Behavior section), and the list below in sync.
         run: |
           node -e '
             const expected = new Set([
