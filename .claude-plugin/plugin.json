@@ -1,6 +1,6 @@
 {
   "name": "manifest-agent",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Set up Manifest blockchain MCP tooling for an autonomous agent — keypair management, chain configuration, and registry data",
   "author": {
     "name": "The Lifted Initiative",
