@@ -69,6 +69,21 @@ the textual fee summary and confirmation you must provide first. If
 the user sees a permission prompt for a broadcast tool without having
 first seen a fee estimate (for `cosmos_tx`) or an action + balance
 summary (for other tools) from you, you have violated this policy.
+
+## Lease lifecycle
+
+To deploy a new containerized app (create a lease and upload its
+payload), use `deploy_app`. It couples the on-chain `billing
+create-lease` tx, the SHA-256 `--meta-hash` commitment, the
+ADR-036-authenticated payload upload, and the readiness poll into a
+single atomic flow. To change a running app's manifest without
+closing its lease, use `update_app`. Do **not** assemble either flow
+from raw `cosmos_tx` calls: getting the meta-hash / payload coupling
+wrong produces orphan leases that continue consuming credit until
+closed. The `/manifest-agent:deploy-app` and
+`/manifest-agent:update-app` skills wrap these tools with the
+supporting checks (credit balance, SKU selection, echo+confirm,
+current-manifest fetch for partial updates).
 POLICY
 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then

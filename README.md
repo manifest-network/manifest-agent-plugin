@@ -52,6 +52,35 @@ After setup, restart Claude Code (or run `/mcp` and reconnect) to start the MCP 
 | `/manifest-agent:switch-chain` | Switch between testnet and mainnet |
 | `/manifest-agent:set-gas-price` | Change the gas fee token, price, and/or gas multiplier |
 | `/manifest-agent:refresh-registry` | Re-fetch chain data from the Cosmos chain registry |
+| `/manifest-agent:deploy-app` | Deploy a containerized app — create the lease, upload the manifest, and wait until it's reachable. Accepts a spec file or interactive prompts; auto-offers `fund_credit` when the billing account is empty. |
+| `/manifest-agent:update-app` | Change a running app's manifest (env var, image bump, full replace) without closing its lease. Server-side merges partial updates over the current manifest. |
+
+### Spec file shape (deploy-app)
+
+`/manifest-agent:deploy-app` accepts a `DeployAppInput`-shaped JSON file — the same inputs the `deploy_app` MCP tool takes. A minimal single-container example:
+
+```json
+{
+  "image": "nginx:1.27",
+  "port": 80,
+  "size": "docker-micro",
+  "env": { "LOG_LEVEL": "info" }
+}
+```
+
+Multi-service stacks use `services` instead of `image` / `port`:
+
+```json
+{
+  "size": "docker-small",
+  "services": {
+    "web": { "image": "nginx:1.27", "ports": { "80/tcp": {} } },
+    "db":  { "image": "postgres:16", "env": { "POSTGRES_PASSWORD": "..." } }
+  }
+}
+```
+
+The skill pipes the spec through `scripts/build-manifest.cjs`, which delegates to `buildManifest` / `buildStackManifest` in `@manifest-network/manifest-mcp-fred`, so the output matches the published Fred manifest schema. Use `size` to pick a SKU (see `get_skus`); `storage` is optional and adds a second lease item for a persistent disk. Fields like `host_port`, `ingress`, UDP, or multiple ports require the stack form, since `DeployAppInput`'s `port: number` shortcut only emits a single `<port>/tcp` binding with random host port.
 
 ## MCP Servers
 

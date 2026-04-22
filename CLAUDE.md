@@ -27,7 +27,7 @@ Plugin root (read-only)          Runtime data (~/.manifest-agent/)
 
 ## Key Patterns
 
-**All scripts use CJS** — `require()`, async IIFE with `.catch(() => process.exit(1))`, `os.homedir()` for paths (never literal `~` — Node doesn't expand it).
+**All scripts use CJS** — `require()`, async IIFE with `.catch(() => process.exit(1))`, `os.homedir()` for paths (never literal `~` — Node doesn't expand it). When a script needs an ESM-only dependency (e.g., `@manifest-network/manifest-mcp-fred`, which sets `"type": "module"`), use dynamic `import()` with an absolute path under `~/.manifest-agent/node_modules` and `pathToFileURL()` — this sidesteps both the NODE_PATH/ESM-resolver gap and the package's `exports` map. See `build-manifest.cjs` for the pattern.
 
 **Secrets via stdin** — Mnemonics are piped via heredoc (`<<'EOF'`, single-quoted to prevent shell expansion), never as command-line args (visible in `/proc/*/cmdline`).
 
@@ -44,6 +44,8 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **switch-chain** — Switch testnet/mainnet with mainnet confirmation before write
 - **set-gas-price** — Change gas fee token, price, and/or gas multiplier
 - **refresh-registry** — Re-fetch chain data from Cosmos chain registry
+- **deploy-app** — Deploy a container (lease + payload + poll) via `deploy_app`; auto-offers `fund_credit` when the billing account is empty. Accepts a `DeployAppInput`-shaped spec file or interactive prompts (single-container only)
+- **update-app** — Change a running app's manifest via `update_app`. Partial mode fetches the current manifest from `app_releases` and relies on the MCP's server-side `mergeManifest`; replace mode uses a raw manifest file, a `DeployAppInput` spec (via `build-manifest.cjs`), or interactive single-container prompts
 
 ## config.json → MCP env var mapping
 
@@ -102,6 +104,9 @@ NODE_PATH=$HOME/.manifest-agent/node_modules node scripts/gen-agent-key.cjs --pr
 
 # Test MCP wrapper (requires config.json + deps)
 node scripts/start-server.cjs chain
+
+# Test manifest builder (reads DeployAppInput JSON from stdin, needs deps)
+echo '{"image":"nginx:1.27","port":80,"size":"docker-micro"}' | node scripts/build-manifest.cjs
 ```
 
 ## Chain Data
