@@ -108,9 +108,11 @@ the Fred API, so it may be absent.
 
 - If **present**: the value is a **base64-encoded** JSON string (not
   plain JSON — the provider sends the manifest bytes verbatim).
-  Decode it in a shell before parsing:
+  Decode it portably via Node (already a plugin dependency, so
+  available on every platform that can run this plugin — avoids the
+  GNU `base64 -d` vs BSD `base64 -D` split):
   ```bash
-  printf '%s' "<base64-string>" | base64 -d
+  printf '%s' "<base64-string>" | node -e 'let b=""; process.stdin.on("data",c=>b+=c).on("end",()=>process.stdout.write(Buffer.from(b.trim(),"base64").toString("utf8")))'
   ```
   Then parse the decoded string as JSON. Show the user a summary of
   the current app: top-level format (single-container vs stack),
@@ -299,7 +301,8 @@ Display the returned `{lease_uuid, status}`. Offer to:
   `image` and the provider will reject it.
 - `release.manifest` from `app_releases` is **base64-encoded** — the
   MCP passes the raw manifest bytes through without decoding. Decode
-  with `base64 -d` before parsing or passing as `existing_manifest`.
+  via the portable Node one-liner in Step 3 (do not rely on
+  `base64 -d`; the flag differs between GNU and BSD builds).
 - Releases in `app_releases` are appended oldest-first; the currently-
   serving one is the most recent entry with `status === "active"`
   (earlier `"active"` entries become `"superseded"` on each activate).

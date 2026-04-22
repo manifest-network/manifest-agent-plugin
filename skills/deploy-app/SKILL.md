@@ -85,7 +85,9 @@ Display:
   provider options (health + price + unit). The user will pick a
   `size` from the list of tier names. Skip tiers whose only providers
   are `healthy: false`.
-- Wallet balance for the gas denom from `config.json`'s `gasPrice`.
+- Wallet balance for the gas denom derived from the `gasPrice` value
+  returned by `update-config.cjs --status` in Step 1 (e.g., a
+  `gasPrice` of `"1umfx"` means query the wallet's `umfx` balance).
 
 ## Step 3 — Auto-offer `fund_credit` when credit is empty
 

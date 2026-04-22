@@ -90,7 +90,7 @@ function readStdin() {
     process.exit(1);
   }
 
-  for (const ignored of ['size', 'storage', 'gasMultiplier']) {
+  for (const ignored of ['size', 'storage', 'gasMultiplier', 'gas_multiplier']) {
     if (spec[ignored] !== undefined) {
       console.error(`build-manifest: ignoring lease-level field \`${ignored}\` (not part of the manifest).`);
     }
