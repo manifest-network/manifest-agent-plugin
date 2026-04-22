@@ -81,8 +81,12 @@ function readStdin() {
     console.error('build-manifest: either `image` (+ `port`) or `services` is required.');
     process.exit(1);
   }
-  if (hasImage && typeof spec.port !== 'number') {
-    console.error('build-manifest: `port` (number) is required when `image` is set.');
+  if (hasImage && (!Number.isInteger(spec.port) || spec.port < 1 || spec.port > 65535)) {
+    console.error('build-manifest: `port` must be an integer between 1 and 65535 when `image` is set.');
+    process.exit(1);
+  }
+  if (hasServices && Object.keys(spec.services).length === 0) {
+    console.error('build-manifest: `services` must contain at least one service.');
     process.exit(1);
   }
 
@@ -111,9 +115,17 @@ function readStdin() {
 
   let manifest;
   if (hasServices) {
-    for (const name of Object.keys(spec.services)) {
+    for (const [name, svc] of Object.entries(spec.services)) {
       if (typeof validateServiceName === 'function' && !validateServiceName(name)) {
         console.error(`build-manifest: invalid service name "${name}". Must be 1-63 chars, lowercase alphanumeric + hyphens, no leading/trailing hyphens.`);
+        process.exit(1);
+      }
+      if (svc === null || typeof svc !== 'object' || Array.isArray(svc)) {
+        console.error(`build-manifest: service "${name}" must be a JSON object.`);
+        process.exit(1);
+      }
+      if (typeof svc.image !== 'string' || svc.image.length === 0) {
+        console.error(`build-manifest: service "${name}" is missing a non-empty \`image\` field.`);
         process.exit(1);
       }
     }
