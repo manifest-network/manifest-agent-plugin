@@ -163,14 +163,30 @@ Construct the `DeployAppInput` object from these answers.
 
 ## Step 5 — Echo and confirm
 
-Display the resolved `DeployAppInput` as pretty JSON alongside:
+Display a **redacted** summary of the resolved `DeployAppInput` — do
+**not** pretty-print the full object. Env variables in particular
+commonly carry secrets (API keys, DB passwords, JWTs, tokens), and
+echoing raw JSON would plant those values in the chat transcript.
+Show:
 
-- Wallet `address`.
-- Chain and gas denom.
+- `image` + `port` (single-container) or a service-name → image map
+  (stack)
+- `size` and `storage` (if set)
+- `env`: **variable names only**, e.g. `env keys: LOG_LEVEL,
+  DATABASE_URL, API_TOKEN (values redacted)`. Never echo values. If
+  the user wants to verify a specific value they can inspect their
+  spec file or confirm it from memory.
+- `command` / `args` if set: show them, but flag to the user that CLI
+  args are another secret-carrying vector and give them a chance to
+  redo the spec if anything sensitive is in there.
+- `labels` if set (keys and values)
+- `health_check`, `tmpfs`, `user`, `expose`, `depends_on` if set
+- Wallet `address`
+- Chain and gas denom
 - Wallet balance for the gas denom (from Step 2) — the upper bound on
-  potential loss on the broadcast.
+  potential loss on the broadcast
 - A reminder that `deploy_app` has no matching estimate call, so the
-  exact fee is determined at broadcast time.
+  exact fee is determined at broadcast time
 
 Ask the user to confirm before continuing. Do NOT proceed to Step 6
 until the user answers yes in the conversation. A Claude Code

@@ -110,9 +110,14 @@ the Fred API, so it may be absent.
   plain JSON — the provider sends the manifest bytes verbatim).
   Decode it portably via Node (already a plugin dependency, so
   available on every platform that can run this plugin — avoids the
-  GNU `base64 -d` vs BSD `base64 -D` split):
+  GNU `base64 -d` vs BSD `base64 -D` split). Use a quoted heredoc so
+  the base64 payload is piped to stdin rather than placed in argv —
+  manifests can be large (pushing against macOS ARG_MAX) and can
+  contain env-var secrets that should not land in shell history:
   ```bash
-  printf '%s' "<base64-string>" | node -e 'let b=""; process.stdin.on("data",c=>b+=c).on("end",()=>process.stdout.write(Buffer.from(b.trim(),"base64").toString("utf8")))'
+  cat <<'EOF' | node -e 'let b=""; process.stdin.on("data",c=>b+=c).on("end",()=>process.stdout.write(Buffer.from(b.trim(),"base64").toString("utf8")))'
+  <base64-string>
+  EOF
   ```
   Then parse the decoded string as JSON. Show the user a summary of
   the current app: top-level format (single-container vs stack),
@@ -177,18 +182,25 @@ edits; for anything else, ask for a partial-manifest file.
   or for stacks
   `{"services": {"web": {"image": "<current-image>", "health_check": {...}}}}`.
 
-Show the user a plain-English summary of the diff:
+Show the user a plain-English summary of the diff. Redact env and
+label values by default — these commonly carry secrets:
 
 ```
 Partial update on lease <uuid>:
-  env.LOG_LEVEL: info → debug
-  image: nginx:1.27 → nginx:1.27 (unchanged, required by merger)
+  env.LOG_LEVEL: changed (values redacted)
+  image: nginx:1.27 → nginx:1.28
   (other fields carried forward from current manifest)
 ```
 
-Do **not** try to preview the literal merged JSON — that would require
-running `mergeManifest` client-side and risks drift with the
-server-side merger.
+For non-secret-carrying fields (image, ports structure, expose,
+health_check presence) show the full before/after. For image where
+the value is unchanged but we're forwarding it because the merger
+requires it, say `image: <value> (unchanged, required by merger)`.
+
+Do **not** try to preview the literal merged JSON — that would
+require running `mergeManifest` client-side and risks drift with the
+server-side merger. And do **not** echo env / label values into the
+chat; they land in the transcript.
 
 Store the partial as `PARTIAL_MANIFEST` (a JSON string).
 
@@ -229,12 +241,17 @@ Use `AskUserQuestion`:
 **Interactive:**
 
 1. Ask for image, port, env (optional), labels (optional). Build a
-   `DeployAppInput` object in-memory, then pipe via the helper:
+   `DeployAppInput` object in-memory, then pipe via the helper using
+   a quoted heredoc so the spec does not land in argv or shell
+   history (env values can carry secrets):
    ```bash
-   echo '<spec-json>' | node "$MANIFEST_PLUGIN_ROOT/scripts/build-manifest.cjs"
+   cat <<'EOF' | node "$MANIFEST_PLUGIN_ROOT/scripts/build-manifest.cjs"
+   <spec-json>
+   EOF
    ```
-   Use a heredoc or `printf '%s\n'` to avoid shell quoting issues; do
-   not write the spec to a file on disk.
+   Do not use `echo '<spec-json>'` or `printf '%s' "<spec-json>"` —
+   both put the spec in argv. Do not write the spec to a file on
+   disk either.
 
 Store the full manifest as `NEW_MANIFEST` (a JSON string).
 
@@ -244,8 +261,21 @@ Display:
 
 - `lease_uuid` (the selected lease)
 - Update mode (`partial` or `replace`)
-- The diff summary (partial) or the new manifest JSON pretty-printed
-  (replace)
+- Summary of the change. **Do not pretty-print the full manifest or
+  the partial JSON** — both can contain env values (API keys, DB
+  passwords, JWTs) that would be leaked into the chat transcript.
+  Instead:
+  - **Partial mode:** for each changed `env` / `labels` key, show
+    `env.<KEY>: changed (values redacted)` rather than
+    `env.<KEY>: <old> → <new>`. For non-secret-carrying fields (image,
+    ports structure, expose, health_check presence) show the full
+    value. If the user wants to see an env value they just set,
+    they can ask — opt-in rather than opt-out.
+  - **Replace mode:** show a structural summary — top-level format
+    (single / stack), image(s), port shapes, `env` variable **names
+    only**, `labels`, `tmpfs`, `user`, `expose`, `depends_on`
+    presence. Call out `command` / `args` if set (another
+    secret-carrying vector) and warn before displaying them.
 - A note that `update_app` uploads to the provider over HTTPS — it is
   **not** a Cosmos SDK transaction, so no gas is spent. The action is
   still impactful because it mutates a running workload; Claude Code
