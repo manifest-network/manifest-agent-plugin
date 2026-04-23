@@ -141,7 +141,14 @@ Use `AskUserQuestion` with two options:
      Step 2. If it does not match, stop and list available SKUs.
    - Exactly one of: (`image` + `port`) OR `services`. Reject if both
      or neither are present.
-5. Show the parsed spec back to the user, pretty-printed.
+5. Defer display of the parsed spec to Step 5's redacted confirmation
+   view — do **not** pretty-print the parsed JSON here. The spec can
+   contain env values and potentially `command` / `args` that carry
+   secrets; echoing the raw object would plant them in the chat
+   transcript. Confirm at this step only that parsing and validation
+   succeeded (e.g., "Loaded spec from `<path>`: single-container /
+   stack, <N> env keys, <N> services"); the full redacted view lands
+   in Step 5.
 
 ### Interactive mode
 
@@ -179,7 +186,11 @@ Show:
 - `command` / `args` if set: show them, but flag to the user that CLI
   args are another secret-carrying vector and give them a chance to
   redo the spec if anything sensitive is in there.
-- `labels` if set (keys and values)
+- `labels` if set: **label keys only**, values redacted by default.
+  Label values usually describe the workload (`role=prod`,
+  `version=v1.2`) but the spec does not constrain them, so values can
+  carry secrets. Show a specific label value only if the user
+  explicitly asks for that one.
 - `health_check`, `tmpfs`, `user`, `expose`, `depends_on` if set
 - Wallet `address`
 - Chain and gas denom

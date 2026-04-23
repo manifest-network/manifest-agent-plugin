@@ -225,7 +225,12 @@ Use `AskUserQuestion`:
 
 1. Ask for the path.
 2. Read and `JSON.parse` it. Reject anything that is not a JSON object.
-3. Show a summary of the new manifest.
+3. Defer display to Step 5's redacted summary — do **not** pretty-print
+   the manifest here. It can contain env / label values and
+   potentially `command` / `args` that carry secrets, and echoing the
+   raw JSON would plant them in the chat transcript. At this sub-step
+   confirm only that parsing succeeded (e.g., "Loaded manifest from
+   `<path>`: single-container / stack, <N> env keys").
 
 **DeployAppInput spec file:**
 
@@ -236,7 +241,9 @@ Use `AskUserQuestion`:
    ```
    Capture stdout as the new manifest JSON string. If the script fails
    (non-zero exit), show its stderr to the user and stop.
-3. Show the resolved manifest.
+3. Same rule as raw manifest mode: do **not** pretty-print the
+   resolved manifest here. Confirm success only; the redacted view
+   lives in Step 5.
 
 **Interactive:**
 
@@ -273,9 +280,11 @@ Display:
     they can ask — opt-in rather than opt-out.
   - **Replace mode:** show a structural summary — top-level format
     (single / stack), image(s), port shapes, `env` variable **names
-    only**, `labels`, `tmpfs`, `user`, `expose`, `depends_on`
-    presence. Call out `command` / `args` if set (another
-    secret-carrying vector) and warn before displaying them.
+    only** (values redacted), `labels` **keys only** (values redacted
+    — the schema does not constrain label values, so they can carry
+    secrets), `tmpfs` / `user` / `expose` / `depends_on` presence.
+    Call out `command` / `args` if set (another secret-carrying
+    vector) and warn before displaying them.
 - A note that `update_app` uploads to the provider over HTTPS — it is
   **not** a Cosmos SDK transaction, so no gas is spent. The action is
   still impactful because it mutates a running workload; Claude Code
