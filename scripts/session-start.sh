@@ -39,14 +39,21 @@ the fact that the user asked for the action.
   you intend to pass to `cosmos_tx`. Show the returned gas and fee in
   human-readable form (amount + denom symbol, e.g. `0.0023 MFX`), then
   wait for the user to confirm before calling `cosmos_tx`.
-- **For transaction tools without a matching estimate call**
-  (`convert_mfx_to_pwr`, `deploy_app`, `restart_app`, `update_app`,
-  `fund_credit`, `close_lease`): no programmatic fee number exists
-  before broadcast. Describe the action concretely (what, where, how
-  much), query the agent's balance for the gas denom (via `cosmos_query`
-  with `module: "bank", subcommand: "balances"`) and show it so the
-  user has an upper bound on potential loss, and note that the exact
-  fee will be determined at broadcast time. Then wait for confirmation.
+- **For broadcast tools without a matching estimate call**
+  (`convert_mfx_to_pwr`, `deploy_app`, `fund_credit`, `close_lease`):
+  no programmatic fee number exists before broadcast. Describe the
+  action concretely (what, where, how much), query the agent's
+  balance for the gas denom (via `cosmos_query` with `module: "bank",
+  subcommand: "balances"`) and show it so the user has an upper bound
+  on potential loss, and note that the exact fee will be determined
+  at broadcast time. Then wait for confirmation.
+- **For provider-side write tools that do not broadcast**
+  (`restart_app`, `update_app`): no gas is spent — these are HTTPS
+  calls to the provider, not Cosmos transactions. Do **not** query
+  the bank balance or mention fee loss. Still describe the action
+  concretely (which lease, what mutation) and wait for confirmation,
+  since these mutate a running workload. The PreToolUse permission
+  prompt also fires as a safety net.
 
 ## Gas retry
 

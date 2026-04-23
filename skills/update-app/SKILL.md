@@ -166,8 +166,9 @@ edits; for anything else, ask for a partial-manifest file.
 
 - **Image version bump** — ask for the new image. Build
   `{"image": "<new>"}` or for a stack
-  `{"services": {"<name>": {"image": "<new>"}}}`. No need to include
-  the old image — `image` is the field being changed.
+  `{"services": {"<name>": {"image": "<new>"}}}`. The partial
+  already satisfies the "include `image`" rule because that is the
+  field being changed.
 
 - **Labels** — same map-merge semantics as env. Include `image`.
   Example: `{"image": "<current-image>", "labels": {"role": "prod"}}`.

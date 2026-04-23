@@ -66,11 +66,13 @@ Call these MCP tools in parallel and summarize the results:
    `{providers: [{uuid, address, apiUrl, active, healthy, healthError?, providerUuid?}],
    tiers: {<name>: [{provider, price, unit}]}}`. Prefer this over
    `get_skus` in this flow because it pre-stringifies `unit` (e.g.
-   `"UNIT_PER_HOUR"`) and `price`, and annotates provider health. Fall
-   back to `mcp__manifest-lease__get_skus` if `browse_catalog` errors
-   out — but note that `get_skus` returns `unit` as a raw enum number
-   (`1` = per-hour, `2` = per-day, `0` = unspecified) and `metaHash`
-   as a byte-object that can be ignored.
+   `"UNIT_PER_HOUR"`) and `price`, and annotates provider health. If
+   `browse_catalog` errors out, surface the original error to the
+   user and warn that the fallback path does not include provider
+   health checks, then fall back to `mcp__manifest-lease__get_skus`
+   (which returns `unit` as a raw enum number — `1` = per-hour,
+   `2` = per-day, `0` = unspecified — and `metaHash` as a byte-object
+   that can be ignored).
 3. `mcp__manifest-chain__cosmos_query` with
    `{module: "bank", subcommand: "balances", args: ["<address>"]}` —
    the wallet's gas-denom balance (used as the upper bound on the
@@ -118,8 +120,13 @@ If the user picks **Fund now**:
 4. Call `mcp__manifest-lease__fund_credit` with
    `{amount: "<amount><denom>"}`.
 5. On success, re-call `mcp__manifest-lease__credit_balance` and show
-   the new balance. On failure, surface the error and ask whether to
-   continue without funding or stop.
+   the new balance. If the re-queried balance is **still empty**
+   (zero or missing entries for the expected denom), do **not** treat
+   the fund as successful — stop and report a likely indexer lag,
+   denom mismatch, or billing-account issue. Continuing to Step 4
+   would produce a deploy that fails at the first billing tick.
+   On `fund_credit` call failure, surface the error and ask whether
+   to continue without funding or stop.
 
 **If the credit balance is non-zero**, do not offer funding. Proceed to
 Step 4.
