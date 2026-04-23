@@ -182,25 +182,25 @@ edits; for anything else, ask for a partial-manifest file.
   or for stacks
   `{"services": {"web": {"image": "<current-image>", "health_check": {...}}}}`.
 
-Show the user a plain-English summary of the diff. Redact env and
-label values by default — these commonly carry secrets:
+Show the user a plain-English summary of the diff:
 
 ```
 Partial update on lease <uuid>:
-  env.LOG_LEVEL: changed (values redacted)
+  env.LOG_LEVEL: info → debug
   image: nginx:1.27 → nginx:1.28
   (other fields carried forward from current manifest)
 ```
 
-For non-secret-carrying fields (image, ports structure, expose,
-health_check presence) show the full before/after. For image where
-the value is unchanged but we're forwarding it because the merger
-requires it, say `image: <value> (unchanged, required by merger)`.
+If the user supplied the new value(s) by typing them in this
+conversation, show the before/after verbatim — the values are
+already in the transcript. If the partial came from a file on disk,
+summarize changed env keys as `env.<KEY>: changed (value from file)`
+instead, since the file contents may include secrets the user did not
+re-read.
 
 Do **not** try to preview the literal merged JSON — that would
 require running `mergeManifest` client-side and risks drift with the
-server-side merger. And do **not** echo env / label values into the
-chat; they land in the transcript.
+server-side merger.
 
 Store the partial as `PARTIAL_MANIFEST` (a JSON string).
 
@@ -221,16 +221,15 @@ Use `AskUserQuestion`:
 - **Interactive** — single-container only; gather image, port, env,
   labels, and build the manifest
 
+Track whether the new manifest came from a file (`NEW_FROM_FILE = true`
+in raw-manifest or DeployAppInput-spec modes; `false` in interactive
+mode). Step 5 uses this flag to decide how to echo `env` / `command`
+/ `args` values.
+
 **Raw manifest file:**
 
 1. Ask for the path.
 2. Read and `JSON.parse` it. Reject anything that is not a JSON object.
-3. Defer display to Step 5's redacted summary — do **not** pretty-print
-   the manifest here. It can contain env / label values and
-   potentially `command` / `args` that carry secrets, and echoing the
-   raw JSON would plant them in the chat transcript. At this sub-step
-   confirm only that parsing succeeded (e.g., "Loaded manifest from
-   `<path>`: single-container / stack, <N> env keys").
 
 **DeployAppInput spec file:**
 
@@ -241,24 +240,19 @@ Use `AskUserQuestion`:
    ```
    Capture stdout as the new manifest JSON string. If the script fails
    (non-zero exit), show its stderr to the user and stop.
-3. Same rule as raw manifest mode: do **not** pretty-print the
-   resolved manifest here. Confirm success only; the redacted view
-   lives in Step 5.
 
 **Interactive:**
 
 1. Ask for image, port, env (optional), labels (optional). Build a
    `DeployAppInput` object in-memory, then pipe via the helper using
-   a quoted heredoc so the spec does not land in argv or shell
-   history (env values can carry secrets):
+   a quoted heredoc — manifests can be large (approaching macOS
+   ARG_MAX) and `echo '...'` / `printf '%s' "..."` would also put the
+   payload in shell history:
    ```bash
    cat <<'EOF' | node "$MANIFEST_PLUGIN_ROOT/scripts/build-manifest.cjs"
    <spec-json>
    EOF
    ```
-   Do not use `echo '<spec-json>'` or `printf '%s' "<spec-json>"` —
-   both put the spec in argv. Do not write the spec to a file on
-   disk either.
 
 Store the full manifest as `NEW_MANIFEST` (a JSON string).
 
@@ -268,23 +262,17 @@ Display:
 
 - `lease_uuid` (the selected lease)
 - Update mode (`partial` or `replace`)
-- Summary of the change. **Do not pretty-print the full manifest or
-  the partial JSON** — both can contain env values (API keys, DB
-  passwords, JWTs) that would be leaked into the chat transcript.
-  Instead:
-  - **Partial mode:** for each changed `env` / `labels` key, show
-    `env.<KEY>: changed (values redacted)` rather than
-    `env.<KEY>: <old> → <new>`. For non-secret-carrying fields (image,
-    ports structure, expose, health_check presence) show the full
-    value. If the user wants to see an env value they just set,
-    they can ask — opt-in rather than opt-out.
-  - **Replace mode:** show a structural summary — top-level format
-    (single / stack), image(s), port shapes, `env` variable **names
-    only** (values redacted), `labels` **keys only** (values redacted
-    — the schema does not constrain label values, so they can carry
-    secrets), `tmpfs` / `user` / `expose` / `depends_on` presence.
-    Call out `command` / `args` if set (another secret-carrying
-    vector) and warn before displaying them.
+- Summary of the change:
+  - **Partial mode:** the diff summary from Step 4 (see that step for
+    the file-vs-typed rule on env values).
+  - **Replace mode:** a structural summary — top-level format
+    (single / stack), image(s), port shapes, `env` keys (with values
+    if interactive and the user typed them; counts only if
+    `NEW_FROM_FILE`), `labels` with values, `tmpfs` / `user` /
+    `expose` / `depends_on` / `health_check` presence. For `command`
+    and `args`, apply the same file-vs-typed rule as env — show
+    verbatim if the user typed them this turn, summarize as "(N
+    entries from file)" otherwise.
 - A note that `update_app` uploads to the provider over HTTPS — it is
   **not** a Cosmos SDK transaction, so no gas is spent. The action is
   still impactful because it mutates a running workload; Claude Code

@@ -141,14 +141,10 @@ Use `AskUserQuestion` with two options:
      Step 2. If it does not match, stop and list available SKUs.
    - Exactly one of: (`image` + `port`) OR `services`. Reject if both
      or neither are present.
-5. Defer display of the parsed spec to Step 5's redacted confirmation
-   view — do **not** pretty-print the parsed JSON here. The spec can
-   contain env values and potentially `command` / `args` that carry
-   secrets; echoing the raw object would plant them in the chat
-   transcript. Confirm at this step only that parsing and validation
-   succeeded (e.g., "Loaded spec from `<path>`: single-container /
-   stack, <N> env keys, <N> services"); the full redacted view lands
-   in Step 5.
+5. Track that the spec came from a file (`SPEC_FROM_FILE = true`).
+   Step 5 uses this flag to decide how to echo `env` / `command` /
+   `args` — since file contents may include secrets the user did not
+   re-read before providing the path.
 
 ### Interactive mode
 
@@ -170,39 +166,29 @@ Construct the `DeployAppInput` object from these answers.
 
 ## Step 5 — Echo and confirm
 
-Display a **redacted** summary of the resolved `DeployAppInput` — do
-**not** pretty-print the full object. Env variables in particular
-commonly carry secrets (API keys, DB passwords, JWTs, tokens), and
-echoing raw JSON would plant those values in the chat transcript.
-Show:
+Show a summary of the resolved `DeployAppInput` plus the broadcast
+context:
 
-- `image` + `port` (single-container) or a service-name → image map
+- `image` + `port` (single-container) or service-name → image map
   (stack)
-- `size` and `storage` (if set)
-- `env`: **variable names only**, e.g. `env keys: LOG_LEVEL,
-  DATABASE_URL, API_TOKEN (values redacted)`. Never echo values. If
-  the user wants to verify a specific value they can inspect their
-  spec file or confirm it from memory.
-- `command` / `args` if set: show them, but flag to the user that CLI
-  args are another secret-carrying vector and give them a chance to
-  redo the spec if anything sensitive is in there.
-- `labels` if set: **label keys only**, values redacted by default.
-  Label values usually describe the workload (`role=prod`,
-  `version=v1.2`) but the spec does not constrain them, so values can
-  carry secrets. Show a specific label value only if the user
-  explicitly asks for that one.
-- `health_check`, `tmpfs`, `user`, `expose`, `depends_on` if set
-- Wallet `address`
-- Chain and gas denom
-- Wallet balance for the gas denom (from Step 2) — the upper bound on
-  potential loss on the broadcast
-- A reminder that `deploy_app` has no matching estimate call, so the
-  exact fee is determined at broadcast time
+- `size`, `storage` (if set)
+- `env`: if `SPEC_FROM_FILE`, show **keys only** with a "(N values
+  from file, not displayed)" note — the file's contents may include
+  secrets (API keys, tokens) the user did not re-read. If the user
+  typed the env values interactively in this conversation, show them
+  verbatim: they are already in the transcript.
+- `command`, `args`: same file-vs-interactive rule as `env`
+- `labels`, `health_check`, `tmpfs`, `user`, `expose`, `depends_on`
+  if set (full values — these describe the workload, not secrets)
+- Wallet `address`, chain, gas denom
+- Wallet balance for the gas denom (from Step 2) — upper bound on
+  broadcast-fee loss
+- Note that `deploy_app` has no matching estimate call, so the exact
+  fee is only known at broadcast time
 
-Ask the user to confirm before continuing. Do NOT proceed to Step 6
-until the user answers yes in the conversation. A Claude Code
-permission prompt will also fire when `deploy_app` runs — that is the
-safety net, not a substitute for this confirmation.
+Ask the user to confirm before continuing. A Claude Code permission
+prompt will also fire when `deploy_app` runs — it is the safety net,
+not a substitute for this textual confirmation.
 
 ## Step 6 — Deploy
 
