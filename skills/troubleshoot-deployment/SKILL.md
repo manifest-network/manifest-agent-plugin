@@ -41,8 +41,9 @@ Otherwise, get the lease UUID:
    ls "$HOME/.manifest-agent/manifests/"*.json 2>/dev/null
    ```
    For each file, the basename (without `.json`) is the lease UUID. Read each
-   file (they're plain JSON, no secrets) to show the user `image`, `size`, and
-   `deployed_at_iso`. Present via AskUserQuestion.
+   file and extract only `image`, `size`, and `deployed_at_iso` for the picker.
+   The file may contain sensitive env values inside `manifest_json` — do not
+   echo the full file contents into chat. Present via AskUserQuestion.
 3. If there are no saved manifests either, tell the user:
    > No active leases found. If you know the lease UUID, paste it now;
    > otherwise there's nothing to troubleshoot.

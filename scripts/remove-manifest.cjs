@@ -19,6 +19,10 @@ const { join } = require('node:path');
 const { homedir } = require('node:os');
 
 const MANIFESTS_DIR = join(homedir(), '.manifest-agent', 'manifests');
+// Strict UUID pattern. Rejecting anything else prevents a `lease_uuid`
+// containing `..` or path separators from unlinking arbitrary files outside
+// MANIFESTS_DIR (e.g. ~/.manifest-agent/config.json).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parseArgs(argv) {
   const args = {};
@@ -32,6 +36,11 @@ function parseArgs(argv) {
   const args = parseArgs(process.argv);
   if (!args.leaseUuid) {
     console.error('Missing required flag: --lease-uuid');
+    process.exit(1);
+  }
+
+  if (!UUID_RE.test(args.leaseUuid)) {
+    console.error(`--lease-uuid must be a UUID; got "${args.leaseUuid}"`);
     process.exit(1);
   }
 

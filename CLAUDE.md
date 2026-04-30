@@ -111,7 +111,7 @@ node scripts/start-server.cjs chain
 
 ## Saved manifests
 
-`/deploy-app` persists the validated manifest after a successful broadcast to `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). The wrapper schema (version 1) is `{ schema_version, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash, manifest_json }` — no secrets. Two helpers manage these files:
+`/deploy-app` persists the validated manifest after a successful broadcast to `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). The wrapper schema (version 1) is `{ schema_version, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash, manifest_json }`. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must not pretty-print `manifest_json` into chat unredacted. Two helpers manage these files:
 
 - `scripts/save-manifest.cjs` — writes the wrapper. Manifest JSON is read from a tmpfile (`--manifest-file`) to keep large JSON off the command line.
 - `scripts/remove-manifest.cjs` — unlinks the file. Called by `/deploy-app` and `troubleshoot-deployment` after a successful `close_lease`. No-op if the file is missing (close_lease may target a lease the agent never deployed).

@@ -12,7 +12,11 @@
  *     manifest_json
  *   }
  *
- * No secrets. Mode 0600. Parent dir 0700, mkdir recursive.
+ * `manifest_json` may contain sensitive values (env values typed during the
+ * authoring flow). Exposure is mitigated by file mode 0600, parent dir 0700,
+ * mkdir recursive — but the file contents must not be surfaced verbatim in
+ * chat. Skills should extract only `image` / `size` / `deployed_at_iso` for
+ * display.
  *
  * Usage:
  *   node save-manifest.cjs \
@@ -30,6 +34,11 @@ const { homedir } = require('node:os');
 
 const AGENT_DIR = join(homedir(), '.manifest-agent');
 const MANIFESTS_DIR = join(AGENT_DIR, 'manifests');
+// Strict UUID v1–v5 / unspecified-version pattern. Reject anything else so a
+// `lease_uuid` containing path separators or `..` cannot escape MANIFESTS_DIR
+// (which would let a malicious caller overwrite ~/.manifest-agent/config.json
+// or other agent state). Chain-issued UUIDs always match this pattern.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parseArgs(argv) {
   const args = {};
@@ -52,6 +61,11 @@ function parseArgs(argv) {
   const missing = required.filter((k) => !args[k]);
   if (missing.length > 0) {
     console.error(`Missing required flag(s): ${missing.map((k) => '--' + k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())).join(', ')}`);
+    process.exit(1);
+  }
+
+  if (!UUID_RE.test(args.leaseUuid)) {
+    console.error(`--lease-uuid must be a UUID; got "${args.leaseUuid}"`);
     process.exit(1);
   }
 
