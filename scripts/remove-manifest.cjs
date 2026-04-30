@@ -14,7 +14,7 @@
  *   node remove-manifest.cjs --lease-uuid <uuid>
  */
 
-const { existsSync, unlinkSync } = require('node:fs');
+const { unlinkSync } = require('node:fs');
 const { join } = require('node:path');
 const { homedir } = require('node:os');
 
@@ -45,13 +45,19 @@ function parseArgs(argv) {
   }
 
   const path = join(MANIFESTS_DIR, `${args.leaseUuid}.json`);
-  if (!existsSync(path)) {
-    console.log('noop');
-    return;
+  // unlinkSync directly rather than existsSync + unlinkSync — eliminates the
+  // TOCTOU window where the file could disappear between the two calls.
+  // ENOENT is the documented "file already gone" case and maps to no-op.
+  try {
+    unlinkSync(path);
+    console.log('removed');
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      console.log('noop');
+      return;
+    }
+    throw err;
   }
-
-  unlinkSync(path);
-  console.log('removed');
 })().catch((err) => {
   console.error(err.message);
   process.exit(1);

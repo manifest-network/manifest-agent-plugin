@@ -130,6 +130,7 @@ Write the manifest JSON to a temp file, then call `save-manifest.cjs`.
 
 ```bash
 TMPFILE=$(mktemp)
+trap 'rm -f "$TMPFILE"' EXIT
 cat > "$TMPFILE" <<'JSON'
 <paste the validated manifest_json here>
 JSON
@@ -140,8 +141,11 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest.cjs" \
   --meta-hash META_HASH \
   --chain-id CHAIN_ID \
   --manifest-file "$TMPFILE"
-rm -f "$TMPFILE"
 ```
+
+The `trap ... EXIT` ensures the tmpfile (which contains the manifest JSON,
+including any user-supplied env values) is removed even if `save-manifest.cjs`
+fails or the shell exits early.
 
 Replace `LEASE_UUID`, `IMAGE`, `SIZE`, `META_HASH`, and `CHAIN_ID` (from
 `activeChain`'s entry in the config) with their actual values.
