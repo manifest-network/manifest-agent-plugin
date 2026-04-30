@@ -44,6 +44,9 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **switch-chain** — Switch testnet/mainnet with mainnet confirmation before write
 - **set-gas-price** — Change gas fee token, price, and/or gas multiplier
 - **refresh-registry** — Re-fetch chain data from Cosmos chain registry
+- **author-manifest** — Build + validate a Fred manifest interactively via `build_manifest_preview`; emits a `MANIFEST_PREVIEW` handoff block
+- **troubleshoot-deployment** — Bundle `app_status` + `app_diagnostics` + `get_logs` into one report; offers `close_lease` cleanup with `remove-manifest.cjs`
+- **deploy-app** — Orchestrates the end-to-end flow: mainnet check → `author-manifest` → DeploymentPlan → confirm → `deploy_app` → `save-manifest.cjs` → `wait_for_app_ready` → URL via `app_status`. Failure path invokes `troubleshoot-deployment` inline. Single-service v1; multi-service `services` map and resume-partial-deploy are out of scope.
 
 ## config.json → MCP env var mapping
 
@@ -69,6 +72,8 @@ Two-layer enforcement:
 
 1. **Runtime policy injection (SessionStart)** — `hooks/hooks.json` → `scripts/session-start.sh` writes the policy text to stdout. Claude Code adds stdout from SessionStart hooks to the session's context, so the rules are present from the first turn. This is how the agent learns to call `cosmos_estimate_fee` first, show the fee, and wait for textual confirmation.
 2. **Permission prompt safety net (PreToolUse)** — `hooks/hooks.json` → `scripts/pre-tool-use.sh` emits `{hookSpecificOutput.permissionDecision: "ask"}` for broadcast tools, forcing Claude Code to prompt the user regardless of pre-existing permission settings. Deny beats allow in the hook precedence, and "ask" cannot be loosened by settings.json, so this fires even for pre-approved tools.
+
+The heredoc also defines the canonical `DeploymentPlan` block format that the agent must render before calling `deploy_app`. Edit the heredoc, not this file, to change the deployment plan format.
 
 **Tools gated by the PreToolUse hook** (add to the matcher in `hooks/hooks.json` when new write tools ship — each alternative is anchored `^...$` so a future tool whose name contains one of these as a substring is not accidentally gated):
 
@@ -103,6 +108,19 @@ NODE_PATH=$HOME/.manifest-agent/node_modules node scripts/gen-agent-key.cjs --pr
 # Test MCP wrapper (requires config.json + deps)
 node scripts/start-server.cjs chain
 ```
+
+## Saved manifests
+
+`/deploy-app` persists the validated manifest after a successful broadcast to `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). The wrapper schema (version 1) is `{ schema_version, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash, manifest_json }` — no secrets. Two helpers manage these files:
+
+- `scripts/save-manifest.cjs` — writes the wrapper. Manifest JSON is read from a tmpfile (`--manifest-file`) to keep large JSON off the command line.
+- `scripts/remove-manifest.cjs` — unlinks the file. Called by `/deploy-app` and `troubleshoot-deployment` after a successful `close_lease`. No-op if the file is missing (close_lease may target a lease the agent never deployed).
+
+Naturally-expired leases leave their saved manifest in place — the file is the historical record. There is no periodic sweep.
+
+## Fred manifest schema
+
+`build_manifest_preview` (in `manifest-mcp-fred`) bakes the Fred manifest JSON Schema into the package. If Fred revs the schema, this plugin must bump `manifest-mcp-node` to pick it up. The `refresh-registry` skill only refreshes Cosmos chain-registry data; it does not update the bundled Fred schema.
 
 ## Chain Data
 

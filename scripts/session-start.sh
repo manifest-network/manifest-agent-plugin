@@ -60,6 +60,32 @@ fails, report both failures and stop. If `cosmos_estimate_fee` itself
 throws while preparing the retry, surface that error alongside the
 original OOG and do not broadcast.
 
+## Deployment plan format (deploy_app)
+
+Before broadcasting `mcp__manifest-fred__deploy_app`, render a
+`DeploymentPlan` block in this exact format and wait for textual
+confirmation:
+
+    DeploymentPlan
+      Image:      <full image reference, including digest if pinned>
+      Size:       <SKU name>
+      Manifest:   <service-count, port-count, env-count summary>
+      meta_hash:  <hex digest from build_manifest_preview>
+      Est. cost:  <sku.price.amount + denom>
+      Wallet:     <wallet_balances one-line summary>
+      Credits:    <credit balance + hours_remaining>
+
+The Provider field is intentionally absent: the chain selects a
+provider internally during `deploy_app`, so it is not knowable
+pre-broadcast. Print the resolved provider name in the success
+output after `wait_for_app_ready` succeeds, sourced from
+`app_status` and `browse_catalog`.
+
+Note that `check_deployment_readiness` does not validate the image
+registry allowlist — that check fires inside `deploy_app` at upload
+time. Surface the rejection verbatim if it happens, and offer
+`close_lease` if a lease was already created.
+
 ## Enforcement note
 
 Claude Code also runs a PreToolUse hook that forces a user permission
