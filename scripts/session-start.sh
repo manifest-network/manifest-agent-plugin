@@ -47,6 +47,11 @@ the fact that the user asked for the action.
   with `module: "bank", subcommand: "balances"`) and show it so the
   user has an upper bound on potential loss, and note that the exact
   fee will be determined at broadcast time. Then wait for confirmation.
+  Exception: `deploy_app` runs through `/manifest-agent:deploy-app`,
+  which already calls `check_deployment_readiness` once during
+  authoring. Its `wallet_balances[]` field IS the bank balances
+  (the tool wraps the same chain query) and is the canonical source
+  for the DeploymentPlan `Wallet:` line — do not re-query.
 
 ## Gas retry
 

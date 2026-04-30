@@ -97,12 +97,13 @@ Produce a unified Markdown report with these sections:
 
 ### Saved manifest (only if present)
 
-If `$HOME/.manifest-agent/manifests/<LEASE_UUID>.json` exists:
-```bash
-cat "$HOME/.manifest-agent/manifests/LEASE_UUID.json"
-```
-Surface `image`, `size`, `deployed_at_iso`, `chain_id` from the wrapper. Pretty-print
-the inner `manifest_json` if useful.
+If `$HOME/.manifest-agent/manifests/<LEASE_UUID>.json` exists, read it but
+surface only the non-sensitive wrapper fields: `image`, `size`,
+`deployed_at_iso`, `chain_id`, `meta_hash`. **Do not** pretty-print the inner
+`manifest_json` into chat — it can contain user-supplied env values that may
+be sensitive (DB URLs, API tokens, etc.). If the user wants a structural view
+of the manifest, summarize without values: service count, exposed-port count,
+and the *keys* (never values) of any env entries.
 
 If the file does not exist, omit this section. (The lease may not have been
 deployed by this plugin, or the saved manifest may have been cleaned up.)

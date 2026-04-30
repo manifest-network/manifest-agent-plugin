@@ -100,7 +100,10 @@ function parseArgs(argv) {
   };
 
   const outPath = join(MANIFESTS_DIR, `${args.leaseUuid}.json`);
-  writeFileSync(outPath, JSON.stringify(wrapper, null, 2) + '\n');
+  // Pass mode at write time to avoid a TOCTOU window where the file briefly
+  // has default perms (typically 0644 under umask 022) before the chmod
+  // tightens it. `manifest_json` may contain sensitive env values.
+  writeFileSync(outPath, JSON.stringify(wrapper, null, 2) + '\n', { mode: 0o600 });
   chmodSync(outPath, 0o600);
 
   console.log(outPath);
