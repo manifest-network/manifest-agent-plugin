@@ -153,39 +153,59 @@ Replace `LEASE_UUID`, `IMAGE`, `SIZE`, `META_HASH`, and `CHAIN_ID` (from
 The script prints the saved file path on stdout; show it to the user briefly
 ("Saved manifest to ...").
 
-## Step 7 — Wait for ready
+## Step 7 — Determine outcome
 
-Call `mcp__manifest-fred__wait_for_app_ready({ lease_uuid: LEASE_UUID, timeout_seconds: 300 })`.
+`deploy_app` in `manifest-mcp-fred@0.7.0` already polls internally until the
+lease reaches `LEASE_STATE_ACTIVE` (or throws on terminal failure / timeout).
+Inspect its response payload from Step 5:
 
-This is above the default 120s and well under the 600s max. Testnet providers
-can be slow on cold starts. Stream progress notifications.
+- `lease_uuid`, `provider_uuid` — always present on a successful broadcast.
+- `state` — typically the integer `2` (= `LEASE_STATE_ACTIVE`) on success;
+  may also be returned as the string `"LEASE_STATE_ACTIVE"` depending on
+  encoding. Treat either form as success.
+- `connection.instances[]` — populated when the provider has the container
+  up, with `fqdn`, `status` (e.g. `"running"`), and `ports` (a map of
+  `"<containerPort>/<proto>"` to `{ host_ip, host_port }`).
 
-`wait_for_app_ready` **throws** on timeout or when the lease enters a
-terminal failure state. Treat any thrown error as triggering Step 8b.
+Branch:
 
-On success, the response has `state == "LEASE_STATE_ACTIVE"`,
-`provider_uuid`, `provider_url`, and a loose `status` payload.
+- **Happy path (typical):** if the response has an active state AND at least
+  one `connection.instances[*]` with `status: "running"`, skip ahead to
+  Step 8 Success and use this response directly. Do not call
+  `wait_for_app_ready` or `app_status` — the data you need is already in
+  hand, and the extra calls just add latency.
+- **Fallback (rare):** if the response is missing `connection` or shows a
+  non-active state, call
+  `mcp__manifest-fred__wait_for_app_ready({ lease_uuid: LEASE_UUID, timeout_seconds: 300 })`
+  to keep waiting. It throws on timeout or terminal failure — treat any
+  thrown error as triggering Step 8b. On a successful return, call
+  `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })` to fetch the
+  typed `connection` payload, then proceed to Step 8 Success.
 
 ## Step 8 — Outcome
 
 ### 8a — Success
 
-Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })` to get the
-typed connection details. Pull the externally-reachable URL from the
-`connection` object (the exact field path may be `connection.url`,
-`connection.endpoints[0].url`, or similar — inspect the response and pick the
-URL the user would actually open).
+Build the externally-reachable URL from the `connection` payload (whether
+sourced from `deploy_app` directly or from the fallback `app_status` call):
 
-Resolve the provider's human-readable name from `mcp__manifest-fred__browse_catalog`
-by matching `provider_uuid` from the `wait_for_app_ready` response.
+For each `connection.instances[i]` with `status: "running"`, format
+`http://<instance.fqdn>:<host_port>/`, where `<host_port>` is read from the
+single entry under `instance.ports` (e.g. `instance.ports["8080/tcp"].host_port`).
+For a single-service deploy there is exactly one instance and one port; show
+that URL. For multi-port instances, show one URL per port.
+
+Resolve the provider's human-readable name from
+`mcp__manifest-fred__browse_catalog` by matching `provider_uuid` from the
+response. If no match, fall back to printing the UUID.
 
 Print:
 
 ```
 Deployed.
-  URL:        <url from app_status.connection>
+  URL:        <url>
   Lease UUID: <LEASE_UUID>
-  Provider:   <provider name>
+  Provider:   <provider name or uuid>
 For logs / status:  /manifest-agent:troubleshoot-deployment
 ```
 
