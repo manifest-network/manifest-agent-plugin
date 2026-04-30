@@ -157,7 +157,7 @@ This is above the default 120s and well under the 600s max. Testnet providers
 can be slow on cold starts. Stream progress notifications.
 
 `wait_for_app_ready` **throws** on timeout or when the lease enters a
-terminal failure state. Treat any thrown error as triggering Step 8a.
+terminal failure state. Treat any thrown error as triggering Step 8b.
 
 On success, the response has `state == "LEASE_STATE_ACTIVE"`,
 `provider_uuid`, `provider_url`, and a loose `status` payload.
