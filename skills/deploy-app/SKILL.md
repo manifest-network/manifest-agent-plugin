@@ -133,6 +133,12 @@ On "customize names" let the user rename each service. On "abort" stop.
 collision and ask the user to disambiguate (suggest `redis-7` / `redis-8`
 or let them type names). Do not silently auto-suffix.
 
+**SKU size**: after the parse is confirmed, ask for the SKU size once
+for the whole stack via `AskUserQuestion`, populated from
+`mcp__manifest-fred__browse_catalog`. Store as `SIZE`. (The SKU applies
+to the whole lease, not per-service; per-service compute sizing isn't
+exposed at the deploy_app surface.)
+
 **Per-service authoring** — for each service in order:
 1. Set `IMAGE = <token>` and call:
    ```bash
@@ -282,8 +288,11 @@ mcp__manifest-fred__build_manifest_preview(<SPEC fields splatted>)
 ```
 
 If `validation.valid === false`, surface every entry in `validation.errors[]`
-verbatim and stop. (For Branch B, the user can re-run `/deploy-app` with
-their fixes; for Branch A, the user should edit the spec file and re-run.)
+verbatim and stop. Recovery instructions to give the user depend on how
+they got here: if they passed a spec file path, they should edit the file
+and re-run `/manifest-agent:deploy-app <path>`; if they used the image
+fast-paths or interactive authoring, they can re-run `/manifest-agent:deploy-app`
+with their corrected inputs.
 
 Capture from the response:
 - `META_HASH` ← `meta_hash_hex`
@@ -297,9 +306,12 @@ service, that's `SPEC.image`. For multi-service stacks, pick the first
 service's image as the representative. (The provider validates all of them
 at deploy-time.)
 
-For `SIZE`: in Branch A the spec doesn't carry SKU. Use `AskUserQuestion`
-populated from `browse_catalog` to ask the user. In Branch B you already
-collected `SIZE` in Step 2.
+For `SIZE`: spec files don't carry the SKU choice — when the user
+provided a spec file path, use `AskUserQuestion` populated from
+`browse_catalog` to ask. When the user came in via any of the
+interactive flows (image fast-path, multi-image stack fast-path, or
+no-arg interactive authoring), `SIZE` was already collected in Step 2;
+reuse it.
 
 ## Confirm intent (between spec validation and readiness)
 
@@ -324,8 +336,11 @@ Cover, in order:
    user-supplied env keys, labels, command overrides, etc. from defaults
    you pulled from the image (cmd / entrypoint / user / workingDir /
    tmpfs hints). The user should know what the agent inferred.
-4. **Sensitive values redacted** — when listing env vars, show *keys
-   only*, never values. Same for label values that look secret.
+4. **Sensitive values always redacted** — env vars: show **keys only**,
+   never values. Labels: show **keys only**, never values. The Fred
+   manifest schema doesn't constrain label values beyond `type: string`,
+   so they can in principle carry secrets — redact unconditionally, do
+   not try to guess which ones "look sensitive."
 5. **Heads-up: obvious gaps** — apply your knowledge of common app
    patterns to flag things the user probably forgot. For example: a
    wordpress service without `WORDPRESS_DB_HOST` / `WORDPRESS_DB_PASSWORD`
@@ -338,9 +353,9 @@ Then ask via `AskUserQuestion`:
 
 > Does this match what you want?
 >   - **Yes, proceed** → continue to readiness check + DeploymentPlan
->   - **Amend** → return to spec authoring (Step 2 Branch B-style inline
->     authoring, applied to the chosen mode — file edit for path mode,
->     re-collect for image fast-path or interactive)
+>   - **Amend** → return to spec authoring; the recovery path depends on
+>     how the spec got here (edit the spec file when one was passed,
+>     otherwise re-collect interactively)
 >   - **Abort** → stop without broadcasting
 
 On Amend: re-enter spec authoring. On Abort: stop. Only on Yes do you
