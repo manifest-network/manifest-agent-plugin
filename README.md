@@ -45,9 +45,18 @@ After setup, restart Claude Code (or run `/mcp` and reconnect) to start the MCP 
 
 ### Deploying an app
 
-Once initialized and funded, you can deploy a containerized app two ways.
+Once initialized and funded, you can deploy a containerized app three ways.
 
-**Interactive (one-shot):**
+**Image fast-path (single-service shortcut):**
+
+```
+/manifest-agent:deploy-app docker.io/library/nginx:1.27
+/manifest-agent:deploy-app ghcr.io/me/app@sha256:abc123…
+```
+
+If you pass an image reference (anything matching `<name>:<tag>` or `<name>@sha256:<digest>`), the plugin treats it as a single-service deploy and asks you only for what's still needed: SKU, port, and any optional env / labels / health check / etc. Skips the "what shape?" and "what image?" questions entirely.
+
+**Interactive (full authoring, supports multi-service):**
 
 ```
 /manifest-agent:deploy-app
@@ -64,7 +73,7 @@ Walks you through choosing single-service vs multi-service stack, picking a SKU,
 
 The spec file is plain JSON — hand-edit it, version-control it, generate it from a script, share it across deploys. Default save location is `~/.manifest-agent/manifests-drafts/`, but you can save anywhere.
 
-Both paths assume you already have a public container image (e.g. `ghcr.io/me/app@sha256:…`) on a registry the Fred provider permits. Image build and image push are intentionally out of scope — bring your own published image.
+All three paths assume you already have a public container image (e.g. `ghcr.io/me/app@sha256:…`) on a registry the Fred provider permits. Image build and image push are intentionally out of scope — bring your own published image.
 
 A confirmation step shows the deployment plan (image, SKU, cost, wallet/credit balances) before any broadcast. Failed deploys auto-invoke a troubleshoot sequence and offer to reclaim the lease.
 
@@ -77,7 +86,7 @@ A confirmation step shows the deployment plan (image, SKU, cost, wallet/credit b
 | `/manifest-agent:switch-chain` | Switch between testnet and mainnet |
 | `/manifest-agent:set-gas-price` | Change the gas fee token, price, and/or gas multiplier |
 | `/manifest-agent:refresh-registry` | Re-fetch chain data from the Cosmos chain registry |
-| `/manifest-agent:deploy-app` | Deploy a containerized app end-to-end (assumes the image is already built and pushed). Pre-flight, manifest authoring, deployment plan, broadcast, ready polling, URL output |
+| `/manifest-agent:deploy-app [path-or-image]` | Deploy a containerized app end-to-end. Optional argument: a JSON spec file path, OR an image reference (e.g. `nginx:1.27`) for a single-service fast-path. Omit for full interactive authoring (single or multi-service). Pre-flight → plan → confirm → broadcast → URL |
 | `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `~/.manifest-agent/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app` |
 | `/manifest-agent:troubleshoot-deployment` | Bundle status, diagnostics, and recent logs for a deployed lease into a unified report |
 

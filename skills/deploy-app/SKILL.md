@@ -1,12 +1,15 @@
 ---
 name: deploy-app
 description: >
-  Deploy a containerized app on Manifest end-to-end. Optional argument: path
-  to a JSON deployment spec (omit for interactive authoring of a
-  single-service or multi-service stack). Runs a pre-flight readiness check,
-  shows the deployment plan, waits for textual confirmation, broadcasts,
-  persists the post-deploy record, and prints the live URL. On failure, runs
-  the troubleshoot flow inline and offers to reclaim the lease.
+  Deploy a containerized app on Manifest end-to-end. Optional argument:
+  either a path to a JSON deployment spec (e.g. /path/to/spec.json), OR an
+  image reference (e.g. nginx:1.27 or ghcr.io/me/app@sha256:...) for a
+  single-service fast-path. Omit the argument for interactive authoring of
+  a single-service or multi-service stack. Runs a pre-flight readiness
+  check, shows the deployment plan, waits for textual confirmation,
+  broadcasts, persists the post-deploy record, and prints the live URL.
+  On failure, runs the troubleshoot flow inline and offers to reclaim the
+  lease.
 allowed-tools: Bash(*), Read, Write
 ---
 
@@ -48,6 +51,20 @@ Options: **Yes** (proceed) / **No** (stop). If No, stop immediately.
 
 ## Step 2 — Get the manifest spec
 
+Three branches based on `$ARGUMENTS`. Choose deterministically using the
+checks below — do not guess if the input is ambiguous; ask the user.
+
+**Branch detection:**
+
+- If `$ARGUMENTS` is empty → **Branch B** (full interactive).
+- Else if `test -f "$ARGUMENTS"` succeeds → **Branch A** (spec file).
+- Else if `$ARGUMENTS` matches an image reference shape — contains a `:`
+  (tag form like `nginx:1.27`) or `@sha256:` (digest form), and isn't a
+  plausible mistyped path — → **Branch A2** (image fast-path).
+- Else → tell the user the argument was neither a readable file nor an
+  image reference, show what they passed, and stop. (E.g. they typed a
+  relative path that doesn't exist; better to fail loudly than guess.)
+
 ### Branch A — `$ARGUMENTS` is a non-empty path
 
 Treat `$ARGUMENTS` as a path to a JSON spec file. Validate it exists, is
@@ -65,6 +82,25 @@ Then load the spec into your context using the `Read` tool — NOT `cat`.
 `cat` would echo the entire spec to chat as a bash result; `Read` returns
 the file content as a structured tool result instead. The parsed spec
 object is your `SPEC`.
+
+### Branch A2 — `$ARGUMENTS` is an image reference (single-service fast-path)
+
+Treat `$ARGUMENTS` as the image. Set `IMAGE = $ARGUMENTS`. Skip the image
+question; collect only what's still needed:
+
+1. Use `AskUserQuestion` for SKU size, populated from
+   `mcp__manifest-fred__browse_catalog`.
+2. Ask for `port` (required, 1–65535).
+3. Optional fields, asked one at a time defaulting to "skip": `env`,
+   `labels`, `command`, `args`, `health_check`, `storage`, `tmpfs`, `init`.
+4. Build the `SPEC` object as `{ image: IMAGE, port: <port>, ... }`.
+
+This branch is single-service only. If the user supplied an image but
+actually wants a multi-service stack, tell them: "image-arg fast-path is
+single-service only; re-run as `/manifest-agent:deploy-app` (no argument)
+for interactive multi-service authoring, or as
+`/manifest-agent:deploy-app /path/to/spec.json` if you have a stack spec
+file." Then stop.
 
 ### Branch B — no argument
 
@@ -84,10 +120,10 @@ user wants a reusable saved spec; here we just author + deploy in one shot.
 4. Build the `SPEC` object with the same shape `build_manifest_preview` and
    `deploy_app` accept.
 
-Do NOT call `save-manifest-draft.cjs` in this branch — the spec lives only
-in memory; the post-deploy wrapper at
+Do NOT call `save-manifest-draft.cjs` in branches A2 or B — the spec lives
+only in memory; the post-deploy wrapper at
 `~/.manifest-agent/manifests/<lease_uuid>.json` (Step 10) is the durable
-record.
+record. (Branch A's spec already exists on disk by definition.)
 
 ## Step 3 — Validate the spec
 
