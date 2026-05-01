@@ -1,12 +1,12 @@
 ---
 name: deploy-app
 description: >
-  Deploy a containerized app on Manifest end-to-end. With no argument, walks
-  the user through interactive authoring (single-service or multi-service
-  stack). With a path argument, loads that JSON spec and deploys it.
-  Pre-flight check, deployment plan + textual confirmation, broadcast,
-  persistence, success output. Failure path runs troubleshoot inline and
-  offers cleanup.
+  Deploy a containerized app on Manifest end-to-end. Optional argument: path
+  to a JSON deployment spec (omit for interactive authoring of a
+  single-service or multi-service stack). Runs a pre-flight readiness check,
+  shows the deployment plan, waits for textual confirmation, broadcasts,
+  persists the post-deploy record, and prints the live URL. On failure, runs
+  the troubleshoot flow inline and offers to reclaim the lease.
 allowed-tools: Bash(*), Read, Write
 ---
 

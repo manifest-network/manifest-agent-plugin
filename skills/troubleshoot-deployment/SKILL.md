@@ -1,10 +1,11 @@
 ---
 name: troubleshoot-deployment
 description: >
-  Bundle app status, diagnostics, and recent logs into a unified report for a
-  deployed lease. Use to debug failing or stuck apps, or to confirm a
-  deployment is healthy. Optionally offers close_lease to reclaim a lease
-  that's beyond recovery.
+  Diagnose a deployed Manifest lease. Optional argument: a lease UUID (omit
+  to pick from active leases or saved post-deploy records). Bundles app
+  status, provider diagnostics, and recent container logs into a single
+  Markdown report; suggests next steps based on the diagnostic signals; and
+  optionally offers close_lease to reclaim a lease that's beyond recovery.
 allowed-tools: Bash(*), Read
 ---
 
