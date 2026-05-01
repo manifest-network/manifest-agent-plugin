@@ -78,7 +78,7 @@ A confirmation step shows the deployment plan (image, SKU, cost, wallet/credit b
 | `/manifest-agent:set-gas-price` | Change the gas fee token, price, and/or gas multiplier |
 | `/manifest-agent:refresh-registry` | Re-fetch chain data from the Cosmos chain registry |
 | `/manifest-agent:deploy-app` | Deploy a containerized app end-to-end (assumes the image is already built and pushed). Pre-flight, manifest authoring, deployment plan, broadcast, ready polling, URL output |
-| `/manifest-agent:author-manifest` | Build and validate a Fred container manifest interactively. Outputs a `MANIFEST_PREVIEW` block ready for `/manifest-agent:deploy-app` or direct `mcp__manifest-fred__deploy_app` |
+| `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `~/.manifest-agent/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app` |
 | `/manifest-agent:troubleshoot-deployment` | Bundle status, diagnostics, and recent logs for a deployed lease into a unified report |
 
 ## MCP Servers

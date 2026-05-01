@@ -10,7 +10,12 @@
  *     lease_uuid, deployed_at_iso, deployed_at_unix,
  *     chain_id, image, size, meta_hash_hex,
  *     format,         // "single" or "stack" (derived from manifest_json content)
- *     manifest_json   // string — preserves the exact byte sequence whose SHA-256 is meta_hash_hex
+ *     manifest_json   // string — the canonical Fred-rendered manifest_json
+ *                     // returned by build_manifest_preview, with any
+ *                     // trailing whitespace stripped (normalizes the
+ *                     // newline a heredoc-fed --manifest-file always
+ *                     // contains). For valid input this preserves the
+ *                     // exact bytes whose SHA-256 is meta_hash_hex.
  *   }
  *
  * `manifest_json` may contain sensitive values (env values typed during the
@@ -18,8 +23,10 @@
  * Skills must NOT surface the file contents verbatim — use
  * `summarize-manifest.cjs` or `list-saved-manifests.cjs` for safe display.
  *
- * The string form is intentional: reproducible audit (sha256 of manifest_json
- * must equal meta_hash_hex), and round-trip identity to what was uploaded.
+ * The string form is intentional: reproducible audit (sha256 of the stored
+ * manifest_json must equal meta_hash_hex for valid input — heredoc-added
+ * trailing newlines are normalized away), and round-trip identity to what
+ * was uploaded.
  *
  * Usage:
  *   node save-manifest.cjs \

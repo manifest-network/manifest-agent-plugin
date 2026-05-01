@@ -50,18 +50,21 @@ Options: **Yes** (proceed) / **No** (stop). If No, stop immediately.
 
 ### Branch A — `$ARGUMENTS` is a non-empty path
 
-Treat `$ARGUMENTS` as a path to a JSON spec file. Verify:
+Treat `$ARGUMENTS` as a path to a JSON spec file. Validate it exists, is
+readable, and parses as JSON **without echoing its contents to chat** — spec
+files can contain user-supplied env values that may be sensitive:
 
 ```bash
-test -f "$ARGUMENTS" && cat "$ARGUMENTS"
+node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log("ok")' "$ARGUMENTS"
 ```
 
-If the file is missing or unreadable, tell the user and stop.
+If the command does not print `ok` (file missing, unreadable, or invalid
+JSON), surface the error verbatim to the user and stop.
 
-Parse the file as JSON. If parsing fails, tell the user "spec file is not
-valid JSON" with the parse error and stop.
-
-This is your `SPEC` object.
+Then load the spec into your context using the `Read` tool — NOT `cat`.
+`cat` would echo the entire spec to chat as a bash result; `Read` returns
+the file content as a structured tool result instead. The parsed spec
+object is your `SPEC`.
 
 ### Branch B — no argument
 
@@ -101,6 +104,8 @@ their fixes; for Branch A, the user should edit the spec file and re-run.)
 
 Capture from the response:
 - `META_HASH` ← `meta_hash_hex`
+- `MANIFEST_JSON` ← `manifest_json` (the canonical Fred-rendered string;
+  Step 10 needs it for the durable post-deploy record)
 - The `format` (`single` or `stack`) — surfaces in the DeploymentPlan
   summary.
 
@@ -217,24 +222,33 @@ Branch on `outcome`:
 
 **Persist**:
 
+Write the canonical `MANIFEST_JSON` (captured in Step 3) to a temporary
+file using the `Write` tool — NOT a bash heredoc. The heredoc form would
+require re-rendering `MANIFEST_JSON` (which can contain sensitive env
+values) into chat as a literal bash code block; the `Write` tool writes
+the file as a structured tool call instead. The value was already
+visible in chat from `build_manifest_preview`'s response, so we don't add
+a third on-screen rendering of the secret-bearing payload.
+
+1. Pick the temp path: `/tmp/.manifest-${LEASE_UUID}.json` (the lease UUID
+   is unique per broadcast — no collision with concurrent sessions).
+2. Use `Write` with `file_path` set to that path and `content` set to
+   `MANIFEST_JSON`.
+3. Run the persistence + cleanup:
+
 ```bash
-TMPFILE=$(mktemp)
-trap 'rm -f "$TMPFILE"' EXIT
-cat > "$TMPFILE" <<'JSON'
-<paste the manifest_json string from build_manifest_preview here, NOT the spec>
-JSON
 node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest.cjs" \
   --lease-uuid "$LEASE_UUID" \
   --image "$IMAGE" \
   --size "$SIZE" \
   --meta-hash "$META_HASH" \
   --chain-id "$CHAIN_ID" \
-  --manifest-file "$TMPFILE"
+  --manifest-file "/tmp/.manifest-${LEASE_UUID}.json"
+rm -f "/tmp/.manifest-${LEASE_UUID}.json"
 ```
 
 (`CHAIN_ID` comes from `chains.<activeChain>.chainId` in the config status
-from Step 0. The trap ensures the tmpfile is removed even if save-manifest
-fails.)
+from Step 0.)
 
 The script prints the saved file path on stdout. Show it briefly:
 "Saved manifest record: `<path>`".
