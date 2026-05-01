@@ -123,10 +123,12 @@ the spec was authored against. Call:
 mcp__manifest-fred__check_deployment_readiness({ size: SIZE, image: IMAGE })
 ```
 
-Pipe to the evaluator:
+Pipe to the evaluator. Pass `--gas-price` from the config you read in Step 0
+(the `gasPrice` field, e.g. `"1umfx"` or `"0.37upwr"`) so the script knows
+which wallet denom to check for gas:
 
 ```bash
-echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness.cjs"
+echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness.cjs" --gas-price '<gasPrice from config>'
 ```
 
 Branch on `status` exactly as `author-manifest` Step 5 does:

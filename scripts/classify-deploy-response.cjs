@@ -27,7 +27,8 @@
  *           a host port. The orchestrator can skip wait_for_app_ready.
  * "needs_wait": lease created but not yet active OR connection details missing.
  *               Orchestrator should call wait_for_app_ready as a fallback.
- * "failed": no lease_uuid present, OR state is a terminal closed/expired state.
+ * "failed": no lease_uuid present, OR state is a terminal failure state
+ *           (LEASE_STATE_CLOSED or LEASE_STATE_INSUFFICIENT_FUNDS).
  *           Orchestrator routes to the troubleshoot/cleanup branch.
  */
 

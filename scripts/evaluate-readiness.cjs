@@ -5,6 +5,18 @@
  * Evaluate the response from `mcp__manifest-fred__check_deployment_readiness`
  * and emit a structured verdict on stdout.
  *
+ * Args:
+ *   --gas-price <price>   The agent's configured gasPrice string from
+ *                         ~/.manifest-agent/config.json, e.g. "1umfx" or
+ *                         "0.37upwr". The denom is parsed out and used for
+ *                         the wallet gas-balance check. REQUIRED — without
+ *                         it the script cannot tell which wallet entry to
+ *                         match for gas (the plugin supports both umfx and
+ *                         upwr as fee tokens).
+ *   --gas-warn-floor <n>  Optional. Override the warn threshold for low
+ *                         gas balance, in the smallest unit of the gas
+ *                         denom. Defaults vary per denom (see DEFAULTS).
+ *
  * Input (stdin, JSON object):
  *   {
  *     tenant: string,
@@ -45,16 +57,62 @@ const { readFileSync } = require('node:fs');
 
 // Tunables — edit here, not in SKILL.md.
 const HOURS_REMAINING_WARN_FLOOR = 24;
-// Gas balance "below what's needed" — a coarse floor in the chain's smallest unit.
-// 1 MFX = 1,000,000 umfx. We warn under 0.05 MFX to leave headroom for a typical tx.
-const GAS_DENOM = 'umfx';
-const GAS_BALANCE_WARN_FLOOR = 50_000n; // 0.05 MFX
+// Per-denom warn floors for low gas balance (in the smallest unit). Numbers
+// reflect the chain registry's `fixedMinGasPrice` for each token (umfx=1,
+// upwr=0.37 at the time of writing) scaled up to a "few transactions worth".
+// Add new denoms here as the plugin grows beyond umfx/upwr.
+const GAS_BALANCE_WARN_FLOOR_DEFAULTS = {
+  umfx: 50_000n, // 0.05 MFX (1 MFX = 1,000,000 umfx)
+  upwr: 50_000n, // ~0.05 PWR; comparable headroom
+};
+const GAS_BALANCE_WARN_FLOOR_FALLBACK = 50_000n;
+
+function parseArgs(argv) {
+  const args = {};
+  for (let i = 2; i < argv.length; i++) {
+    const flag = argv[i];
+    const next = argv[i + 1];
+    if (flag === '--gas-price' && next) { args.gasPrice = next; i++; }
+    else if (flag === '--gas-warn-floor' && next) { args.gasWarnFloor = next; i++; }
+  }
+  return args;
+}
+
+function denomFromGasPrice(gasPrice) {
+  // Cosmos convention: leading numeric (digits + optional decimal point),
+  // then the denom (lowercase alphanumeric, possibly with `/` for IBC).
+  const m = /^[0-9.]+(.+)$/.exec(gasPrice);
+  return m ? m[1] : null;
+}
 
 function asBigInt(s) {
   try { return BigInt(s); } catch { return 0n; }
 }
 
 (async () => {
+  const args = parseArgs(process.argv);
+  if (!args.gasPrice) {
+    console.error('Missing required flag: --gas-price (e.g. "1umfx" or "0.37upwr")');
+    process.exit(1);
+  }
+  const gasDenom = denomFromGasPrice(args.gasPrice);
+  if (!gasDenom) {
+    console.error(`--gas-price must match <numeric><denom>, got "${args.gasPrice}"`);
+    process.exit(1);
+  }
+
+  let gasWarnFloor;
+  if (args.gasWarnFloor !== undefined) {
+    try {
+      gasWarnFloor = BigInt(args.gasWarnFloor);
+    } catch {
+      console.error(`--gas-warn-floor must be a non-negative integer, got "${args.gasWarnFloor}"`);
+      process.exit(1);
+    }
+  } else {
+    gasWarnFloor = GAS_BALANCE_WARN_FLOOR_DEFAULTS[gasDenom] ?? GAS_BALANCE_WARN_FLOOR_FALLBACK;
+  }
+
   const raw = readFileSync(0, 'utf8');
   let r;
   try {
@@ -79,18 +137,20 @@ function asBigInt(s) {
     actions.add('pick_different_sku');
   }
 
-  // Wallet gas balance — hard block if absent, warn if low.
+  // Wallet gas balance — hard block if absent, warn if low. The denom we look
+  // for matches whatever the agent is configured to pay gas in; both umfx and
+  // upwr are valid per CLAUDE.md.
   const balances = Array.isArray(r.wallet_balances) ? r.wallet_balances : [];
-  const gasEntry = balances.find((b) => b && b.denom === GAS_DENOM);
+  const gasEntry = balances.find((b) => b && b.denom === gasDenom);
   const gasAmount = gasEntry ? asBigInt(gasEntry.amount) : 0n;
   if (balances.length === 0 || gasAmount === 0n) {
     if (status !== 'block') status = 'block';
-    reasons.push(`Wallet has no ${GAS_DENOM} balance for gas.`);
+    reasons.push(`Wallet has no ${gasDenom} balance for gas.`);
     actions.add('request_faucet'); // skill chooses faucet vs topup based on chain
     actions.add('topup_wallet');
-  } else if (gasAmount < GAS_BALANCE_WARN_FLOOR) {
+  } else if (gasAmount < gasWarnFloor) {
     if (status === 'ok') status = 'warn';
-    reasons.push(`Wallet ${GAS_DENOM} balance (${gasAmount.toString()}) is below ${GAS_BALANCE_WARN_FLOOR.toString()}; broadcast may run out of gas.`);
+    reasons.push(`Wallet ${gasDenom} balance (${gasAmount.toString()}) is below ${gasWarnFloor.toString()}; broadcast may run out of gas.`);
     actions.add('topup_wallet');
   }
 

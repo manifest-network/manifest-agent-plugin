@@ -15,8 +15,12 @@
  *   { services: { <name>: { image, ports, env?, ... } } }   (multi-service)
  *
  * Args:
- *   --path <abs-path>   (optional) full file path to write to. Parent dir
- *                       must already exist OR be inside ~/.manifest-agent/.
+ *   --path <abs-path>   (optional) full file path to write to. Must be
+ *                       absolute. Parent dir must already exist UNLESS the
+ *                       path is inside ~/.manifest-agent/manifests-drafts/
+ *                       (which is auto-created); arbitrary paths inside
+ *                       ~/.manifest-agent/ but outside manifests-drafts/ are
+ *                       NOT auto-created.
  *                       If omitted, defaults to
  *                       ~/.manifest-agent/manifests-drafts/<auto-name>.json
  *                       where <auto-name> derives from the first image and a

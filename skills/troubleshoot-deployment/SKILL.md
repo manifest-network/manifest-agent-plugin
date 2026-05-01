@@ -45,8 +45,9 @@ Branches in priority order:
    node "$MANIFEST_PLUGIN_ROOT/scripts/list-saved-manifests.cjs"
    ```
 
-   The script prints a JSON array of `{ lease_uuid, image, size, deployed_at_iso, chain_id }`
-   — never `manifest_json`. Present via `AskUserQuestion`.
+   The script prints a JSON array of `{ lease_uuid, image, size, deployed_at_iso, chain_id, format?, meta_hash_hex? }`
+   (the last two only on schema-v2 wrappers) — never `manifest_json`. Present
+   via `AskUserQuestion`.
 5. **Last resort**: tell the user no leases found; ask them to paste a UUID.
    If they don't have one, stop.
 
@@ -110,9 +111,10 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-manifest.cjs" --lease-uuid "$LEASE
 ```
 
 The script prints a redacted summary (image, size, deployed_at_iso, chain_id,
-meta_hash, plus structural counts and env *keys* — never values). If the
-file does not exist, the script prints `(no saved manifest for <uuid>)` and
-this section can be omitted.
+`meta_hash_hex` for schema-v2 wrappers or `meta_hash` for legacy v1, plus
+structural counts and env *keys* — never values). If the file does not exist,
+the script prints `(no saved manifest for <uuid>)` and this section can be
+omitted.
 
 **Do not** read or `cat` the saved-manifest file directly — its
 `manifest_json` field can contain user-supplied env values that may be

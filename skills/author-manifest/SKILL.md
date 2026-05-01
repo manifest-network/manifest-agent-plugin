@@ -83,10 +83,12 @@ If `SHAPE == stack`: defer image collection to Step 6b.
 Call `mcp__manifest-fred__check_deployment_readiness({ size: SIZE, image: IMAGE })`
 (`image` may be omitted for stacks — it's display-only on the readiness side).
 
-Pipe the response to the evaluator:
+Pipe the response to the evaluator. Pass `--gas-price` from the config you
+read in Step 1 (it's the `gasPrice` field, e.g. `"1umfx"` or `"0.37upwr"`)
+so the script knows which wallet denom to check for gas:
 
 ```bash
-echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness.cjs"
+echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness.cjs" --gas-price '<gasPrice from config>'
 ```
 
 The script prints `{ status, reasons, suggested_actions }`. Branch on `status`:
@@ -204,8 +206,11 @@ Use `AskUserQuestion` to ask where to save the spec:
   helper picks a name from the first image + timestamp).
 - **Custom path** — let the user paste an absolute path.
 
-Write the spec via the helper. The helper handles atomic write + `0600` mode +
-parent dir creation, and refuses to overwrite an existing file.
+Write the spec via the helper. The helper handles atomic write + `0600` mode,
+and refuses to overwrite an existing file. Note: parent dir auto-creation
+applies only to the default `~/.manifest-agent/manifests-drafts/` location;
+when the user supplies a custom `--path`, its parent directory must already
+exist (the script will fail with `ENOENT` otherwise).
 
 For the default path, omit `--path`:
 
