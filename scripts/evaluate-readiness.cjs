@@ -154,16 +154,44 @@ function asBigInt(s) {
     actions.add('topup_wallet');
   }
 
-  // Credits — warn if missing or below the hours-remaining floor.
+  // Credits — warn if missing or low against the chosen SKU.
+  //
+  // Important: the MCP's `hours_remaining` is the chain's estimate of runtime
+  // at the user's CURRENT overall burn rate (sum of active leases). It is
+  // NOT specific to the chosen SKU and returns 0 when the user has no
+  // active leases — which would falsely flag a well-funded user about to
+  // deploy their first app. Compute the per-SKU answer ourselves from the
+  // credit balance + sku.price.
   if (!r.credits) {
     if (status === 'ok') status = 'warn';
     reasons.push('No credit account funded for compute leases.');
     actions.add('fund_credit');
+  } else if (r.sku && r.sku.price && r.sku.price.amount && r.sku.price.denom) {
+    const skuPrice = r.sku.price;
+    const balances = Array.isArray(r.current_balance) ? r.current_balance : [];
+    const creditEntry = balances.find((b) => b && b.denom === skuPrice.denom);
+    const creditAmount = creditEntry ? asBigInt(creditEntry.amount) : 0n;
+    const pricePerHour = asBigInt(skuPrice.amount);
+    if (pricePerHour > 0n) {
+      // Convert via Number for the human-readable hours figure. Credit
+      // amounts are in the chain's smallest unit and bounded well below
+      // Number.MAX_SAFE_INTEGER for any realistic balance.
+      const hrsForThisSku = Number(creditAmount) / Number(pricePerHour);
+      if (hrsForThisSku < HOURS_REMAINING_WARN_FLOOR) {
+        if (status === 'ok') status = 'warn';
+        reasons.push(`Credits cover ~${hrsForThisSku.toFixed(1)}h of runtime at the ${r.sku.name} SKU (${creditAmount} ${skuPrice.denom} / ${pricePerHour} ${skuPrice.denom} per hour); below the ${HOURS_REMAINING_WARN_FLOOR}h floor.`);
+        actions.add('fund_credit');
+      }
+    }
   } else if (r.hours_remaining !== undefined) {
+    // Fallback for cases where SKU pricing is not available in the readiness
+    // response (e.g. caller didn't pass --size). Use the chain's
+    // hours_remaining but only warn when it's a meaningful positive number
+    // below the floor — `0` here means "no current burn", not "low credits".
     const hrs = Number(r.hours_remaining);
-    if (Number.isFinite(hrs) && hrs < HOURS_REMAINING_WARN_FLOOR) {
+    if (Number.isFinite(hrs) && hrs > 0 && hrs < HOURS_REMAINING_WARN_FLOOR) {
       if (status === 'ok') status = 'warn';
-      reasons.push(`Credits cover ~${hrs.toFixed(1)}h of runtime at this SKU; below the ${HOURS_REMAINING_WARN_FLOOR}h floor.`);
+      reasons.push(`Credits cover ~${hrs.toFixed(1)}h of runtime at the current burn rate; below the ${HOURS_REMAINING_WARN_FLOOR}h floor.`);
       actions.add('fund_credit');
     }
   }
