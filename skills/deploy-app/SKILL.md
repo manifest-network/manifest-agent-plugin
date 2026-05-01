@@ -64,14 +64,21 @@ the checks below — do not guess if the input is ambiguous; ask the user.
 
 **Input detection:**
 
-- If `$ARGUMENTS` is empty → **Interactive authoring** (below).
+Tokenize `$ARGUMENTS` first: split on whitespace, drop empty strings,
+drop bare `+` tokens (so `wordpress:6 + mysql:9` and `wordpress:6 mysql:9`
+both yield `["wordpress:6", "mysql:9"]`). Then:
+
+- If the original `$ARGUMENTS` is empty → **Interactive authoring** (below).
 - Else if `test -f "$ARGUMENTS"` succeeds → **Spec file path** (below).
-- Else if `$ARGUMENTS` matches an image reference shape — contains a `:`
-  (tag form like `nginx:1.27`) or `@sha256:` (digest form), and isn't a
-  plausible mistyped path — → **Image fast-path** (below).
-- Else → tell the user the argument was neither a readable file nor an
-  image reference, show what they passed, and stop. (E.g. they typed a
-  relative path that doesn't exist; better to fail loudly than guess.)
+- Else if **two or more** tokens each match an image reference shape
+  (contains a `:` for tag form or `@sha256:` for digest form) →
+  **Multi-image stack fast-path** (below).
+- Else if exactly **one** token matches an image reference shape →
+  **Image fast-path** (single-service, below).
+- Else → tell the user the argument was neither a readable file nor a
+  recognizable image reference, show what they passed, and stop. (E.g.
+  they typed a relative path that doesn't exist; better to fail loudly
+  than guess.)
 
 ### When `$ARGUMENTS` is a spec file path
 
@@ -90,6 +97,91 @@ Then load the spec into your context using the `Read` tool — NOT `cat`.
 `cat` would echo the entire spec to chat as a bash result; `Read` returns
 the file content as a structured tool result instead. The parsed spec
 object is your `SPEC`.
+
+### When `$ARGUMENTS` is multiple image references (multi-service stack fast-path)
+
+The user typed something like `/manifest-agent:deploy-app wordpress:6 mysql:9`
+or `/manifest-agent:deploy-app wordpress:6 + mysql:9`. The `+` is a
+visual separator only — drop it. Each remaining token is a service.
+
+**Derive a service name** from each image reference:
+1. Strip any `@sha256:...` suffix.
+2. Strip any `:tag` suffix.
+3. Take the basename (everything after the last `/`).
+4. Lowercase. RFC 1123 DNS label: alphanumeric + hyphens only, no
+   leading/trailing hyphens, max 63 chars. If the derived name doesn't
+   conform, ask the user for a service name.
+
+Examples:
+- `docker.io/lifted/wordpress:6` → `wordpress`
+- `docker.io/library/mysql:9` → `mysql`
+- `ghcr.io/me/web-api@sha256:abc` → `web-api`
+- `nginx:1.27` → `nginx`
+
+**Confirm the parse before doing anything else** so the user can catch
+mistakes. Use `AskUserQuestion`:
+
+> Parsed your input as a stack of N services:
+>   - `wordpress` (`docker.io/lifted/wordpress:6`)
+>   - `mysql` (`docker.io/library/mysql:9`)
+> Proceed with these names? Options: yes / customize names / abort.
+
+On "customize names" let the user rename each service. On "abort" stop.
+
+**Service name collisions**: if two tokens derive to the same name (e.g.
+`redis:7 redis:8` both → `redis`), the parse confirmation must show the
+collision and ask the user to disambiguate (suggest `redis-7` / `redis-8`
+or let them type names). Do not silently auto-suffix.
+
+**Per-service authoring** — for each service in order:
+1. Set `IMAGE = <token>` and call:
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
+   ```
+   Capture as `SVC_INFO`. Same fail-soft semantics as the single-service
+   fast-path.
+2. **Ports**: from `SVC_INFO.ports`.
+   - 1 detected: use it.
+   - >1 detected: ask which (multi-select).
+   - 0 / inspection failed: ask the user to type each port-protocol pair.
+3. **Ingress per port**: in stacks the typical pattern is one
+   public-facing service (web tier) and the rest internal (DBs,
+   workers). **Always ask explicitly per port — do not default.** No
+   port number heuristic in this branch (the agent doesn't know which
+   service is the public tier).
+4. **tmpfs**: use `SVC_INFO.suggestedTmpfs` as the default with
+   `["Yes (Recommended)", "No", "Customize"]`.
+5. **env**, **labels**, **health_check** (only if image has none),
+   **storage** (top-level, asked once after all services), **init** —
+   ask normally.
+6. **Skip asking about** `command` / `args` / `user` / `workingDir` —
+   image defaults apply.
+
+**Inter-service env wiring is NOT auto-populated.** The user must add
+env vars like `WORDPRESS_DB_HOST=mysql`, `WORDPRESS_DB_PASSWORD=...`,
+`MYSQL_ROOT_PASSWORD=...` themselves via the per-service env prompts.
+The Intent recap below will heads-up on common gaps.
+
+After all services collected, ask top-level **`storage`** and
+**`depends_on`** (e.g. `wordpress depends_on mysql` is a typical pattern
+— offer it but let the user say no).
+
+**Final SPEC** — services-map shape, one entry per token in the same
+order the user typed:
+
+```js
+{
+  services: {
+    "wordpress": { image: "...", ports: { "80/tcp": { ingress: true } }, env: {...}, tmpfs: [...] },
+    "mysql":     { image: "...", ports: { "3306/tcp": { ingress: false } }, env: {...}, tmpfs: [...] }
+  },
+  storage?,
+  depends_on?
+}
+```
+
+This branch then continues to Step 3 validation, the Intent recap, the
+readiness check, etc., the same as the other input modes.
 
 ### When `$ARGUMENTS` is an image reference (single-service fast-path)
 

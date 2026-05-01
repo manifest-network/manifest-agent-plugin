@@ -56,6 +56,17 @@ Once initialized and funded, you can deploy a containerized app three ways.
 
 If you pass an image reference (anything matching `<name>:<tag>` or `<name>@sha256:<digest>`), the plugin treats it as a single-service deploy and asks you only for what's still needed: SKU, port, and any optional env / labels / health check / etc. Skips the "what shape?" and "what image?" questions entirely.
 
+**Multi-image stack fast-path:**
+
+```
+/manifest-agent:deploy-app docker.io/lifted/wordpress:6 docker.io/library/mysql:9
+/manifest-agent:deploy-app wordpress:6 + mysql:9         # `+` is optional cosmetic separator
+```
+
+If you pass two or more image references separated by whitespace (with optional `+` tokens), the plugin treats them as services in a stack. Service names are derived from the image basenames (`wordpress`, `mysql`). The plugin shows you the parsed stack and asks for confirmation before authoring; you can rename services if the auto-derived names don't fit. Same per-service auto-detection as the single-service fast-path (ports, tmpfs, image defaults).
+
+Inter-service env vars (e.g. `WORDPRESS_DB_HOST=mysql`, `WORDPRESS_DB_PASSWORD=...`) are NOT auto-wired — you provide them through the per-service env prompts. The intent-recap step before broadcast flags obvious gaps (e.g. a wordpress with no DB credentials).
+
 **Interactive (full authoring, supports multi-service):**
 
 ```
@@ -86,7 +97,7 @@ A confirmation step shows the deployment plan (image, SKU, cost, wallet/credit b
 | `/manifest-agent:switch-chain` | Switch between testnet and mainnet |
 | `/manifest-agent:set-gas-price` | Change the gas fee token, price, and/or gas multiplier |
 | `/manifest-agent:refresh-registry` | Re-fetch chain data from the Cosmos chain registry |
-| `/manifest-agent:deploy-app [path-or-image]` | Deploy a containerized app end-to-end. Optional argument: a JSON spec file path, OR an image reference (e.g. `nginx:1.27`) for a single-service fast-path. Omit for full interactive authoring (single or multi-service). Pre-flight → plan → confirm → broadcast → URL |
+| `/manifest-agent:deploy-app [path-or-images]` | Deploy a containerized app end-to-end. Optional argument: a JSON spec file path, OR a single image reference (e.g. `nginx:1.27`) for a single-service fast-path, OR multiple whitespace-separated image references (e.g. `wordpress:6 mysql:9`) for a multi-service stack fast-path. Omit for full interactive authoring. Pre-flight → plan → confirm → broadcast → URL |
 | `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `~/.manifest-agent/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app` |
 | `/manifest-agent:troubleshoot-deployment` | Bundle status, diagnostics, and recent logs for a deployed lease into a unified report |
 
