@@ -17,6 +17,13 @@ single Markdown report and suggest next steps.
 
 **For all user choices in this skill, use the `AskUserQuestion` tool.**
 
+**Do not narrate the skill's internal structure in your chat output.**
+Step numbers (e.g. "Step 4", "Step 6") are scaffolding for skill authors
+only. To the user, just describe what you're doing in plain language —
+e.g. "Let me gather the lease status, diagnostics, and recent logs", not
+"Now in Step 3 I'll run the parallel data gather". Skip phrases like
+"Now in Step N" or "Branching to..."; describe the action itself.
+
 ## Step 0 — Verify environment
 
 Run:

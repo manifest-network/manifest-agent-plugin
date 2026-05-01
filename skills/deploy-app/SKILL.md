@@ -16,9 +16,17 @@ allowed-tools: Bash(*), Read, Write
 # Deploy App (orchestrator)
 
 You are running the full deployment workflow. The flow is the same whether
-the user supplied a spec file path or not — only Step 2 differs.
+the user supplied a spec file path or not — only the input-handling step
+differs.
 
 **For all user choices, use the `AskUserQuestion` tool.**
+
+**Do not narrate the skill's internal structure in your chat output.**
+Labels like "Step 2", "Branch A2", "Step 11b" are scaffolding for skill
+authors only. To the user, just describe what you're doing in plain
+language — e.g. "I'll use that as the image and ask you for the SKU and
+port", not "I'm following Branch A2". Skip phrases like "Now in Step N"
+or "Switching to the failure branch"; describe the action itself.
 
 ## Step 0 — Verify environment
 
@@ -51,21 +59,21 @@ Options: **Yes** (proceed) / **No** (stop). If No, stop immediately.
 
 ## Step 2 — Get the manifest spec
 
-Three branches based on `$ARGUMENTS`. Choose deterministically using the
-checks below — do not guess if the input is ambiguous; ask the user.
+Three input modes based on `$ARGUMENTS`. Choose deterministically using
+the checks below — do not guess if the input is ambiguous; ask the user.
 
-**Branch detection:**
+**Input detection:**
 
-- If `$ARGUMENTS` is empty → **Branch B** (full interactive).
-- Else if `test -f "$ARGUMENTS"` succeeds → **Branch A** (spec file).
+- If `$ARGUMENTS` is empty → **Interactive authoring** (below).
+- Else if `test -f "$ARGUMENTS"` succeeds → **Spec file path** (below).
 - Else if `$ARGUMENTS` matches an image reference shape — contains a `:`
   (tag form like `nginx:1.27`) or `@sha256:` (digest form), and isn't a
-  plausible mistyped path — → **Branch A2** (image fast-path).
+  plausible mistyped path — → **Image fast-path** (below).
 - Else → tell the user the argument was neither a readable file nor an
   image reference, show what they passed, and stop. (E.g. they typed a
   relative path that doesn't exist; better to fail loudly than guess.)
 
-### Branch A — `$ARGUMENTS` is a non-empty path
+### When `$ARGUMENTS` is a spec file path
 
 Treat `$ARGUMENTS` as a path to a JSON spec file. Validate it exists, is
 readable, and parses as JSON **without echoing its contents to chat** — spec
@@ -83,7 +91,7 @@ Then load the spec into your context using the `Read` tool — NOT `cat`.
 the file content as a structured tool result instead. The parsed spec
 object is your `SPEC`.
 
-### Branch A2 — `$ARGUMENTS` is an image reference (single-service fast-path)
+### When `$ARGUMENTS` is an image reference (single-service fast-path)
 
 Treat `$ARGUMENTS` as the image. Set `IMAGE = $ARGUMENTS`. Skip the image
 question; collect only what's still needed:
@@ -102,7 +110,7 @@ for interactive multi-service authoring, or as
 `/manifest-agent:deploy-app /path/to/spec.json` if you have a stack spec
 file." Then stop.
 
-### Branch B — no argument
+### When `$ARGUMENTS` is empty (interactive authoring)
 
 Drive a thin authoring sequence inline (do NOT `Read` the
 `author-manifest/SKILL.md` file — the prose below is sufficient). The
@@ -120,10 +128,11 @@ user wants a reusable saved spec; here we just author + deploy in one shot.
 4. Build the `SPEC` object with the same shape `build_manifest_preview` and
    `deploy_app` accept.
 
-Do NOT call `save-manifest-draft.cjs` in branches A2 or B — the spec lives
-only in memory; the post-deploy wrapper at
+Do NOT call `save-manifest-draft.cjs` in the image fast-path or interactive
+modes — the spec lives only in memory; the post-deploy wrapper at
 `~/.manifest-agent/manifests/<lease_uuid>.json` (Step 10) is the durable
-record. (Branch A's spec already exists on disk by definition.)
+record. (When the user provided an existing spec file path, the spec already
+lives on disk by definition.)
 
 ## Step 3 — Validate the spec
 
@@ -324,7 +333,7 @@ Print the script's stdout verbatim.
 
 Two sub-cases based on whether the broadcast created a lease.
 
-### 11a — Lease was created (`LEASE_UUID` present)
+### When the broadcast created a lease (`LEASE_UUID` present)
 
 Inline a thin troubleshoot sequence (do NOT `Read` the
 `troubleshoot-deployment/SKILL.md` file). Run in parallel:
@@ -378,7 +387,7 @@ execution, or the lease state might lag a block. Confirm explicitly:
 If the user wants a deeper investigation, suggest
 `/manifest-agent:troubleshoot-deployment`.
 
-### 11b — No lease (`LEASE_UUID` absent)
+### When no lease was created (`LEASE_UUID` absent)
 
 The broadcast failed before any lease was created (most commonly: registry
 rejected at upload time, insufficient gas, network error). Surface the

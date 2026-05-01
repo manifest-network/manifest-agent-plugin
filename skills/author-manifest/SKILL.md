@@ -22,6 +22,13 @@ The spec uses the same shape `mcp__manifest-fred__deploy_app` and
 **For all user choices in this skill, use the `AskUserQuestion` tool to
 present options as a list rather than asking the user to type.**
 
+**Do not narrate the skill's internal structure in your chat output.**
+Step numbers (e.g. "Step 4", "Step 6b") are scaffolding for skill authors
+only. To the user, just describe what you're doing in plain language —
+e.g. "Now let me check your wallet and credit balance", not "Now in Step 5
+the readiness check". Skip phrases like "Now in Step N" or "Switching to
+the multi-service branch"; describe the action itself.
+
 ## Step 0 — Verify environment
 
 Run:
