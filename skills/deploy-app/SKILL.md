@@ -250,6 +250,14 @@ rm -f "/tmp/.manifest-${LEASE_UUID}.json"
 (`CHAIN_ID` comes from `chains.<activeChain>.chainId` in the config status
 from Step 0.)
 
+`save-manifest.cjs` re-computes SHA-256 of the manifest bytes and compares
+against `$META_HASH`. If they don't match the script exits non-zero with a
+diagnostic — surface that error verbatim to the user. The most common
+cause is writing the structured spec to the tmpfile instead of the
+canonical `MANIFEST_JSON` string captured in Step 3; double-check the
+Write tool was passed `MANIFEST_JSON` (the long Fred-rendered string),
+not `SPEC` (the structured input).
+
 The script prints the saved file path on stdout. Show it briefly:
 "Saved manifest record: `<path>`".
 
