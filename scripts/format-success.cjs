@@ -13,22 +13,35 @@
  * Args:
  *   --lease-uuid <uuid>   strict-validated; used to populate the Lease UUID line
  *
- * Output (stdout): plain text suitable for direct chat output, e.g.
+ * Output (stdout): plain text suitable for direct chat output. Designed
+ * to be printed VERBATIM by the orchestrator skill — no paraphrasing or
+ * surrounding prose. Example:
  *
  *   Deployed.
- *     URL:        https://<fqdn>/
- *     Lease UUID: <uuid>
- *     Provider:   <human name or uuid>
- *   For logs / status:  /manifest-agent:troubleshoot-deployment
+ *     Provider:      <human name or uuid>
+ *     Lease UUID:    <uuid>
+ *     Lease Status:  ACTIVE
+ *     Ingress:       <fqdn>
  *
- * Multiple URLs (multi-port or multi-service) are listed one per line.
+ *   For logs / status:  /manifest-agent:troubleshoot-deployment <uuid>
  *
- * Provider name resolution: the catalog's shape varies by version, so we look
- * for any provider entry whose `uuid` (or `provider_uuid`) matches the
- * deploy_response's provider_uuid; we surface the first `name` we find. On
- * miss, fall back to the raw UUID. The lookup is best-effort — if catalog is
- * absent or shaped unexpectedly, we still produce the success block with the
- * URL + lease UUID.
+ * Multi-instance / multi-service stacks emit "Ingresses:" followed by
+ * one bare FQDN per running instance. When no externally-reachable
+ * ingress is reported (internal-only services, or the provider hasn't
+ * surfaced an FQDN yet), the line reads
+ * "Ingress: (none — service is internal or no FQDN reported)".
+ *
+ * Lease state is decoded from the integer / "LEASE_STATE_*" string in
+ * the deploy_response and rendered with the LEASE_STATE_ prefix
+ * stripped (so "LEASE_STATE_ACTIVE" -> "ACTIVE"). Internal scaffolding
+ * the user shouldn't have to read.
+ *
+ * Provider name resolution: the catalog's shape varies by version, so we
+ * look for any provider entry whose `uuid` (or `provider_uuid`) matches
+ * the deploy_response's provider_uuid; we surface the first `name` we
+ * find. On miss, fall back to the raw UUID. The lookup is best-effort —
+ * if catalog is absent or shaped unexpectedly, we still produce the
+ * success block with the lease UUID + ingress.
  */
 
 const { readFileSync } = require('node:fs');
@@ -43,44 +56,55 @@ function parseArgs(argv) {
   return args;
 }
 
-function buildUrls(connection, fallbackUrl) {
-  if (!connection || typeof connection !== 'object') {
-    if (typeof fallbackUrl === 'string' && fallbackUrl.length > 0) {
-      return [/^https?:\/\//i.test(fallbackUrl) ? fallbackUrl : `https://${fallbackUrl}/`];
-    }
-    return [];
-  }
+function buildIngresses(connection) {
+  // Returns an array of bare FQDNs (or "ip:port" strings for the legacy
+  // fallback). The provider exposes apps via subdomain-based routing on
+  // standard ports — host_port in instances[].ports[] is an internal
+  // container mapping, not part of the user-facing hostname. One entry
+  // per running instance regardless of how many ports it exposes
+  // (routing is by hostname, not port).
+  if (!connection || typeof connection !== 'object') return [];
   const out = [];
-  // Preferred: instances[].fqdn — the provider exposes apps via
-  // subdomain-based routing on standard port 80, so the host_port that
-  // appears in instances[].ports[] is an internal container mapping and
-  // not part of the user-facing URL. One URL per running instance, even
-  // when multiple ports are exposed (the routing is by hostname, not
-  // port).
   if (Array.isArray(connection.instances)) {
     const seen = new Set();
     for (const inst of connection.instances) {
       if (!inst || inst.status !== 'running' || !inst.fqdn) continue;
-      const url = `https://${inst.fqdn}/`;
-      if (seen.has(url)) continue;
-      seen.add(url);
-      out.push(url);
+      if (seen.has(inst.fqdn)) continue;
+      seen.add(inst.fqdn);
+      out.push(inst.fqdn);
     }
   }
-  // Fallback: top-level connection.host + connection.ports (older MCP shape).
-  // host here is typically a raw IP; without subdomain routing, a port is
-  // required to reach a specific container's port.
+  // Legacy fallback: top-level connection.host + connection.ports. host
+  // here is typically a raw IP, which has no subdomain routing — caller
+  // still needs the port. Render as "ip:port".
   if (out.length === 0 && connection.host && connection.ports) {
     for (const portKey of Object.keys(connection.ports)) {
       const v = connection.ports[portKey];
       const port = typeof v === 'number' || typeof v === 'string' ? v : (v && v.host_port);
-      if (port !== undefined) out.push(`https://${connection.host}:${port}/`);
+      if (port !== undefined) out.push(`${connection.host}:${port}`);
     }
   }
-  if (out.length === 0 && typeof fallbackUrl === 'string' && fallbackUrl.length > 0) {
-    out.push(/^https?:\/\//i.test(fallbackUrl) ? fallbackUrl : `https://${fallbackUrl}/`);
-  }
   return out;
+}
+
+function decodeStateName(state) {
+  // Accept integer or "LEASE_STATE_*" string. Return the friendly form
+  // ("ACTIVE", "PENDING", etc.) — the LEASE_STATE_ prefix is stripped
+  // for the user-facing display. Unknown states render as
+  // "UNKNOWN(<raw>)" so the raw value remains visible.
+  const STATE_NAMES = {
+    0: 'UNSPECIFIED',
+    1: 'PENDING',
+    2: 'ACTIVE',
+    3: 'INSUFFICIENT_FUNDS',
+    4: 'CLOSED',
+  };
+  if (typeof state === 'string' && state.startsWith('LEASE_STATE_')) {
+    return state.slice('LEASE_STATE_'.length);
+  }
+  const n = Number(state);
+  if (Number.isInteger(n) && n in STATE_NAMES) return STATE_NAMES[n];
+  return state === undefined ? '(unknown)' : `UNKNOWN(${String(state)})`;
 }
 
 function findProviderName(catalog, providerUuid) {
@@ -129,21 +153,26 @@ function findProviderName(catalog, providerUuid) {
     process.exit(1);
   }
 
-  const urls = buildUrls(dr.connection, dr.url);
+  const ingresses = buildIngresses(dr.connection);
   const providerName = findProviderName(catalog, dr.provider_uuid) || dr.provider_uuid || '(unknown)';
+  const stateName = decodeStateName(dr.state);
 
-  const lines = ['Deployed.'];
-  if (urls.length === 0) {
-    lines.push('  URL:        (no externally-reachable URL surfaced by the provider yet)');
-  } else if (urls.length === 1) {
-    lines.push(`  URL:        ${urls[0]}`);
+  const lines = [
+    'Deployed.',
+    `  Provider:      ${providerName}`,
+    `  Lease UUID:    ${args.leaseUuid}`,
+    `  Lease Status:  ${stateName}`,
+  ];
+  if (ingresses.length === 0) {
+    lines.push('  Ingress:       (none — service is internal or no FQDN reported)');
+  } else if (ingresses.length === 1) {
+    lines.push(`  Ingress:       ${ingresses[0]}`);
   } else {
-    lines.push('  URLs:');
-    for (const u of urls) lines.push(`    - ${u}`);
+    lines.push('  Ingresses:');
+    for (const fqdn of ingresses) lines.push(`    - ${fqdn}`);
   }
-  lines.push(`  Lease UUID: ${args.leaseUuid}`);
-  lines.push(`  Provider:   ${providerName}`);
-  lines.push('For logs / status:  /manifest-agent:troubleshoot-deployment');
+  lines.push('');
+  lines.push(`For logs / status:  /manifest-agent:troubleshoot-deployment ${args.leaseUuid}`);
 
   console.log(lines.join('\n'));
 })().catch((err) => {

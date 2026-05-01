@@ -466,7 +466,19 @@ echo '{"deploy_response": <DEPLOY_RESPONSE>, "catalog": <browse_catalog response
   | node "$MANIFEST_PLUGIN_ROOT/scripts/format-success.cjs" --lease-uuid "$LEASE_UUID"
 ```
 
-Print the script's stdout verbatim.
+**Print the script's stdout VERBATIM.** Do NOT add explanatory prose
+around it, do NOT paraphrase its labels, do NOT invent fields the
+deploy_app response doesn't have (e.g. there is no `connection.urls[]` —
+don't reference it). The script's output is the success message — the
+labels (Provider / Lease UUID / Lease Status / Ingress / troubleshoot
+pointer) and their order are intentional and complete. If the user wants
+more detail about logs or diagnostics, they can run
+`/manifest-agent:troubleshoot-deployment <uuid>` as the script's last
+line suggests.
+
+If the script reports `Ingress: (none — service is internal or no FQDN
+reported)`, just print that as-is. The user knows what an internal-only
+service is; do not narrate around it.
 
 ## Step 11 — Failure
 
