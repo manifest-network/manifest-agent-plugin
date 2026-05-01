@@ -53,7 +53,7 @@ Once initialized and funded, you can deploy a containerized app two ways.
 /manifest-agent:deploy-app
 ```
 
-Walks you through choosing single-service vs multi-service stack, picking a SKU, entering image refs, ports, env vars, etc., then deploys. No file written.
+Walks you through choosing single-service vs multi-service stack, picking a SKU, entering image refs, ports, env vars, etc., then deploys. No reusable *spec file* is written in this path, but after a successful deploy a saved manifest record is created at `~/.manifest-agent/manifests/<lease_uuid>.json` (see "Saved post-deploy records" in CLAUDE.md).
 
 **From a spec file (reusable):**
 

@@ -43,11 +43,16 @@
  */
 
 const { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, renameSync, unlinkSync } = require('node:fs');
+const { createHash } = require('node:crypto');
 const { join, dirname, basename } = require('node:path');
 const { homedir } = require('node:os');
 
 const AGENT_DIR = join(homedir(), '.manifest-agent');
 const MANIFESTS_DIR = join(AGENT_DIR, 'manifests');
+// SHA-256 hex digest: 64 lowercase hex chars. The chain stores meta_hash as
+// raw bytes; build_manifest_preview returns the hex form. Validating the
+// shape catches typos and the wrong field accidentally being passed.
+const META_HASH_RE = /^[0-9a-f]{64}$/i;
 // Strict UUID v1–v5 / unspecified-version pattern. Reject anything else so a
 // `lease_uuid` containing path separators or `..` cannot escape MANIFESTS_DIR
 // (which would let a malicious caller overwrite ~/.manifest-agent/config.json
@@ -96,6 +101,11 @@ function atomicWrite(targetPath, contents) {
     process.exit(1);
   }
 
+  if (!META_HASH_RE.test(args.metaHash)) {
+    console.error(`--meta-hash must be a 64-character SHA-256 hex digest; got "${args.metaHash}"`);
+    process.exit(1);
+  }
+
   if (!existsSync(args.manifestFile)) {
     console.error(`Manifest file not found: ${args.manifestFile}`);
     process.exit(1);
@@ -114,6 +124,22 @@ function atomicWrite(targetPath, contents) {
   }
   if (manifestObj === null || typeof manifestObj !== 'object' || Array.isArray(manifestObj)) {
     console.error('Manifest file must contain a JSON object');
+    process.exit(1);
+  }
+
+  // Verify the audit guarantee: SHA-256 of the bytes we're about to persist
+  // (after trimming the heredoc/Write-added trailing newline) must equal the
+  // meta_hash_hex returned by build_manifest_preview. Catches paste errors,
+  // accidental field swaps (spec vs manifest_json), and encoding mismatches.
+  const trimmed = manifestString.trimEnd();
+  const computedHash = createHash('sha256').update(trimmed).digest('hex');
+  if (computedHash !== args.metaHash.toLowerCase()) {
+    console.error(
+      `SHA-256 mismatch: --meta-hash claims ${args.metaHash} but the manifest content hashes to ${computedHash}. ` +
+      `The bytes in --manifest-file do not match the meta_hash_hex from build_manifest_preview. ` +
+      `This usually means the wrong content was written to the tmpfile (e.g. the structured spec instead of the canonical manifest_json string), or the bytes were corrupted in transit. ` +
+      `Re-run build_manifest_preview and re-persist with the matching string.`
+    );
     process.exit(1);
   }
 
@@ -136,10 +162,12 @@ function atomicWrite(targetPath, contents) {
     chain_id: args.chainId,
     image: args.image,
     size: args.size,
-    meta_hash_hex: args.metaHash,
+    meta_hash_hex: args.metaHash.toLowerCase(),
     format,
-    // String form is intentional — see header docstring.
-    manifest_json: manifestString.trimEnd(),
+    // String form is intentional — see header docstring. SHA-256 verified
+    // against meta_hash_hex above, so the persisted bytes round-trip to
+    // the chain-recorded hash.
+    manifest_json: trimmed,
   };
 
   const outPath = join(MANIFESTS_DIR, `${args.leaseUuid}.json`);
