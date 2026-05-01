@@ -9,8 +9,9 @@
  *   { lease_uuid, provider_uuid, provider_url, state, url?, connection?, connectionError? }
  * Where:
  *   - state may be an integer (e.g. 2) or a string (e.g. "LEASE_STATE_ACTIVE")
- *   - connection.instances[i].ports[<port>/<proto>].host_port is the externally
- *     reachable port; instances[i].fqdn is the hostname
+ *   - connection.instances[i].fqdn is the user-facing hostname (provider
+ *     does subdomain-based routing on port 80, so host_port is an internal
+ *     container mapping and not part of the URL)
  *
  * Output (stdout, single-line JSON):
  *   {
@@ -52,20 +53,23 @@ function decodeState(s) {
 function buildUrls(connection) {
   if (!connection || typeof connection !== 'object') return [];
   const out = [];
-  // Preferred path: instances[].fqdn + ports[].host_port
+  // Preferred: instances[].fqdn. The provider routes via subdomain on
+  // standard port 80; the host_port in instances[].ports[] is an internal
+  // container mapping, not part of the user-facing URL. One URL per
+  // running instance (deduped on the fqdn).
   if (Array.isArray(connection.instances)) {
+    const seen = new Set();
     for (const inst of connection.instances) {
       if (!inst || inst.status !== 'running' || !inst.fqdn) continue;
-      const ports = inst.ports || {};
-      for (const portKey of Object.keys(ports)) {
-        const p = ports[portKey];
-        if (p && (typeof p.host_port === 'number' || typeof p.host_port === 'string')) {
-          out.push(`http://${inst.fqdn}:${p.host_port}/`);
-        }
-      }
+      const url = `http://${inst.fqdn}/`;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      out.push(url);
     }
   }
-  // Fallback: top-level connection.host + connection.ports (older MCP shape)
+  // Fallback: top-level connection.host + connection.ports (older MCP shape).
+  // host here is typically a raw IP and needs a port for direct container
+  // access — no subdomain routing available.
   if (out.length === 0 && connection.host && connection.ports) {
     for (const portKey of Object.keys(connection.ports)) {
       const v = connection.ports[portKey];

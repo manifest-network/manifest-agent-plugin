@@ -16,7 +16,7 @@
  * Output (stdout): plain text suitable for direct chat output, e.g.
  *
  *   Deployed.
- *     URL:        http://<fqdn>:<port>/
+ *     URL:        http://<fqdn>/
  *     Lease UUID: <uuid>
  *     Provider:   <human name or uuid>
  *   For logs / status:  /manifest-agent:troubleshoot-deployment
@@ -51,18 +51,25 @@ function buildUrls(connection, fallbackUrl) {
     return [];
   }
   const out = [];
+  // Preferred: instances[].fqdn — the provider exposes apps via
+  // subdomain-based routing on standard port 80, so the host_port that
+  // appears in instances[].ports[] is an internal container mapping and
+  // not part of the user-facing URL. One URL per running instance, even
+  // when multiple ports are exposed (the routing is by hostname, not
+  // port).
   if (Array.isArray(connection.instances)) {
+    const seen = new Set();
     for (const inst of connection.instances) {
       if (!inst || inst.status !== 'running' || !inst.fqdn) continue;
-      const ports = inst.ports || {};
-      for (const portKey of Object.keys(ports)) {
-        const p = ports[portKey];
-        if (p && (typeof p.host_port === 'number' || typeof p.host_port === 'string')) {
-          out.push(`http://${inst.fqdn}:${p.host_port}/`);
-        }
-      }
+      const url = `http://${inst.fqdn}/`;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      out.push(url);
     }
   }
+  // Fallback: top-level connection.host + connection.ports (older MCP shape).
+  // host here is typically a raw IP; without subdomain routing, a port is
+  // required to reach a specific container's port.
   if (out.length === 0 && connection.host && connection.ports) {
     for (const portKey of Object.keys(connection.ports)) {
       const v = connection.ports[portKey];
