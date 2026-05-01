@@ -212,17 +212,28 @@ applies only to the default `~/.manifest-agent/manifests-drafts/` location;
 when the user supplies a custom `--path`, its parent directory must already
 exist (the script will fail with `ENOENT` otherwise).
 
-For the default path, omit `--path`:
+Pipe the spec through stdin via a file (NOT a bash `echo` of the inline JSON
+— `echo` would re-render the spec, including any user-supplied env values,
+into the chat transcript as a literal command):
 
-```bash
-echo '<spec JSON, single line>' | node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs"
-```
+1. Use the `Write` tool to materialize the SPEC JSON at a tempfile path,
+   e.g. `/tmp/.spec-${process_pid}-${timestamp}.json`. The Write tool
+   renders the content as a structured tool call (one render, no shell
+   echo).
+2. Pipe the file to the helper via stdin redirection. For the default
+   path, omit `--path`:
 
-For a user-chosen path:
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" < /tmp/.spec-XXX.json
+   rm -f /tmp/.spec-XXX.json
+   ```
 
-```bash
-echo '<spec JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" --path /absolute/path/to/spec.json
-```
+   For a user-chosen path:
+
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" --path /absolute/path/to/spec.json < /tmp/.spec-XXX.json
+   rm -f /tmp/.spec-XXX.json
+   ```
 
 The script prints the saved file path on stdout. Capture it as `SAVED_PATH`.
 

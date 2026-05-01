@@ -17,9 +17,11 @@
  * Used by troubleshoot-deployment as a fallback lease picker when the
  * manifest://leases/active MCP resource is empty or unavailable.
  *
- * Files with malformed JSON or unexpected schema are skipped silently with
- * an entry shaped { lease_uuid: <basename>, error: "..." } so the picker
- * can still surface them.
+ * Files with malformed JSON or unexpected JSON shape (null, primitive, array
+ * — anything other than a plain object) emit an entry shaped
+ * { lease_uuid: <basename>, error: "..." } so the picker can still surface
+ * them. The basename (filename minus `.json`) is used as `lease_uuid` when
+ * the wrapper itself is unreadable or doesn't carry one.
  */
 
 const { readdirSync, readFileSync, statSync } = require('node:fs');
@@ -60,6 +62,15 @@ const SAFE_FIELDS = ['lease_uuid', 'image', 'size', 'deployed_at_iso', 'chain_id
       wrapper = JSON.parse(readFileSync(path, 'utf8'));
     } catch (err) {
       out.push({ lease_uuid: leaseUuid, error: `parse failed: ${err.message}` });
+      continue;
+    }
+
+    // Defensive shape check: a manually-created or corrupted file might
+    // contain `null`, a primitive, or an array. Without this guard, the
+    // SAFE_FIELDS loop below would throw on `wrapper[k]` and abort the
+    // whole listing.
+    if (wrapper === null || typeof wrapper !== 'object' || Array.isArray(wrapper)) {
+      out.push({ lease_uuid: leaseUuid, error: 'unexpected JSON shape (expected an object)' });
       continue;
     }
 

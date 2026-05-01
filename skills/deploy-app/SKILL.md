@@ -145,13 +145,25 @@ Save the readiness JSON as `READINESS`.
 
 ## Step 5 — Render the DeploymentPlan
 
-Compute a structural summary of the spec:
+Compute a structural summary of the spec. Pass the spec via stdin from a
+file (NOT inline `echo` — the spec can carry user-supplied env values that
+would be re-rendered into chat as a literal bash command):
 
-```bash
-echo '<SPEC as JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/manifest-summary.cjs"
-```
+1. Use the `Write` tool to materialize the SPEC JSON at
+   `/tmp/.spec-${process_pid}.json`.
+2. Run:
 
-Then render the canonical block:
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/manifest-summary.cjs" < /tmp/.spec-XXX.json
+   rm -f /tmp/.spec-XXX.json
+   ```
+
+The summary output (`{ format, service_count, port_count, env_count, env_keys, images }`)
+contains only env *keys*, never values — safe to keep inline for the next
+step.
+
+Then render the canonical block. The summary + readiness JSON together
+contain no env values, so inline echo is acceptable here:
 
 ```bash
 echo '{"summary": <summary JSON from above>, "readiness": <READINESS JSON>}' \

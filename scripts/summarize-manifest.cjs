@@ -61,6 +61,15 @@ function parseArgs(argv) {
     return;
   }
 
+  // Defensive shape check: a corrupted file might contain `null`, a primitive,
+  // or an array. Without this guard, `wrapper.lease_uuid` etc. below would
+  // throw and the script would exit non-zero rather than reporting a friendly
+  // "unreadable" line.
+  if (wrapper === null || typeof wrapper !== 'object' || Array.isArray(wrapper)) {
+    console.log(`(saved manifest for ${args.leaseUuid} has unexpected JSON shape; expected an object)`);
+    return;
+  }
+
   const lines = [];
   lines.push(`Lease UUID:       ${wrapper.lease_uuid || args.leaseUuid}`);
   if (wrapper.image)           lines.push(`Image:            ${wrapper.image}`);

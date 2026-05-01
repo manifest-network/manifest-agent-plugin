@@ -33,7 +33,7 @@
  *     --lease-uuid <uuid> \
  *     --image <ref> \
  *     --size <sku-name> \
- *     --meta-hash <hex>          (renamed from --meta-hash to --meta-hash-hex internally; flag stays --meta-hash for callers) \
+ *     --meta-hash <hex> \
  *     --chain-id <chain-id> \
  *     --manifest-file <path-to-tmpfile-with-manifest_json-as-string>
  *
