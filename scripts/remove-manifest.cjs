@@ -44,12 +44,12 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
-  const path = join(MANIFESTS_DIR, `${args.leaseUuid}.json`);
+  const manifestPath = join(MANIFESTS_DIR, `${args.leaseUuid}.json`);
   // unlinkSync directly rather than existsSync + unlinkSync — eliminates the
   // TOCTOU window where the file could disappear between the two calls.
   // ENOENT is the documented "file already gone" case and maps to no-op.
   try {
-    unlinkSync(path);
+    unlinkSync(manifestPath);
     console.log('removed');
   } catch (err) {
     if (err.code === 'ENOENT') {
