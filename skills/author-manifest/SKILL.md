@@ -81,9 +81,35 @@ Ask the user for the image reference. Format hint:
 - Preferred (immutable): `registry/name@sha256:<digest>`
 - Acceptable: `registry/name:tag`
 
-Store as `IMAGE`.
+Store as `IMAGE`. **Then immediately inspect the image** to (a) verify it
+exists / is reachable on the public registry — failing here saves a wasted
+broadcast — and (b) auto-detect ports, default cmd/entrypoint, and any
+known-needed tmpfs paths so we don't ask the user about things the image
+already declares:
 
-If `SHAPE == stack`: defer image collection to Step 6b.
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<IMAGE>"
+```
+
+The script prints a JSON object on stdout. Capture it as `IMAGE_INFO`.
+Possible outcomes:
+
+- **Empty `{}`**: inspection failed (image not found, registry refused
+  anonymous access, network issue — see stderr). Show the user the stderr
+  reason and ask: "proceed without auto-detection? You'll need to provide
+  ports / tmpfs manually. (yes / abort)". On yes, set `IMAGE_INFO = {}` and
+  continue.
+- **Non-empty**: surface a brief detected-from-image summary so the user
+  knows what we picked up:
+    > Detected from `<IMAGE_INFO.image>`:
+    >   ports: `<IMAGE_INFO.ports>`
+    >   default cmd: `<IMAGE_INFO.cmd>` (will be used unless you override)
+    >   suggested tmpfs: `<IMAGE_INFO.suggestedTmpfs>` (offered in Step 6)
+  `env` from the image is informational only (usually system stuff like
+  `PATH`, `NGINX_VERSION`); do NOT auto-populate user env from it.
+
+If `SHAPE == stack`: defer image collection (and per-service inspection)
+to Step 6b.
 
 ## Step 5 — Pre-flight readiness
 
@@ -137,25 +163,80 @@ in your working memory; you'll feed it to `build_manifest_preview` in Step 7.
 
 ### 6a — Single-service (`SHAPE == single`)
 
-Required:
-- **`port`** — container port to expose (1–65535).
+We always emit the **services-map shape** for the spec — even when there's
+only one service — because we need per-port `ingress: boolean` control,
+which the simpler `{ image, port }` form doesn't expose. Default service
+name: `"app"` (the user can override).
 
-Optional (ask one at a time, defaulting to "skip" if the user has nothing):
-- **`env`** — environment variables. Loop: ask for KEY then VALUE; offer
-  "add another" / "done". Build a `{ KEY: value }` map. Do NOT pre-validate
-  names — `build_manifest_preview` is the validator.
-- **`labels`** — same loop as `env`.
-- **`command`** — ENTRYPOINT override. Array of strings (ask comma-separated).
-- **`args`** — arguments to the command. Array of strings.
-- **`health_check`** — if yes, collect `test` (string array, e.g.
-  `["CMD", "curl", "-f", "http://localhost:8080/health"]`), and optional
-  `interval`, `timeout`, `retries`, `start_period`.
-- **`storage`** — persistent disk SKU. If yes, present storage SKU options
-  from `browse_catalog`.
-- **`tmpfs`** — array of strings, e.g. `["/tmp:size=64M"]`.
-- **`init`** — boolean.
+**Ports** — driven by `IMAGE_INFO.ports`:
+- If `IMAGE_INFO.ports.length === 1`: use it directly (e.g. `"80/tcp"`).
+  Don't ask which port.
+- If `IMAGE_INFO.ports.length > 1`: ask the user (`AskUserQuestion`,
+  multi-select) which ports to expose.
+- If `IMAGE_INFO.ports` is empty (or `IMAGE_INFO == {}` from a failed
+  inspection): ask the user to type each port-protocol pair (e.g.
+  `"80/tcp"`).
 
-Final spec object: `{ image: IMAGE, port: <port>, ... }`.
+**Ingress per port** — for each chosen port:
+- If it's the only port AND its number is one of `80, 443, 8080, 8443`
+  (common web ports): `AskUserQuestion` "Default ingress=true (port appears
+  to be a standard web port — Recommended). Confirm?" with options
+  `["Yes (Recommended)", "No (internal only)"]`.
+- Otherwise (multiple ports, OR single non-web port): ask explicitly per
+  port: "Should `<port>` be publicly reachable via the provider's ingress?
+  (yes / no)" — no default. Be explicit, do not guess.
+
+The chosen `ports` map is `{ "<port>/<proto>": { ingress: <bool> }, ... }`
+even when ingress is true (encode it explicitly so the spec is unambiguous
+when re-loaded later).
+
+**Cmd / Entrypoint / User / WorkingDir** — DO NOT ask. The image's defaults
+(`IMAGE_INFO.cmd`, `IMAGE_INFO.entrypoint`, `IMAGE_INFO.user`,
+`IMAGE_INFO.workingDir`) are used by Fred unless overridden in the spec.
+Skip these fields entirely. If the user later needs to override, they can
+edit the saved spec file by hand.
+
+**Health check** — if `IMAGE_INFO.healthcheck` is non-null, mention it
+("the image declares a HEALTHCHECK; Fred will use it") and skip. Otherwise
+ask: "Add a health check? (yes / skip)". On yes, collect `test` (string
+array, e.g. `["CMD", "curl", "-f", "http://localhost:8080/health"]`), and
+optional `interval`, `timeout`, `retries`, `start_period`.
+
+**Storage** — image can't tell us. Ask: "Add a persistent disk?
+(yes / no)". On yes, present storage SKU options from `browse_catalog`.
+
+**tmpfs** — driven by `IMAGE_INFO.suggestedTmpfs`:
+- If non-empty: `AskUserQuestion` "This image typically needs the following
+  tmpfs mounts on a read-only rootfs: `<paths joined>`. Add them?" with
+  options `["Yes (Recommended)", "No", "Customize"]`. On Customize, let the
+  user edit the list.
+- If empty: ask "Need any tmpfs mounts? (yes / skip)". On yes, collect a
+  list of paths.
+
+**env** — keep asking, ignore the image's defaults (`IMAGE_INFO.env` is
+usually system stuff like `PATH`, `NGINX_VERSION`, not app config). Loop:
+ask for KEY then VALUE; offer "add another" / "done". Do NOT pre-validate
+names — `build_manifest_preview` is the validator.
+
+**labels** — same loop as `env`. Image's `labels` are author-provided
+metadata, separate purpose from Fred labels.
+
+**init** — ask "Run an init process inside the container? (yes / skip,
+default skip)".
+
+**Final spec object** (always services-map shape, even for one service):
+```js
+{
+  services: {
+    "app": {                     // or a name the user picked
+      image: IMAGE,
+      ports: { "80/tcp": { ingress: true }, ... },
+      env?, labels?, health_check?, tmpfs?, init?, ...
+    }
+  },
+  storage?
+}
+```
 
 ### 6b — Multi-service stack (`SHAPE == stack`)
 
@@ -166,14 +247,30 @@ Required per service:
   hyphens, no leading/trailing hyphens (RFC 1123 DNS label). The MCP server
   validates this on `build_manifest_preview`; if a user-supplied name is
   rejected, surface the error and re-ask.
-- **`image`** — same format hint as Step 4.
-- **`ports`** — at least one. Ask for each port-protocol pair (e.g.
-  `"80/tcp"`); the value in the manifest is `{}` per Fred's shape. Build
-  `{ "80/tcp": {}, "443/tcp": {} }`.
+- **`image`** — same format hint as Step 4. Then immediately inspect the
+  image:
+  ```bash
+  node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
+  ```
+  Capture the result as `SVC_INFO`. Same fail-soft semantics as Step 4
+  (empty `{}` → ask user about everything; non-empty → use to drive the
+  per-service prompts below).
+- **`ports`** — driven by `SVC_INFO.ports`:
+  - 1 port detected: use it.
+  - >1 ports detected: ask which (multi-select).
+  - 0 / no inspection: ask user to type each port-protocol pair.
 
-Optional per service (same set as single-service): `env`, `labels`, `command`,
-`args`, `user`, `tmpfs`, `health_check`, `stop_grace_period`, `depends_on`,
-`expose`.
+  **Ingress per port**: in stacks the typical pattern is one service is
+  ingress-true (the public web tier) and the rest are ingress-false
+  (internal — DBs, queues, sidecars). For multi-service stacks, **always
+  ask explicitly per port** — do not default. The chosen value goes into
+  `{ "<port>/<proto>": { ingress: <bool> } }`.
+
+Optional per service (same rules as single-service):
+- `env`, `labels`, `tmpfs` (use `SVC_INFO.suggestedTmpfs` to default), 
+  `health_check` (skip ask if `SVC_INFO.healthcheck` non-null), 
+  `stop_grace_period`, `depends_on`, `expose`.
+- Skip asking about `command` / `args` / `user` — image defaults apply.
 
 After all services collected, ask:
 - **`storage`** (top-level) — apply to whole stack? If yes, pick SKU.

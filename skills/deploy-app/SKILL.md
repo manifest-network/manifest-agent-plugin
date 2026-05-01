@@ -93,15 +93,53 @@ object is your `SPEC`.
 
 ### When `$ARGUMENTS` is an image reference (single-service fast-path)
 
-Treat `$ARGUMENTS` as the image. Set `IMAGE = $ARGUMENTS`. Skip the image
-question; collect only what's still needed:
+Treat `$ARGUMENTS` as the image. Set `IMAGE = $ARGUMENTS`. **Inspect the
+image first** to verify it's reachable and to auto-detect ports / cmd /
+tmpfs hints:
 
-1. Use `AskUserQuestion` for SKU size, populated from
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
+```
+
+Capture the JSON result as `IMAGE_INFO`. If empty `{}` (inspection
+failed), surface the stderr reason and ask the user to either retry with
+a different image or proceed without auto-detection.
+
+Then collect only what's still needed:
+
+1. `AskUserQuestion` for SKU size, populated from
    `mcp__manifest-fred__browse_catalog`.
-2. Ask for `port` (required, 1–65535).
-3. Optional fields, asked one at a time defaulting to "skip": `env`,
-   `labels`, `command`, `args`, `health_check`, `storage`, `tmpfs`, `init`.
-4. Build the `SPEC` object as `{ image: IMAGE, port: <port>, ... }`.
+2. **Ports** — driven by `IMAGE_INFO.ports`:
+   - 1 detected: use it (don't ask).
+   - >1 detected: multi-select.
+   - 0 / no inspection: ask user to type each port-protocol pair.
+3. **Ingress per port** — for each chosen port:
+   - Single port AND number in `{80, 443, 8080, 8443}`: confirm with
+     options `["Yes (Recommended)", "No (internal only)"]`.
+   - Otherwise: ask explicitly per port, no default.
+4. **Skip asking about** `command` / `args` / `user` / `workingDir` — Fred
+   uses image defaults (visible in `IMAGE_INFO.cmd` etc.) unless overridden.
+5. **`tmpfs`** — if `IMAGE_INFO.suggestedTmpfs` is non-empty, offer it as
+   the default (`["Yes (Recommended)", "No", "Customize"]`); else ask
+   "Need any tmpfs mounts? (yes / skip)".
+6. **`env`**, **`labels`**, **`health_check`** (only if image has none),
+   **`storage`**, **`init`** — ask as in `author-manifest` Step 6a.
+
+Build the `SPEC` object using the **services-map shape** so per-port
+ingress is encoded explicitly:
+
+```js
+{
+  services: {
+    "app": {                                           // default service name
+      image: IMAGE,
+      ports: { "80/tcp": { ingress: true }, ... },
+      env?, labels?, health_check?, tmpfs?, init?
+    }
+  },
+  storage?
+}
+```
 
 This branch is single-service only. If the user supplied an image but
 actually wants a multi-service stack, tell them: "image-arg fast-path is
@@ -120,13 +158,21 @@ user wants a reusable saved spec; here we just author + deploy in one shot.
 1. Use `AskUserQuestion` for shape: **Single-service** or **Multi-service stack**.
 2. Use `AskUserQuestion` for SKU size, populated from
    `mcp__manifest-fred__browse_catalog`.
-3. **Single-service**: ask for image (preferred form `registry/name@sha256:…`),
-   port, then optional `env` / `labels` / `command` / `args` / `health_check` /
-   `storage` / `tmpfs` / `init`.
-   **Multi-service**: ask service count; for each service ask name (must be
-   RFC 1123), image, ports map, then the optional fields.
-4. Build the `SPEC` object with the same shape `build_manifest_preview` and
-   `deploy_app` accept.
+3. Ask for the image reference. Then immediately inspect it to verify
+   reachability and to auto-detect ports / cmd / suggested tmpfs:
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
+   ```
+   Same fail-soft handling as the image fast-path above.
+4. Collect remaining fields per the same rules as `author-manifest`
+   Step 6a (single-service) or 6b (stack):
+   - Ports + ingress per port (with web-port default for single-service).
+   - Skip cmd / args / user (image defaults).
+   - tmpfs from `suggestedTmpfs`.
+   - env, labels, health_check (only if image has none), storage, init —
+     ask normally.
+5. Build the `SPEC` object using the **services-map shape** with explicit
+   `ports: { "<p>/<proto>": { ingress: <bool> } }` entries.
 
 Do NOT call `save-manifest-draft.cjs` in the image fast-path or interactive
 modes — the spec lives only in memory; the post-deploy wrapper at
