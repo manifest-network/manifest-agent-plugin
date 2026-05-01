@@ -2,34 +2,41 @@
 'use strict';
 
 /**
- * Persist a deployed manifest to ~/.manifest-agent/manifests/<lease_uuid>.json
+ * Persist a deployed manifest to ~/.manifest-agent/manifests/<lease_uuid>.json.
  *
- * Wrapper shape (schema_version 1):
+ * Wrapper shape (schema_version 2):
  *   {
- *     schema_version: 1,
+ *     schema_version: 2,
  *     lease_uuid, deployed_at_iso, deployed_at_unix,
- *     chain_id, image, size, meta_hash,
- *     manifest_json
+ *     chain_id, image, size, meta_hash_hex,
+ *     format,         // "single" or "stack" (derived from manifest_json content)
+ *     manifest_json   // string — preserves the exact byte sequence whose SHA-256 is meta_hash_hex
  *   }
  *
  * `manifest_json` may contain sensitive values (env values typed during the
- * authoring flow). Exposure is mitigated by file mode 0600, parent dir 0700,
- * mkdir recursive — but the file contents must not be surfaced verbatim in
- * chat. Skills should extract only `image` / `size` / `deployed_at_iso` for
- * display.
+ * authoring flow). Exposure is mitigated by file mode 0600, parent dir 0700.
+ * Skills must NOT surface the file contents verbatim — use
+ * `summarize-manifest.cjs` or `list-saved-manifests.cjs` for safe display.
+ *
+ * The string form is intentional: reproducible audit (sha256 of manifest_json
+ * must equal meta_hash_hex), and round-trip identity to what was uploaded.
  *
  * Usage:
  *   node save-manifest.cjs \
  *     --lease-uuid <uuid> \
  *     --image <ref> \
  *     --size <sku-name> \
- *     --meta-hash <hex> \
+ *     --meta-hash <hex>          (renamed from --meta-hash to --meta-hash-hex internally; flag stays --meta-hash for callers) \
  *     --chain-id <chain-id> \
- *     --manifest-file <path-to-tmpfile-with-manifest_json>
+ *     --manifest-file <path-to-tmpfile-with-manifest_json-as-string>
+ *
+ * --manifest-file must contain the canonical Fred-rendered manifest JSON (the
+ * `manifest_json` string returned by build_manifest_preview), NOT the
+ * structured spec input.
  */
 
-const { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } = require('node:fs');
-const { join } = require('node:path');
+const { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, renameSync, unlinkSync } = require('node:fs');
+const { join, dirname, basename } = require('node:path');
 const { homedir } = require('node:os');
 
 const AGENT_DIR = join(homedir(), '.manifest-agent');
@@ -55,6 +62,19 @@ function parseArgs(argv) {
   return args;
 }
 
+function atomicWrite(targetPath, contents) {
+  const dir = dirname(targetPath);
+  const tmp = join(dir, `.${basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    writeFileSync(tmp, contents, { mode: 0o600 });
+    chmodSync(tmp, 0o600);
+    renameSync(tmp, targetPath);
+  } catch (err) {
+    try { unlinkSync(tmp); } catch { /* ignore */ }
+    throw err;
+  }
+}
+
 (async () => {
   const args = parseArgs(process.argv);
   const required = ['leaseUuid', 'image', 'size', 'metaHash', 'chainId', 'manifestFile'];
@@ -74,38 +94,49 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
-  let manifestJson;
+  // Read the manifest as a STRING — preserve exact bytes for audit.
+  const manifestString = readFileSync(args.manifestFile, 'utf8');
+
+  // Validate it parses (sanity check) and derive `format`.
+  let manifestObj;
   try {
-    manifestJson = JSON.parse(readFileSync(args.manifestFile, 'utf8'));
+    manifestObj = JSON.parse(manifestString);
   } catch (err) {
-    console.error(`Failed to parse manifest file as JSON: ${err.message}`);
+    console.error(`Manifest file is not valid JSON: ${err.message}`);
+    process.exit(1);
+  }
+  if (manifestObj === null || typeof manifestObj !== 'object' || Array.isArray(manifestObj)) {
+    console.error('Manifest file must contain a JSON object');
     process.exit(1);
   }
 
+  // `format` follows Fred's own convention: a manifest with a top-level
+  // `services` map is a stack; otherwise it's a single-service manifest.
+  const isStack = manifestObj.services
+    && typeof manifestObj.services === 'object'
+    && !Array.isArray(manifestObj.services);
+  const format = isStack ? 'stack' : 'single';
+
   mkdirSync(MANIFESTS_DIR, { recursive: true, mode: 0o700 });
-  // recursive mkdir does not chmod existing dirs — set explicitly.
   chmodSync(MANIFESTS_DIR, 0o700);
 
   const now = new Date();
   const wrapper = {
-    schema_version: 1,
+    schema_version: 2,
     lease_uuid: args.leaseUuid,
     deployed_at_iso: now.toISOString(),
     deployed_at_unix: Math.floor(now.getTime() / 1000),
     chain_id: args.chainId,
     image: args.image,
     size: args.size,
-    meta_hash: args.metaHash,
-    manifest_json: manifestJson,
+    meta_hash_hex: args.metaHash,
+    format,
+    // String form is intentional — see header docstring.
+    manifest_json: manifestString.trimEnd(),
   };
 
   const outPath = join(MANIFESTS_DIR, `${args.leaseUuid}.json`);
-  // Pass mode at write time to avoid a TOCTOU window where the file briefly
-  // has default perms (typically 0644 under umask 022) before the chmod
-  // tightens it. `manifest_json` may contain sensitive env values.
-  writeFileSync(outPath, JSON.stringify(wrapper, null, 2) + '\n', { mode: 0o600 });
-  chmodSync(outPath, 0o600);
-
+  atomicWrite(outPath, JSON.stringify(wrapper, null, 2) + '\n');
   console.log(outPath);
 })().catch((err) => {
   console.error(err.message);

@@ -45,15 +45,28 @@ After setup, restart Claude Code (or run `/mcp` and reconnect) to start the MCP 
 
 ### Deploying an app
 
-Once initialized and funded, deploy a containerized app with:
+Once initialized and funded, you can deploy a containerized app two ways.
+
+**Interactive (one-shot):**
 
 ```
 /manifest-agent:deploy-app
 ```
 
-This assumes you already have a public container image (e.g. `ghcr.io/me/app@sha256:…`) on a registry the Fred provider permits. The plugin walks you through SKU selection, manifest authoring (`/manifest-agent:author-manifest`), validation, a confirmation step showing the deployment plan, and live progress until your app is reachable. Failed deploys hand off to `/manifest-agent:troubleshoot-deployment` and offer to reclaim the lease.
+Walks you through choosing single-service vs multi-service stack, picking a SKU, entering image refs, ports, env vars, etc., then deploys. No file written.
 
-Image build and image push are intentionally out of scope — bring your own published image.
+**From a spec file (reusable):**
+
+```
+/manifest-agent:author-manifest        # walks you through, saves a spec file
+/manifest-agent:deploy-app /path/to/the/saved-spec.json
+```
+
+The spec file is plain JSON — hand-edit it, version-control it, generate it from a script, share it across deploys. Default save location is `~/.manifest-agent/manifests-drafts/`, but you can save anywhere.
+
+Both paths assume you already have a public container image (e.g. `ghcr.io/me/app@sha256:…`) on a registry the Fred provider permits. Image build and image push are intentionally out of scope — bring your own published image.
+
+A confirmation step shows the deployment plan (image, SKU, cost, wallet/credit balances) before any broadcast. Failed deploys auto-invoke a troubleshoot sequence and offer to reclaim the lease.
 
 ## Skills
 

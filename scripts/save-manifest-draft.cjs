@@ -1,0 +1,137 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * Save a structured manifest spec (the input shape for build_manifest_preview /
+ * deploy_app) as a user-managed draft file under
+ * ~/.manifest-agent/manifests-drafts/.
+ *
+ * The user can later pass that file path to /manifest-agent:deploy-app, edit
+ * it by hand, version-control it, etc. It is the user-facing "deployment spec"
+ * file for this plugin.
+ *
+ * Stdin (JSON object): the structured spec, e.g.
+ *   { image, port, env?, ... }            (single-service)
+ *   { services: { <name>: { image, ports, env?, ... } } }   (multi-service)
+ *
+ * Args:
+ *   --path <abs-path>   (optional) full file path to write to. Parent dir
+ *                       must already exist OR be inside ~/.manifest-agent/.
+ *                       If omitted, defaults to
+ *                       ~/.manifest-agent/manifests-drafts/<auto-name>.json
+ *                       where <auto-name> derives from the first image and a
+ *                       timestamp (e.g. nginx-1-27-2026-05-01T13-30-00.json).
+ *
+ * Output (stdout): the absolute path of the file written.
+ *
+ * File mode: 0600. Parent dir mode: 0700. Atomic write via tmpfile + rename.
+ *
+ * Safety: refuses to overwrite an existing file at --path to avoid clobbering
+ * a user-edited spec. Use a different --path or remove the existing file.
+ */
+
+const { existsSync, mkdirSync, chmodSync, writeFileSync, renameSync, unlinkSync } = require('node:fs');
+const { join, dirname, basename, isAbsolute } = require('node:path');
+const { homedir } = require('node:os');
+
+const AGENT_DIR = join(homedir(), '.manifest-agent');
+const DRAFTS_DIR = join(AGENT_DIR, 'manifests-drafts');
+
+function parseArgs(argv) {
+  const args = {};
+  for (let i = 2; i < argv.length; i++) {
+    if (argv[i] === '--path' && argv[i + 1]) { args.path = argv[++i]; }
+  }
+  return args;
+}
+
+function deriveFirstImage(spec) {
+  if (typeof spec.image === 'string') return spec.image;
+  if (spec.services && typeof spec.services === 'object') {
+    for (const svc of Object.values(spec.services)) {
+      if (svc && typeof svc.image === 'string') return svc.image;
+    }
+  }
+  return null;
+}
+
+function sanitize(s) {
+  return s.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function autoName(spec) {
+  const image = deriveFirstImage(spec);
+  // Trim digest / tag punctuation for a cleaner filename.
+  let stem;
+  if (image) {
+    const noScheme = image.split('://').pop();
+    const noDigest = noScheme.split('@')[0];
+    const lastSlash = noDigest.lastIndexOf('/');
+    const tail = lastSlash >= 0 ? noDigest.slice(lastSlash + 1) : noDigest;
+    stem = sanitize(tail).replace(/:/g, '-') || 'manifest';
+  } else {
+    stem = 'manifest';
+  }
+  const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '').replace(/Z$/, '');
+  return `${stem}-${ts}.json`;
+}
+
+function atomicWrite(targetPath, contents) {
+  const dir = dirname(targetPath);
+  const tmp = join(dir, `.${basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    writeFileSync(tmp, contents, { mode: 0o600 });
+    chmodSync(tmp, 0o600); // belt-and-suspenders for runtimes that ignore the mode option
+    renameSync(tmp, targetPath);
+  } catch (err) {
+    try { unlinkSync(tmp); } catch { /* ignore */ }
+    throw err;
+  }
+}
+
+(async () => {
+  const args = parseArgs(process.argv);
+
+  const raw = require('node:fs').readFileSync(0, 'utf8');
+  let spec;
+  try {
+    spec = JSON.parse(raw);
+  } catch (err) {
+    console.error(`stdin is not valid JSON: ${err.message}`);
+    process.exit(1);
+  }
+  if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) {
+    console.error('stdin must be a JSON object');
+    process.exit(1);
+  }
+
+  let outPath;
+  if (args.path) {
+    if (!isAbsolute(args.path)) {
+      console.error(`--path must be absolute; got "${args.path}"`);
+      process.exit(1);
+    }
+    outPath = args.path;
+  } else {
+    mkdirSync(DRAFTS_DIR, { recursive: true, mode: 0o700 });
+    chmodSync(DRAFTS_DIR, 0o700);
+    outPath = join(DRAFTS_DIR, autoName(spec));
+  }
+
+  // If writing into the default drafts dir, ensure it exists and is mode 0700.
+  if (outPath.startsWith(DRAFTS_DIR + '/')) {
+    mkdirSync(DRAFTS_DIR, { recursive: true, mode: 0o700 });
+    chmodSync(DRAFTS_DIR, 0o700);
+  }
+
+  if (existsSync(outPath)) {
+    console.error(`Refusing to overwrite existing file: ${outPath}\nChoose a different --path or remove the existing file.`);
+    process.exit(1);
+  }
+
+  atomicWrite(outPath, JSON.stringify(spec, null, 2) + '\n');
+  console.log(outPath);
+})().catch((err) => {
+  console.error(err.message);
+  process.exit(1);
+});

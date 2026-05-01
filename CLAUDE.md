@@ -44,9 +44,22 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **switch-chain** — Switch testnet/mainnet with mainnet confirmation before write
 - **set-gas-price** — Change gas fee token, price, and/or gas multiplier
 - **refresh-registry** — Re-fetch chain data from Cosmos chain registry
-- **author-manifest** — Build + validate a Fred manifest interactively via `build_manifest_preview`; emits a `MANIFEST_PREVIEW` handoff block
-- **troubleshoot-deployment** — Bundle `app_status` + `app_diagnostics` + `get_logs` into one report; offers `close_lease` cleanup with `remove-manifest.cjs`
-- **deploy-app** — Orchestrates the end-to-end flow: mainnet check → `author-manifest` → DeploymentPlan → confirm → `deploy_app` → `save-manifest.cjs`. On the typical happy path the orchestrator reads connection details (URL, provider) directly from `deploy_app`'s response and skips both `wait_for_app_ready` and `app_status` to avoid extra round-trips; the fallback path calls `wait_for_app_ready` (and then `app_status` for the URL) only when `deploy_app` returns without an active connection. Failure path invokes `troubleshoot-deployment` inline. Single-service v1; multi-service `services` map and resume-partial-deploy are out of scope.
+- **author-manifest** — Build + validate a Fred deployment spec interactively (single-service or multi-service stack) via `build_manifest_preview`. Saves the spec as a JSON file under `~/.manifest-agent/manifests-drafts/` (or any user-chosen path) for later use with `/manifest-agent:deploy-app`.
+- **troubleshoot-deployment** — Bundle `app_status` + `app_diagnostics` + `get_logs` into one report. Saved-manifest section uses `summarize-manifest.cjs` (env values redacted). Offers `close_lease` cleanup with `remove-manifest.cjs`.
+- **deploy-app** — Orchestrates the end-to-end flow with two entry points:
+    - `/manifest-agent:deploy-app <path>` — load a structured spec JSON file and deploy it.
+    - `/manifest-agent:deploy-app` (no arg) — drive a thin inline authoring sequence and deploy in one shot.
+  Both paths: validate via `build_manifest_preview` → `evaluate-readiness.cjs` → `render-deployment-plan.cjs` → confirm → `deploy_app` → `classify-deploy-response.cjs` → persist via `save-manifest.cjs` → `format-success.cjs`. On the typical happy path the orchestrator reads connection details directly from `deploy_app`'s response; the fallback path calls `wait_for_app_ready` and `app_status` only when `deploy_app` returns without an active connection. Failure path runs an inline troubleshoot sequence and offers `close_lease`.
+
+## Scripts vs prose
+
+This plugin codifies a split between deterministic operations (CJS scripts in `scripts/`) and ambiguous-decision steps (prose in `skills/<name>/SKILL.md`).
+
+**In scripts:** UUID validation, path traversal guards, file mode + atomic write discipline, JSON parsing and shape validation, structural counting (`manifest-summary.cjs`), readiness evaluation with concrete thresholds (`evaluate-readiness.cjs`), `deploy_app`-response classification (`classify-deploy-response.cjs`), URL extraction from typed connection payloads (`format-success.cjs`), `DeploymentPlan` block rendering (`render-deployment-plan.cjs`), enum decoding (`decode-lease-state.cjs`), redacted summarization (`summarize-manifest.cjs`, `list-saved-manifests.cjs`).
+
+**In prose:** asking the user open-ended questions (image refs, env values, service names), interpreting fuzzy diagnostic signals (the `troubleshoot-deployment` suggestion table), branching on unstable response shapes that require LLM judgment.
+
+The motivation: deterministic logic in prose accumulates LLM-paraphrasing drift across runs and can silently regress when models change. Scripts pin the contract.
 
 ## config.json → MCP env var mapping
 
@@ -73,7 +86,7 @@ Two-layer enforcement:
 1. **Runtime policy injection (SessionStart)** — `hooks/hooks.json` → `scripts/session-start.sh` writes the policy text to stdout. Claude Code adds stdout from SessionStart hooks to the session's context, so the rules are present from the first turn. This is how the agent learns to call `cosmos_estimate_fee` first, show the fee, and wait for textual confirmation.
 2. **Permission prompt safety net (PreToolUse)** — `hooks/hooks.json` → `scripts/pre-tool-use.sh` emits `{hookSpecificOutput.permissionDecision: "ask"}` for broadcast tools, forcing Claude Code to prompt the user regardless of pre-existing permission settings. Deny beats allow in the hook precedence, and "ask" cannot be loosened by settings.json, so this fires even for pre-approved tools.
 
-The heredoc also defines the canonical `DeploymentPlan` block format that the agent must render before calling `deploy_app`. Edit the heredoc, not this file, to change the deployment plan format.
+The heredoc references `scripts/render-deployment-plan.cjs` as the canonical renderer of the `DeploymentPlan` block. Edit that script (not the heredoc, not this file) to change the deployment plan format — both the runtime policy and the orchestrator skill defer to its stdout.
 
 **Tools gated by the PreToolUse hook** (add to the matcher in `hooks/hooks.json` when new write tools ship — each alternative is anchored `^...$` so a future tool whose name contains one of these as a substring is not accidentally gated):
 
@@ -109,14 +122,31 @@ NODE_PATH=$HOME/.manifest-agent/node_modules node scripts/gen-agent-key.cjs --pr
 node scripts/start-server.cjs chain
 ```
 
-## Saved manifests
+## Manifest specs (user-managed)
 
-`/manifest-agent:deploy-app` persists the validated manifest after a successful broadcast to `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). The wrapper schema (version 1) is `{ schema_version, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash, manifest_json }`. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must not pretty-print `manifest_json` into chat unredacted. Two helpers manage these files:
+Deployment specs are plain JSON files in the same shape `mcp__manifest-fred__build_manifest_preview` and `mcp__manifest-fred__deploy_app` accept:
 
-- `scripts/save-manifest.cjs` — writes the wrapper. Manifest JSON is read from a tmpfile (`--manifest-file`) to keep large JSON off the command line.
+- Single-service: `{ image, port, env?, labels?, command?, args?, health_check?, storage?, tmpfs?, init? }`
+- Multi-service: `{ services: { <name>: { image, ports, env?, ... }, ... }, storage?, depends_on? }`
+
+`/manifest-agent:author-manifest` walks the user through building one and saves it (default `~/.manifest-agent/manifests-drafts/<auto-name>.json`, or any user-chosen absolute path). Spec files are user-managed: hand-edit them in `$EDITOR`, version-control them in your app repo, generate them with a script, etc. The plugin doesn't garbage-collect drafts.
+
+`/manifest-agent:deploy-app <path>` consumes a spec file. `/manifest-agent:deploy-app` with no argument drives the inline authoring sequence and deploys in one shot (no draft file written).
+
+Helper: `scripts/save-manifest-draft.cjs` (atomic write + `0600`, refuses to overwrite). Skills should NOT write spec files via `Write` directly — it bypasses the safety checks.
+
+## Saved post-deploy records
+
+After a successful broadcast `/manifest-agent:deploy-app` persists a wrapper at `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). Wrapper schema v2: `{ schema_version: 2, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash_hex, format, manifest_json }` where `manifest_json` is the canonical Fred-rendered string (preserves the exact bytes whose SHA-256 is `meta_hash_hex` for audit) and `format` is `"single"` or `"stack"`. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must NOT pretty-print `manifest_json` into chat unredacted.
+
+Helpers (skills should use these instead of reading the wrapper file directly):
+
+- `scripts/save-manifest.cjs` — writes the wrapper. Manifest JSON is read from a tmpfile (`--manifest-file`) to keep large JSON off the command line. Atomic write.
 - `scripts/remove-manifest.cjs` — unlinks the file. Called by `/manifest-agent:deploy-app` and `troubleshoot-deployment` after a successful `close_lease`. No-op if the file is missing (close_lease may target a lease the agent never deployed).
+- `scripts/list-saved-manifests.cjs` — returns the safe-fields-only listing (never `manifest_json`). Used by `troubleshoot-deployment` as a fallback lease picker.
+- `scripts/summarize-manifest.cjs` — redacted structural summary (counts + env *keys*, never values). Used by `troubleshoot-deployment`'s "Saved manifest" appendix.
 
-Naturally-expired leases leave their saved manifest in place — the file is the historical record. There is no periodic sweep.
+Naturally-expired leases leave their saved manifest in place — the file is the historical record. There is no periodic sweep. Lease lifecycle (active / closed / expired) is queried fresh from chain state via `app_status` rather than tracked in the wrapper.
 
 ## Fred manifest schema
 

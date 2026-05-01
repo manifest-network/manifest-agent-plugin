@@ -68,25 +68,19 @@ original OOG and do not broadcast.
 ## Deployment plan format (deploy_app)
 
 Before broadcasting `mcp__manifest-fred__deploy_app`, render a
-`DeploymentPlan` block in this exact format and wait for textual
-confirmation:
+`DeploymentPlan` block and wait for textual confirmation. The
+canonical block is produced by `scripts/render-deployment-plan.cjs`
+in this plugin — print that script's stdout verbatim. Do NOT compose
+the block by hand; the script owns the field names, ordering, and
+spacing so the agent and the runtime policy cannot drift.
 
-    DeploymentPlan
-      Image:      <full image reference, including digest if pinned>
-      Size:       <SKU name>
-      Manifest:   <service-count, port-count, env-count summary>
-      meta_hash:  <hex digest from build_manifest_preview>
-      Est. cost:  <sku.price.amount + denom>
-      Wallet:     <wallet_balances one-line summary>
-      Credits:    <credit balance + hours_remaining>
-
-The Provider field is intentionally absent: the chain selects a
-provider internally during `deploy_app`, so it is not knowable
-pre-broadcast. Print the resolved provider name in the success
-output. On the typical happy path it comes from the `deploy_app`
-response itself (`provider_uuid` plus a `browse_catalog` lookup);
-on the fallback path where `deploy_app` returns without an active
-connection, the orchestrator calls `wait_for_app_ready` and
+The `Provider` field is intentionally absent from the block: the
+chain selects a provider internally during `deploy_app`, so it is
+not knowable pre-broadcast. Print the resolved provider name in the
+success output. On the typical happy path it comes from the
+`deploy_app` response itself (`provider_uuid` plus a `browse_catalog`
+lookup); on the fallback path where `deploy_app` returns without an
+active connection, the orchestrator calls `wait_for_app_ready` and
 `app_status` to obtain it instead.
 
 Note that `check_deployment_readiness` does not validate the image
