@@ -16,7 +16,7 @@
  * Output (stdout): plain text suitable for direct chat output, e.g.
  *
  *   Deployed.
- *     URL:        http://<fqdn>/
+ *     URL:        https://<fqdn>/
  *     Lease UUID: <uuid>
  *     Provider:   <human name or uuid>
  *   For logs / status:  /manifest-agent:troubleshoot-deployment
@@ -46,7 +46,7 @@ function parseArgs(argv) {
 function buildUrls(connection, fallbackUrl) {
   if (!connection || typeof connection !== 'object') {
     if (typeof fallbackUrl === 'string' && fallbackUrl.length > 0) {
-      return [/^https?:\/\//i.test(fallbackUrl) ? fallbackUrl : `http://${fallbackUrl}/`];
+      return [/^https?:\/\//i.test(fallbackUrl) ? fallbackUrl : `https://${fallbackUrl}/`];
     }
     return [];
   }
@@ -61,7 +61,7 @@ function buildUrls(connection, fallbackUrl) {
     const seen = new Set();
     for (const inst of connection.instances) {
       if (!inst || inst.status !== 'running' || !inst.fqdn) continue;
-      const url = `http://${inst.fqdn}/`;
+      const url = `https://${inst.fqdn}/`;
       if (seen.has(url)) continue;
       seen.add(url);
       out.push(url);
@@ -74,11 +74,11 @@ function buildUrls(connection, fallbackUrl) {
     for (const portKey of Object.keys(connection.ports)) {
       const v = connection.ports[portKey];
       const port = typeof v === 'number' || typeof v === 'string' ? v : (v && v.host_port);
-      if (port !== undefined) out.push(`http://${connection.host}:${port}/`);
+      if (port !== undefined) out.push(`https://${connection.host}:${port}/`);
     }
   }
   if (out.length === 0 && typeof fallbackUrl === 'string' && fallbackUrl.length > 0) {
-    out.push(/^https?:\/\//i.test(fallbackUrl) ? fallbackUrl : `http://${fallbackUrl}/`);
+    out.push(/^https?:\/\//i.test(fallbackUrl) ? fallbackUrl : `https://${fallbackUrl}/`);
   }
   return out;
 }

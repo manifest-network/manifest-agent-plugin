@@ -61,7 +61,7 @@ function buildUrls(connection) {
     const seen = new Set();
     for (const inst of connection.instances) {
       if (!inst || inst.status !== 'running' || !inst.fqdn) continue;
-      const url = `http://${inst.fqdn}/`;
+      const url = `https://${inst.fqdn}/`;
       if (seen.has(url)) continue;
       seen.add(url);
       out.push(url);
@@ -74,7 +74,7 @@ function buildUrls(connection) {
     for (const portKey of Object.keys(connection.ports)) {
       const v = connection.ports[portKey];
       const port = typeof v === 'number' || typeof v === 'string' ? v : (v && v.host_port);
-      if (port !== undefined) out.push(`http://${connection.host}:${port}/`);
+      if (port !== undefined) out.push(`https://${connection.host}:${port}/`);
     }
   }
   return out;
@@ -99,7 +99,7 @@ function buildUrls(connection) {
   // If the MCP server returned a top-level `url` (e.g. host:port without scheme),
   // prepend a scheme so consumers get a clickable URL.
   if (typeof r.url === 'string' && r.url.length > 0) {
-    const u = /^https?:\/\//i.test(r.url) ? r.url : `http://${r.url}/`;
+    const u = /^https?:\/\//i.test(r.url) ? r.url : `https://${r.url}/`;
     if (!urls.includes(u)) urls.unshift(u);
   }
 
