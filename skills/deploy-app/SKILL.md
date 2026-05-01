@@ -73,23 +73,25 @@ Carry these values forward as `IMAGE`, `SIZE`, `META_HASH`, `READINESS`, and
 
 ## Step 3 — Render the DeploymentPlan
 
-Print this block exactly (the format is also in the SessionStart-injected
-runtime policy):
+Render the `DeploymentPlan` block from the SessionStart-injected runtime
+policy verbatim — that heredoc in `scripts/session-start.sh` is the single
+source of truth for the field names, ordering, spacing, and indentation. Do
+not restate or reformat the template here.
 
-```
-DeploymentPlan
-  Image:      <IMAGE>
-  Size:       <SIZE>
-  Manifest:   <one-line summary: service-count, port-count, env-count>
-  meta_hash:  <META_HASH>
-  Est. cost:  <READINESS.sku.price.amount + READINESS.sku.price.denom>
-  Wallet:     <comma-separated denom:amount from READINESS.wallet_balances>
-  Credits:    <READINESS.credits.amount denom (or "none"), hours_remaining=READINESS.hours_remaining>
-```
+Populate the canonical block with these values:
 
-The `Provider` field is **intentionally absent** — the chain selects the
-provider internally during `deploy_app`. The post-success block in Step 7
-prints the resolved provider name.
+- `Image` ← `IMAGE`
+- `Size` ← `SIZE`
+- `Manifest` ← one-line summary: service-count, port-count, env-count
+- `meta_hash` ← `META_HASH`
+- `Est. cost` ← `READINESS.sku.price.amount + READINESS.sku.price.denom`
+- `Wallet` ← comma-separated `denom:amount` from `READINESS.wallet_balances`
+- `Credits` ← `READINESS.credits.amount` + denom (or `"none"`), and
+  `hours_remaining=READINESS.hours_remaining`
+
+The `Provider` field is intentionally absent (the chain selects the provider
+internally during `deploy_app`). The success block in Step 8 prints the
+resolved provider name.
 
 ## Step 4 — Wait for textual confirmation
 

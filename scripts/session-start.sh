@@ -83,8 +83,11 @@ confirmation:
 The Provider field is intentionally absent: the chain selects a
 provider internally during `deploy_app`, so it is not knowable
 pre-broadcast. Print the resolved provider name in the success
-output after `wait_for_app_ready` succeeds, sourced from
-`app_status` and `browse_catalog`.
+output. On the typical happy path it comes from the `deploy_app`
+response itself (`provider_uuid` plus a `browse_catalog` lookup);
+on the fallback path where `deploy_app` returns without an active
+connection, the orchestrator calls `wait_for_app_ready` and
+`app_status` to obtain it instead.
 
 Note that `check_deployment_readiness` does not validate the image
 registry allowlist — that check fires inside `deploy_app` at upload

@@ -46,7 +46,7 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **refresh-registry** — Re-fetch chain data from Cosmos chain registry
 - **author-manifest** — Build + validate a Fred manifest interactively via `build_manifest_preview`; emits a `MANIFEST_PREVIEW` handoff block
 - **troubleshoot-deployment** — Bundle `app_status` + `app_diagnostics` + `get_logs` into one report; offers `close_lease` cleanup with `remove-manifest.cjs`
-- **deploy-app** — Orchestrates the end-to-end flow: mainnet check → `author-manifest` → DeploymentPlan → confirm → `deploy_app` → `save-manifest.cjs` → `wait_for_app_ready` → URL via `app_status`. Failure path invokes `troubleshoot-deployment` inline. Single-service v1; multi-service `services` map and resume-partial-deploy are out of scope.
+- **deploy-app** — Orchestrates the end-to-end flow: mainnet check → `author-manifest` → DeploymentPlan → confirm → `deploy_app` → `save-manifest.cjs`. On the typical happy path the orchestrator reads connection details (URL, provider) directly from `deploy_app`'s response and skips both `wait_for_app_ready` and `app_status` to avoid extra round-trips; the fallback path calls `wait_for_app_ready` (and then `app_status` for the URL) only when `deploy_app` returns without an active connection. Failure path invokes `troubleshoot-deployment` inline. Single-service v1; multi-service `services` map and resume-partial-deploy are out of scope.
 
 ## config.json → MCP env var mapping
 
@@ -111,10 +111,10 @@ node scripts/start-server.cjs chain
 
 ## Saved manifests
 
-`/deploy-app` persists the validated manifest after a successful broadcast to `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). The wrapper schema (version 1) is `{ schema_version, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash, manifest_json }`. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must not pretty-print `manifest_json` into chat unredacted. Two helpers manage these files:
+`/manifest-agent:deploy-app` persists the validated manifest after a successful broadcast to `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). The wrapper schema (version 1) is `{ schema_version, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash, manifest_json }`. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must not pretty-print `manifest_json` into chat unredacted. Two helpers manage these files:
 
 - `scripts/save-manifest.cjs` — writes the wrapper. Manifest JSON is read from a tmpfile (`--manifest-file`) to keep large JSON off the command line.
-- `scripts/remove-manifest.cjs` — unlinks the file. Called by `/deploy-app` and `troubleshoot-deployment` after a successful `close_lease`. No-op if the file is missing (close_lease may target a lease the agent never deployed).
+- `scripts/remove-manifest.cjs` — unlinks the file. Called by `/manifest-agent:deploy-app` and `troubleshoot-deployment` after a successful `close_lease`. No-op if the file is missing (close_lease may target a lease the agent never deployed).
 
 Naturally-expired leases leave their saved manifest in place — the file is the historical record. There is no periodic sweep.
 
