@@ -6,7 +6,6 @@ description: >
   deployment is healthy. Optionally offers close_lease to reclaim a lease
   that's beyond recovery.
 allowed-tools: Bash(*), Read
-argument-hint: "[lease-uuid]"
 ---
 
 # Troubleshoot Deployment

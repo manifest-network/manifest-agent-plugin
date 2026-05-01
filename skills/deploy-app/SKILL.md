@@ -8,7 +8,6 @@ description: >
   persistence, success output. Failure path runs troubleshoot inline and
   offers cleanup.
 allowed-tools: Bash(*), Read, Write
-argument-hint: "[path/to/spec.json]"
 ---
 
 # Deploy App (orchestrator)
