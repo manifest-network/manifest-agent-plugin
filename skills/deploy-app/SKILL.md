@@ -209,6 +209,51 @@ For `SIZE`: in Branch A the spec doesn't carry SKU. Use `AskUserQuestion`
 populated from `browse_catalog` to ask the user. In Branch B you already
 collected `SIZE` in Step 2.
 
+## Confirm intent (between spec validation and readiness)
+
+Before you make any chain round-trips (readiness, fee estimate), write a
+plain-English **Intent recap** in 4–6 short paragraphs and ask the user to
+confirm. This is distinct from the structural `DeploymentPlan` rendered
+later: that one captures technical truth (gas, balances); this one
+captures *what you understood the user is trying to do*, so misinterpretations
+get caught before any chain calls.
+
+Cover, in order:
+
+1. **What's being deployed** — service count, names, images. State both
+   what the user typed/passed and what you derived (e.g. "I parsed your
+   input as 2 services: `wordpress` (`docker.io/lifted/wordpress:6`) and
+   `mysql` (`docker.io/lifted/mysql:9`)").
+2. **Connectivity** — which ports are publicly reachable via the
+   provider's HTTPS subdomain (`ingress: true`) and which are internal
+   only. Use plain English ("publicly reachable" / "internal only"), not
+   the literal `ingress` boolean.
+3. **What you provided vs what was auto-detected** — distinguish
+   user-supplied env keys, labels, command overrides, etc. from defaults
+   you pulled from the image (cmd / entrypoint / user / workingDir /
+   tmpfs hints). The user should know what the agent inferred.
+4. **Sensitive values redacted** — when listing env vars, show *keys
+   only*, never values. Same for label values that look secret.
+5. **Heads-up: obvious gaps** — apply your knowledge of common app
+   patterns to flag things the user probably forgot. For example: a
+   wordpress service without `WORDPRESS_DB_HOST` / `WORDPRESS_DB_PASSWORD`
+   set won't connect to its DB; a postgres without `POSTGRES_PASSWORD`
+   won't start; a mysql without `MYSQL_ROOT_PASSWORD` won't start. Be
+   conservative — only flag cases you're confident about. If you're
+   unsure, say so or skip the heads-up.
+
+Then ask via `AskUserQuestion`:
+
+> Does this match what you want?
+>   - **Yes, proceed** → continue to readiness check + DeploymentPlan
+>   - **Amend** → return to spec authoring (Step 2 Branch B-style inline
+>     authoring, applied to the chosen mode — file edit for path mode,
+>     re-collect for image fast-path or interactive)
+>   - **Abort** → stop without broadcasting
+
+On Amend: re-enter spec authoring. On Abort: stop. Only on Yes do you
+proceed to readiness.
+
 ## Step 4 — Pre-flight readiness
 
 Always re-fetch — balances at broadcast time are what matter, not whatever
