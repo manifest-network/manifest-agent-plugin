@@ -8,9 +8,15 @@
  * than embedding the template, so there's no drift risk.
  *
  * Args:
- *   --meta-hash <hex>   from build_manifest_preview.meta_hash_hex
- *   --image     <ref>   primary image reference (first service's image for stacks)
- *   --size      <sku>   SKU tier name
+ *   --meta-hash <hex>      from build_manifest_preview.meta_hash_hex
+ *   --image <ref>          primary image reference (first service's image for stacks)
+ *   --size <sku>           SKU tier name
+ *   --tx-gas <int>         (optional) gasEstimate from cosmos_estimate_fee
+ *   --tx-fee <amount>      (optional) human-readable fee, e.g. "0.0023 MFX" or
+ *                          "37 upwr". When provided alongside --tx-gas, surfaces
+ *                          a "Tx fee:" line. When omitted, the line shows
+ *                          "(not estimated)" so it's obvious the agent skipped
+ *                          the estimate (which the runtime policy forbids).
  *
  * Stdin (JSON object):
  *   {
@@ -25,7 +31,8 @@
  *     Size:       docker-micro
  *     Manifest:   single, services=1, ports=1, env=2
  *     meta_hash:  <hex>
- *     Est. cost:  37 upwr / hour
+ *     SKU price:  37 upwr / hour
+ *     Tx fee:     0.0023 MFX (gas 142000)
  *     Wallet:     1000000 umfx, 5000000 upwr
  *     Credits:    250000 upwr (~24.0h remaining)
  *
@@ -43,6 +50,8 @@ function parseArgs(argv) {
     if (flag === '--meta-hash' && next) { args.metaHash = next; i++; }
     else if (flag === '--image' && next) { args.image = next; i++; }
     else if (flag === '--size' && next) { args.size = next; i++; }
+    else if (flag === '--tx-gas' && next) { args.txGas = next; i++; }
+    else if (flag === '--tx-fee' && next) { args.txFee = next; i++; }
   }
   return args;
 }
@@ -105,6 +114,17 @@ function fmtCost(readiness) {
   }
 
   const manifestLine = `${summary.format || 'single'}, services=${summary.service_count ?? '?'}, ports=${summary.port_count ?? '?'}, env=${summary.env_count ?? '?'}`;
+  // Tx fee line: explicit "(not estimated)" when the caller omitted both
+  // flags, so it's visible the agent skipped the cosmos_estimate_fee call
+  // (which the runtime policy mandates for billing-module tx tools).
+  let txFeeLine;
+  if (args.txFee && args.txGas) {
+    txFeeLine = `${args.txFee} (gas ${args.txGas})`;
+  } else if (args.txFee) {
+    txFeeLine = args.txFee;
+  } else {
+    txFeeLine = '(not estimated — agent skipped cosmos_estimate_fee, policy violation)';
+  }
 
   const lines = [
     'DeploymentPlan',
@@ -112,7 +132,8 @@ function fmtCost(readiness) {
     `  Size:       ${args.size}`,
     `  Manifest:   ${manifestLine}`,
     `  meta_hash:  ${args.metaHash}`,
-    `  Est. cost:  ${fmtCost(readiness)}`,
+    `  SKU price:  ${fmtCost(readiness)}`,
+    `  Tx fee:     ${txFeeLine}`,
     `  Wallet:     ${fmtBalances(readiness.wallet_balances)}`,
     `  Credits:    ${fmtCredits(readiness)}`,
   ];

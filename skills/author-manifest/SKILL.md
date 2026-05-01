@@ -105,11 +105,26 @@ The script prints `{ status, reasons, suggested_actions }`. Branch on `status`:
   user may pick a different SKU and retry); otherwise stop entirely.
 - **`warn`** — present `reasons` to the user. Use `AskUserQuestion` to ask
   what to do, with options derived from `suggested_actions`:
-    - `fund_credit` → "Fund credits and continue" → call
-      `mcp__manifest-lease__fund_credit` (gated by PreToolUse hook), then
-      re-run Step 5.
+    - `fund_credit` → "Fund credits and continue". When the user picks
+      this, ask them how much to fund (e.g. `"10000000umfx"`). Then —
+      per the runtime policy — estimate the tx fee BEFORE broadcasting:
+      ```
+      mcp__manifest-chain__cosmos_estimate_fee({
+        module: "billing",
+        subcommand: "fund-credit",
+        args: ["<amount>"]   // same string you'll pass to fund_credit
+      })
+      ```
+      Surface the estimated `gasEstimate` + `fee.amount` and ask the user
+      to confirm: "Fund credits with `<amount>`? Estimated tx fee:
+      `<human-readable fee>` (gas `<gasEstimate>`). (yes / no)". On yes,
+      call `mcp__manifest-lease__fund_credit({ amount: <amount> })`
+      (gated by PreToolUse hook), then re-run Step 5. If the estimate
+      itself fails, surface the error and ask whether to proceed without
+      one — do not silently skip.
     - `request_faucet` → "Request testnet faucet funds" → call
       `mcp__manifest-chain__request_faucet`, then re-run Step 5.
+      (No fee estimate — the faucet is a free testnet operation.)
     - `topup_wallet` → "I'll top up the wallet myself" → stop, ask the user
       to top up and re-run the skill.
     - Always include "Proceed anyway" and "Abort" options.

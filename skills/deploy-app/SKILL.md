@@ -188,7 +188,44 @@ Branch on `status` exactly as `author-manifest` Step 5 does:
 
 Save the readiness JSON as `READINESS`.
 
-## Step 5 — Render the DeploymentPlan
+## Step 5 — Estimate the deploy_app tx fee, then render the DeploymentPlan
+
+### 5a — Estimate the chain tx fee
+
+The runtime policy mandates calling `cosmos_estimate_fee` before any
+billing-module broadcast. `deploy_app` wraps `cosmosTx("billing",
+"create-lease", [...])` under the hood, so call:
+
+```
+mcp__manifest-chain__cosmos_estimate_fee({
+  module: "billing",
+  subcommand: "create-lease",
+  args: [
+    "--meta-hash", META_HASH,
+    "<skuUuid>:1",                     // single-service
+    // OR for stacks: "<skuUuid>:1:<svcName1>", "<skuUuid>:1:<svcName2>", ...
+    // OR with storage: append "<storageSkuUuid>:1"
+  ]
+})
+```
+
+Where `skuUuid` is `READINESS.sku.uuid` (already in your context from the
+readiness check) and `META_HASH` is from Step 3.
+
+**Storage SKU lookup**: if `SPEC.storage` is set, you need the storage
+SKU's UUID. Call `mcp__manifest-lease__get_skus` (no args), find the
+entry whose `name` matches `SPEC.storage`, take its `uuid`, and append
+`<storageSkuUuid>:1` to the `args` array.
+
+Capture the response as `ESTIMATE` — it has `gasEstimate` (string,
+e.g. `"142000"`) and `fee.amount` (an array of `{denom, amount}`).
+
+If `cosmos_estimate_fee` itself errors out, surface the error to the
+user and ask: "estimate failed; proceed without an estimate? (yes / no)".
+Do NOT silently skip. If the user says yes, set `ESTIMATE = null` and
+continue.
+
+### 5b — Render the DeploymentPlan
 
 Compute a structural summary of the spec. Pass the spec via stdin from a
 file (NOT inline `echo` — the spec can carry user-supplied env values that
@@ -207,6 +244,15 @@ The summary output (`{ format, service_count, port_count, env_count, env_keys, i
 contains only env *keys*, never values — safe to keep inline for the next
 step.
 
+Convert `ESTIMATE.fee.amount` to a single human-readable string for the
+`--tx-fee` flag (e.g. for `[{"denom":"umfx","amount":"2300"}]` →
+`"0.0023 MFX"` — divide by 1e6 for `umfx` and label with the friendly
+denom name from the chain registry; for any denom you can't friendlify,
+fall back to `"<amount> <denom>"` like `"2300 umfx"`). For `--tx-gas`,
+pass `ESTIMATE.gasEstimate` verbatim. If `ESTIMATE` is null (the user
+proceeded without an estimate), omit both flags — the script will print
+a "(not estimated)" marker so the omission is visible.
+
 Then render the canonical block. The summary + readiness JSON together
 contain no env values, so inline echo is acceptable here:
 
@@ -215,7 +261,9 @@ echo '{"summary": <summary JSON from above>, "readiness": <READINESS JSON>}' \
   | node "$MANIFEST_PLUGIN_ROOT/scripts/render-deployment-plan.cjs" \
       --meta-hash "$META_HASH" \
       --image "$IMAGE" \
-      --size "$SIZE"
+      --size "$SIZE" \
+      --tx-gas "<ESTIMATE.gasEstimate>" \
+      --tx-fee "<human-readable fee string>"
 ```
 
 The script's stdout IS the plan. Print it to the user verbatim. Do not
@@ -349,11 +397,26 @@ Diagnostics / Recent logs). Decode the lease state:
 node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int>
 ```
 
-Then offer cleanup via `AskUserQuestion`. Include the image in the prompt
-so the user can confirm they're closing the right thing:
+Before offering cleanup, estimate the close-lease tx fee per the runtime
+policy:
 
-> Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`) to free its
-> credits? (yes / no)
+```
+mcp__manifest-chain__cosmos_estimate_fee({
+  module: "billing",
+  subcommand: "close-lease",
+  args: ["<LEASE_UUID>"]
+})
+```
+
+If the estimate fails, surface the error and ask the user whether to
+proceed without one — do not silently skip.
+
+Then offer cleanup via `AskUserQuestion`. Include the image AND the
+estimated fee in the prompt so the user knows what they're paying:
+
+> Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`)?
+> Estimated tx fee: `<human-readable fee>` (gas `<gasEstimate>`).
+> Closing frees the credits this lease was reserving. (yes / no)
 
 If yes, call `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })`
 (PreToolUse hook will prompt).

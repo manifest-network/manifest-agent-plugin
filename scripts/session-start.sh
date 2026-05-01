@@ -39,19 +39,54 @@ the fact that the user asked for the action.
   you intend to pass to `cosmos_tx`. Show the returned gas and fee in
   human-readable form (amount + denom symbol, e.g. `0.0023 MFX`), then
   wait for the user to confirm before calling `cosmos_tx`.
-- **For transaction tools without a matching estimate call**
-  (`convert_mfx_to_pwr`, `deploy_app`, `restart_app`, `update_app`,
-  `fund_credit`, `close_lease`): no programmatic fee number exists
-  before broadcast. Describe the action concretely (what, where, how
-  much), query the agent's balance for the gas denom (via `cosmos_query`
-  with `module: "bank", subcommand: "balances"`) and show it so the
-  user has an upper bound on potential loss, and note that the exact
-  fee will be determined at broadcast time. Then wait for confirmation.
-  Exception: `deploy_app` runs through `/manifest-agent:deploy-app`,
-  which already calls `check_deployment_readiness` once during
-  authoring. Its `wallet_balances[]` field IS the bank balances
-  (the tool wraps the same chain query) and is the canonical source
-  for the DeploymentPlan `Wallet:` line — do not re-query.
+
+- **For chain-broadcast tools that wrap `cosmosTx` under the hood**
+  (`deploy_app`, `close_lease`, `fund_credit`): these all broadcast
+  Cosmos SDK billing-module transactions, so `cosmos_estimate_fee`
+  applies. Call it first, show the returned `gasEstimate` and
+  `fee.amount` in human-readable form, then wait for confirmation.
+    - `deploy_app`: call
+      `cosmos_estimate_fee({module: "billing", subcommand: "create-lease", args: ["--meta-hash", <meta_hash_hex>, "<skuUuid>:1[:<svcName>]", ...]})`.
+      Use `meta_hash_hex` from `build_manifest_preview` and `sku.uuid`
+      from `check_deployment_readiness`. For multi-service stacks,
+      append one `<skuUuid>:1:<svcName>` per service. For storage,
+      append `<storageSkuUuid>:1` (look up the storage SKU UUID via
+      `mcp__manifest-lease__get_skus` if you don't have it cached).
+    - `close_lease`: call
+      `cosmos_estimate_fee({module: "billing", subcommand: "close-lease", args: ["<lease_uuid>"]})`.
+    - `fund_credit`: call
+      `cosmos_estimate_fee({module: "billing", subcommand: "fund-credit", args: ["<amount>"[, "--tenant", "<addr>"]]})`
+      where `<amount>` is the same string you'll pass to `fund_credit`
+      (e.g. `"10000000umfx"`).
+
+  If `cosmos_estimate_fee` itself fails, surface the error and ask the
+  user whether to proceed without an estimate — do NOT silently skip.
+  When you broadcast, pass the same `gas_multiplier` you used for the
+  estimate so the actual fee matches what was previewed.
+
+  Exception for `deploy_app` routed through `/manifest-agent:deploy-app`:
+  the orchestrator also calls `check_deployment_readiness` once during
+  authoring. Its `wallet_balances[]` field IS the bank balances and is
+  the canonical source for the DeploymentPlan `Wallet:` line — do not
+  re-query for that. The `cosmos_estimate_fee` call above is in
+  addition to the readiness check, not a replacement.
+
+- **For chain-broadcast tools with a different transaction shape**
+  (`convert_mfx_to_pwr`, which broadcasts a CosmWasm
+  `MsgExecuteContract` rather than a Cosmos SDK module/subcommand):
+  `cosmos_estimate_fee` does not apply. Describe the action concretely
+  (what, where, how much), query the agent's balance for the gas denom
+  (via `cosmos_query` with `module: "bank", subcommand: "balances"`),
+  show it so the user has an upper bound on potential loss, and note
+  that the exact fee will be determined at broadcast time. Then wait
+  for confirmation.
+
+- **For provider-side write tools that do NOT broadcast on-chain**
+  (`restart_app`, `update_app`): these are HTTPS calls to the
+  provider, not Cosmos transactions. No gas, no estimate. The
+  PreToolUse permission prompt still fires; describe the action and
+  wait for textual confirmation, but do not query balances or call
+  `cosmos_estimate_fee`.
 
 ## Gas retry
 

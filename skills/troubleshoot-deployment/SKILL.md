@@ -143,13 +143,30 @@ judgment is appropriate here — these signals don't map deterministically):
 
 ## Step 6 — close_lease (when offered)
 
-When you offer `close_lease`, include the image in the prompt so the user
-can confirm they're closing the right thing. The image is in the saved
-manifest summary from Step 4 (if present); if there is no saved record,
-say "image: (no local record — chain has the canonical state)".
+When you offer `close_lease`, include the image AND the estimated tx fee
+in the prompt so the user can confirm what they're closing AND what they're
+paying. The image is in the saved manifest summary from Step 4 (if
+present); if there is no saved record, say "image: (no local record —
+chain has the canonical state)".
 
-> Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`) to free its
-> credits? (yes / no)
+Estimate the chain tx fee first per the runtime policy:
+
+```
+mcp__manifest-chain__cosmos_estimate_fee({
+  module: "billing",
+  subcommand: "close-lease",
+  args: ["<LEASE_UUID>"]
+})
+```
+
+If the estimate fails, surface the error and ask whether to proceed
+without one — do not silently skip.
+
+Then ask:
+
+> Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`)?
+> Estimated tx fee: `<human-readable fee>` (gas `<gasEstimate>`).
+> Closing frees the credits this lease was reserving. (yes / no)
 
 If the user accepts, call
 `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })` (PreToolUse
