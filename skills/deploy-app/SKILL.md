@@ -340,18 +340,40 @@ Diagnostics / Recent logs). Decode the lease state:
 node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int>
 ```
 
-Then offer cleanup via `AskUserQuestion`:
+Then offer cleanup via `AskUserQuestion`. Include the image in the prompt
+so the user can confirm they're closing the right thing:
 
-> Close the lease to free its credits? (yes / no)
+> Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`) to free its
+> credits? (yes / no)
 
 If yes, call `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })`
-(PreToolUse hook will prompt). On a successful close, run:
+(PreToolUse hook will prompt).
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
-```
+**Verify on-chain state after the tx returns** — a successful broadcast
+does not guarantee the lease actually transitioned to `LEASE_STATE_CLOSED`.
+The tx might have been accepted into the mempool but reverted on
+execution, or the lease state might lag a block. Confirm explicitly:
 
-(no-op if the saved manifest record does not exist).
+1. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
+2. Decode `chainState.state` (integer) via:
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int>
+   ```
+3. Branch on the decoded name:
+   - **`LEASE_STATE_CLOSED`** → confirmed. Run cleanup:
+     ```bash
+     node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
+     ```
+     (no-op if the saved manifest record does not exist). Tell the user
+     "Lease confirmed CLOSED on-chain. Removed local saved manifest record."
+   - **Any other state** (typically still `LEASE_STATE_ACTIVE` or
+     `LEASE_STATE_PENDING`) → tell the user: "close_lease tx accepted but
+     lease state is still `<decoded-name>`; chain may need a moment to
+     settle. Re-run `/manifest-agent:troubleshoot-deployment <LEASE_UUID>`
+     in ~30s to recheck. Local saved manifest record NOT removed yet."
+   - If `app_status` itself errors out: surface the error and tell the
+     user the tx was sent but verification failed. Do NOT remove the
+     local manifest record.
 
 If the user wants a deeper investigation, suggest
 `/manifest-agent:troubleshoot-deployment`.

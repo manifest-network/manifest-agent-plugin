@@ -132,12 +132,43 @@ judgment is appropriate here — these signals don't map deterministically):
 | Repeated container restarts, OOM-like errors in logs | The SKU is too small. Use `mcp__manifest-fred__update_app` with a larger SKU manifest, or close the lease and redeploy with a bigger SKU. |
 | `chainState.state` decodes to `LEASE_STATE_CLOSED` or `LEASE_STATE_INSUFFICIENT_FUNDS` | The lease is already gone. No action needed; the saved manifest record can be removed manually if you want a clean slate. |
 | `connectionError` / `providerError` populated but lease is `LEASE_STATE_ACTIVE` | Provider transient issue. Try `app_status` again in 30s. Persistent errors → consider `restart_app`. |
-| Persistent failure with no recovery path | Offer `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })` to reclaim the lease (gated by PreToolUse hook). |
+| Persistent failure with no recovery path | Offer `mcp__manifest-lease__close_lease` (see Step 6 — gated by PreToolUse hook). |
 
-If the user accepts a `close_lease` offer and the call succeeds, run:
+## Step 6 — close_lease (when offered)
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
-```
+When you offer `close_lease`, include the image in the prompt so the user
+can confirm they're closing the right thing. The image is in the saved
+manifest summary from Step 4 (if present); if there is no saved record,
+say "image: (no local record — chain has the canonical state)".
 
-The script is a no-op if the saved manifest record is already gone.
+> Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`) to free its
+> credits? (yes / no)
+
+If the user accepts, call
+`mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })` (PreToolUse
+will prompt).
+
+**Verify on-chain state after the tx returns** — a successful broadcast
+does not guarantee the lease actually transitioned to `LEASE_STATE_CLOSED`.
+Confirm explicitly:
+
+1. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
+2. Decode `chainState.state`:
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int>
+   ```
+3. Branch:
+   - **`LEASE_STATE_CLOSED`** → confirmed. Run cleanup:
+     ```bash
+     node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
+     ```
+     (no-op if the saved manifest record is already gone). Tell the user
+     "Lease confirmed CLOSED on-chain. Removed local saved manifest record."
+   - **Any other state** (still `LEASE_STATE_ACTIVE`, `LEASE_STATE_PENDING`,
+     etc.) → tell the user: "close_lease tx accepted but lease state is
+     still `<decoded-name>`; chain may need a moment to settle. Re-run
+     `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` in ~30s to
+     recheck. Local saved manifest record NOT removed yet."
+   - If `app_status` itself errors out: surface the error and tell the
+     user the tx was sent but verification failed. Do NOT remove the
+     local manifest record.
