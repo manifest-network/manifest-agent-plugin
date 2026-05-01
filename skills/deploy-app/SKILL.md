@@ -157,16 +157,28 @@ exposed at the deploy_app surface.)
    service is the public tier).
 4. **tmpfs**: use `SVC_INFO.suggestedTmpfs` as the default with
    `["Yes (Recommended)", "No", "Customize"]`.
-5. **env**, **labels**, **health_check** (only if image has none),
-   **storage** (top-level, asked once after all services), **init** —
-   ask normally.
-6. **Skip asking about** `command` / `args` / `user` / `workingDir` —
+5. **env** — `AskUserQuestion` for the input mode:
+   - **From a file (recommended for secrets)** — user provides an absolute
+     path to a dotenv file. Tell them to create it in a separate terminal
+     (`cat > /tmp/<svc>.env` … Ctrl+D, then `chmod 600`), not via `echo`
+     (shell history). Wait for the path. Store the path with the service
+     name; values are merged BEFORE Step 3 — they do not enter chat now.
+   - **Type in chat (KEY=VALUE pairs)** — for non-sensitive only (log
+     levels, feature flags, etc.). Loop key/value/done.
+   - **Skip** — no env for this service.
+   You may combine the chat and file modes per service (the file overlays
+   the chat values; same-key entries take the file's value).
+6. **labels**, **health_check** (only if image has none), **storage**
+   (top-level, asked once after all services), **init** — ask normally.
+7. **Skip asking about** `command` / `args` / `user` / `workingDir` —
    image defaults apply.
 
 **Inter-service env wiring is NOT auto-populated.** The user must add
 env vars like `WORDPRESS_DB_HOST=mysql`, `WORDPRESS_DB_PASSWORD=...`,
-`MYSQL_ROOT_PASSWORD=...` themselves via the per-service env prompts.
-The Intent recap below will heads-up on common gaps.
+`MYSQL_ROOT_PASSWORD=...` themselves via the per-service env prompts —
+either typed in chat (for non-sensitive values like the `_HOST=mysql`
+pointer) or via a per-service env file (recommended for passwords). The
+Intent recap below will heads-up on common gaps.
 
 After all services collected, ask top-level **`storage`** and
 **`depends_on`** (e.g. `wordpress depends_on mysql` is a typical pattern
@@ -220,8 +232,12 @@ Then collect only what's still needed:
 5. **`tmpfs`** — if `IMAGE_INFO.suggestedTmpfs` is non-empty, offer it as
    the default (`["Yes (Recommended)", "No", "Customize"]`); else ask
    "Need any tmpfs mounts? (yes / skip)".
-6. **`env`**, **`labels`**, **`health_check`** (only if image has none),
-   **`storage`**, **`init`** — ask as in `author-manifest` Step 6a.
+6. **`env`** — three-option flow (file / chat / skip), same as the
+   multi-image fast-path env step above. Sensitive values via file is the
+   recommended path for secrets. The single-service shape uses the
+   service name `app` — pass `--service-name app` to `merge-env.cjs`.
+7. **`labels`**, **`health_check`** (only if image has none),
+   **`storage`**, **`init`** — ask normally.
 
 Build the `SPEC` object using the **services-map shape** so per-port
 ingress is encoded explicitly:
@@ -267,7 +283,10 @@ user wants a reusable saved spec; here we just author + deploy in one shot.
    - Ports + ingress per port (with web-port default for single-service).
    - Skip cmd / args / user (image defaults).
    - tmpfs from `suggestedTmpfs`.
-   - env, labels, health_check (only if image has none), storage, init —
+   - **env** — three-option flow (file / chat / skip), same as the
+     multi-image fast-path env step above. Sensitive values via file is
+     the recommended path for secrets.
+   - labels, health_check (only if image has none), storage, init —
      ask normally.
 5. Build the `SPEC` object using the **services-map shape** with explicit
    `ports: { "<p>/<proto>": { ingress: <bool> } }` entries.
@@ -277,6 +296,41 @@ modes — the spec lives only in memory; the post-deploy wrapper at
 `~/.manifest-agent/manifests/<lease_uuid>.json` (Step 10) is the durable
 record. (When the user provided an existing spec file path, the spec already
 lives on disk by definition.)
+
+### Merge any file-sourced env (interactive paths only)
+
+Skip this section if the user provided a spec file path (the file already
+holds whatever env it has) OR if no service was given an env-file path.
+
+Otherwise, materialize the in-memory SPEC, merge each env file via the
+script (no values in chat), then re-load the merged spec:
+
+1. Use the `Write` tool to materialize SPEC at
+   `/tmp/.spec-env-${process_pid}.json`. The Write tool input shows the
+   spec content (image, ports, chat-typed env if any, etc.); file-sourced
+   values are NOT in this Write yet.
+2. For each `(service-name, env-file-path)` pair the user provided in
+   Step 2, run:
+   ```bash
+   cat "<env-file-path>" | node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" \
+     --spec-file "/tmp/.spec-env-${process_pid}.json" \
+     --service-name "<service-name>"
+   ```
+   Report the script's `keys_merged` to the user (keys only — no values
+   appear). On any error: surface verbatim, `rm -f` the tempfile, stop.
+3. Use the `Read` tool to load `/tmp/.spec-env-${process_pid}.json` back
+   into your context as the new SPEC. The Read result will contain the
+   merged env values — they enter your context here, but they have not
+   transited the chat input or any agent prose.
+4. `rm -f /tmp/.spec-env-${process_pid}.json` once the spec is loaded.
+5. Suggest the user delete each env file after a successful deploy
+   (e.g. `rm /tmp/wordpress.env`); they have served their purpose.
+
+(Architectural note: env values still appear in the `build_manifest_preview`
+and `deploy_app` MCP tool call args at Steps 3 and 7. Eliminating that
+exposure entirely needs upstream MCP support for "load spec from this
+path" and is out of scope here. What this flow does eliminate is the user
+typing secrets into the chat input.)
 
 ## Step 3 — Validate the spec
 

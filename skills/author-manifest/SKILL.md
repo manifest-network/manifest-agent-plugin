@@ -213,10 +213,46 @@ optional `interval`, `timeout`, `retries`, `start_period`.
 - If empty: ask "Need any tmpfs mounts? (yes / skip)". On yes, collect a
   list of paths.
 
-**env** — keep asking, ignore the image's defaults (`IMAGE_INFO.env` is
-usually system stuff like `PATH`, `NGINX_VERSION`, not app config). Loop:
-ask for KEY then VALUE; offer "add another" / "done". Do NOT pre-validate
-names — `build_manifest_preview` is the validator.
+**env** — `AskUserQuestion` for the input mode:
+- **From a file (recommended for secrets)** — user provides an absolute path
+  to a dotenv file (`KEY=VALUE` per line, `#` comments, blank lines OK).
+  See "Sensitive env values" below for what flows through chat vs. what
+  doesn't.
+- **Type in chat (KEY=VALUE pairs)** — loop: ask for KEY then VALUE; offer
+  "add another" / "done". Use this for non-sensitive values like log
+  levels, feature flags, etc. Do NOT pre-validate names —
+  `build_manifest_preview` is the validator.
+- **Skip** — no env vars.
+
+If the user picks **From a file**, ask them to create the file in a
+**separate terminal**, e.g.:
+```bash
+cat > /tmp/<service>.env
+KEY1=value1
+KEY2=value2
+^D
+chmod 600 /tmp/<service>.env
+```
+Tell them not to use `echo` (it lands in shell history). Wait for them to
+type the path back in chat. Store the path; the values are merged into the
+spec file in Step 8 — they do not flow through this conversation now.
+
+You may combine **Type in chat** and **From a file** (collect non-sensitive
+in chat, then offer the file option for the rest). The file overlays — keys
+present in both are taken from the file.
+
+The image's `IMAGE_INFO.env` is informational only (usually system stuff
+like `PATH`, `NGINX_VERSION`); do NOT auto-populate user env from it.
+
+**Sensitive env values — what this protects, what it doesn't:**
+- The chat input box stays clean — the user does not paste secrets.
+- The values do not enter Claude's conversation context during authoring;
+  the script merges them into the spec file directly.
+- The values **will** appear in the deploy_app MCP tool call args at
+  broadcast time (when `/manifest-agent:deploy-app` later reads the saved
+  spec). Eliminating that exposure entirely needs upstream MCP support.
+
+Suggest the user delete the env file after a successful save.
 
 **labels** — same loop as `env`. Image's `labels` are author-provided
 metadata, separate purpose from Fred labels.
@@ -267,8 +303,13 @@ Required per service:
   `{ "<port>/<proto>": { ingress: <bool> } }`.
 
 Optional per service (same rules as single-service):
-- `env`, `labels`, `tmpfs` (use `SVC_INFO.suggestedTmpfs` to default), 
-  `health_check` (skip ask if `SVC_INFO.healthcheck` non-null), 
+- `env` — same three-option flow as single-service (file / chat / skip);
+  pass `--service-name <name>` to `merge-env.cjs` in Step 8 so the file's
+  values land in the right service's env map. Inter-service env wiring
+  (e.g. `WORDPRESS_DB_HOST=mysql`, `MYSQL_ROOT_PASSWORD=...`) is the
+  user's responsibility — pick whichever input mode fits each value.
+- `labels`, `tmpfs` (use `SVC_INFO.suggestedTmpfs` to default),
+  `health_check` (skip ask if `SVC_INFO.healthcheck` non-null),
   `stop_grace_period`, `depends_on`, `expose`.
 - Skip asking about `command` / `args` / `user` — image defaults apply.
 
@@ -315,7 +356,16 @@ If `validation.valid === false`:
 3. Loop back to Step 6 to fix. Re-call `build_manifest_preview`. Repeat until
    `validation.valid === true`.
 
-Save `meta_hash_hex` for Step 9's report.
+**Note on file-sourced env values**: `build_manifest_preview` here only sees
+the env vars the user typed in chat. Vars merged from a file in Step 8 are
+NOT validated at this point — they are validated when the saved spec is
+loaded by `/manifest-agent:deploy-app` (which re-runs `build_manifest_preview`
+on the merged file). If a file-sourced env key is invalid (e.g. reserved
+name like `PATH`), the failure surfaces at deploy time, not here.
+
+Save `meta_hash_hex` for Step 9's report. Note: this hash will become stale
+once env vars are merged from files in Step 8; the deploy skill computes a
+fresh hash from the merged file.
 
 ## Step 8 — Save the spec to disk
 
@@ -355,6 +405,29 @@ into the chat transcript as a literal command):
    ```
 
 The script prints the saved file path on stdout. Capture it as `SAVED_PATH`.
+
+**If the user picked "From a file" for env in Step 6** (single-service or
+per-service in stacks), merge the file values into the saved spec now. For
+each (service-name, env-file-path) pair the user provided:
+
+```bash
+cat <env-file-path> | node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" \
+  --spec-file "$SAVED_PATH" \
+  --service-name "<service-name>"
+```
+
+(Omit `--service-name` only if the spec uses the legacy flat single-service
+shape — this skill always emits the services-map shape, so always pass it.)
+
+The script outputs `{"service":"<name>","keys_merged":["KEY1",...]}` —
+report the keys to the user (no values appear). If the script errors out
+(invalid dotenv line, unknown service, unreadable file), surface the error
+verbatim and stop; the saved spec at `$SAVED_PATH` is left in a partial
+state and the user should investigate before deploying.
+
+Suggest the user delete each env file once they've confirmed the saved spec
+looks right (e.g. `rm /tmp/wordpress.env`). The values are now in the spec
+at `$SAVED_PATH` (mode 0600) and on the user's responsibility to manage.
 
 ## Step 9 — Report
 

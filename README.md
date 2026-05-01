@@ -67,6 +67,18 @@ If you pass two or more image references separated by whitespace (with optional 
 
 Inter-service env vars (e.g. `WORDPRESS_DB_HOST=mysql`, `WORDPRESS_DB_PASSWORD=...`) are NOT auto-wired — you provide them through the per-service env prompts. The intent-recap step before broadcast flags obvious gaps (e.g. a wordpress with no DB credentials).
 
+**Sensitive env values (file-pipe pattern):** for secrets like database passwords, the env prompt offers a "From a file" option. Create a dotenv file in a separate terminal first:
+
+```bash
+cat > /tmp/wordpress.env
+WORDPRESS_DB_HOST=mysql
+WORDPRESS_DB_PASSWORD=hunter2
+^D
+chmod 600 /tmp/wordpress.env
+```
+
+Then tell the agent the path. Values flow through a script pipe into the spec file; they never enter the chat input box and the agent never echoes them in summaries. Mirrors the mnemonic-import pattern from `init-agent` / `import-key`. Note: env values still appear in the `deploy_app` MCP tool call args at broadcast time — eliminating that exposure entirely needs upstream MCP changes.
+
 **Interactive (full authoring, supports multi-service):**
 
 ```

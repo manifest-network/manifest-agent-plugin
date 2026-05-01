@@ -135,6 +135,14 @@ Deployment specs are plain JSON files in the same shape `mcp__manifest-fred__bui
 
 Helper: `scripts/save-manifest-draft.cjs` (atomic write + `0600`, refuses to overwrite). Skills should NOT write spec files via `Write` directly — it bypasses the safety checks.
 
+### Sensitive env values (file-pipe pattern)
+
+Mirrors the mnemonic-import pattern used by `init-agent` / `import-key`. The user creates a dotenv file in a separate terminal (`cat > /tmp/<svc>.env` … Ctrl+D, then `chmod 600`), names the path in chat, and the agent pipes it through `scripts/merge-env.cjs` to mutate the spec file in place. The script outputs only the merged keys (never values), so the chat input box stays clean and the agent never echoes secrets in summaries. Author flow merges into the saved spec at `--spec-file <SAVED_PATH>`; deploy flow materializes the in-memory spec to a `/tmp/.spec-env-<pid>.json`, merges, then `Read`s it back.
+
+What this protects: the chat input never carries secrets, and prose summaries (intent recap, deployment plan) are keys-only by construction (`scripts/summarize-manifest.cjs`, `scripts/manifest-summary.cjs`).
+
+What it doesn't: env values still flow into the `build_manifest_preview` and `deploy_app` MCP tool call args at validation + broadcast time, which means they enter the agent's API context for those turns. Eliminating that exposure entirely needs upstream MCP support for "load env from this path" and is out of scope here.
+
 ## Saved post-deploy records
 
 After a successful broadcast `/manifest-agent:deploy-app` persists a wrapper at `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). Wrapper schema v2: `{ schema_version: 2, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash_hex, format, manifest_json }` where `manifest_json` is the canonical Fred-rendered string (preserves the exact bytes whose SHA-256 is `meta_hash_hex` for audit) and `format` is `"single"` or `"stack"`. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must NOT pretty-print `manifest_json` into chat unredacted.
@@ -145,6 +153,7 @@ Helpers (skills should use these instead of reading the wrapper file directly):
 - `scripts/remove-manifest.cjs` — unlinks the file. Called by `/manifest-agent:deploy-app` and `troubleshoot-deployment` after a successful `close_lease`. No-op if the file is missing (close_lease may target a lease the agent never deployed).
 - `scripts/list-saved-manifests.cjs` — returns the safe-fields-only listing (never `manifest_json`). Used by `troubleshoot-deployment` as a fallback lease picker.
 - `scripts/summarize-manifest.cjs` — redacted structural summary (counts + env *keys*, never values). Used by `troubleshoot-deployment`'s "Saved manifest" appendix.
+- `scripts/merge-env.cjs` — merges dotenv-format stdin into `spec.services[<name>].env` (or flat `spec.env`) in place. Outputs `keys_merged` only. See "Sensitive env values" above.
 
 Naturally-expired leases leave their saved manifest in place — the file is the historical record. There is no periodic sweep. Lease lifecycle (active / closed / expired) is queried fresh from chain state via `app_status` rather than tracked in the wrapper.
 
