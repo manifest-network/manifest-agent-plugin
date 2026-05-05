@@ -41,10 +41,11 @@ the fact that the user asked for the action.
   wait for the user to confirm before calling `cosmos_tx`.
 
 - **For chain-broadcast tools that wrap `cosmosTx` under the hood**
-  (`deploy_app`, `close_lease`, `fund_credit`): these all broadcast
-  Cosmos SDK billing-module transactions, so `cosmos_estimate_fee`
-  applies. Call it first, show the returned `gasEstimate` and
-  `fee.amount` in human-readable form, then wait for confirmation.
+  (`deploy_app`, `close_lease`, `fund_credit`, `set_item_custom_domain`):
+  these all broadcast Cosmos SDK billing-module transactions, so
+  `cosmos_estimate_fee` applies. Call it first, show the returned
+  `gasEstimate` and `fee.amount` in human-readable form, then wait for
+  confirmation.
     - `deploy_app`: call
       `cosmos_estimate_fee({module: "billing", subcommand: "create-lease", args: ["--meta-hash", <meta_hash_hex>, "<skuUuid>:1[:<svcName>]", ...]})`.
       Use `meta_hash_hex` from `build_manifest_preview` and `sku.uuid`
@@ -52,12 +53,29 @@ the fact that the user asked for the action.
       append one `<skuUuid>:1:<svcName>` per service. For storage,
       append `<storageSkuUuid>:1` (look up the storage SKU UUID via
       `mcp__manifest-lease__get_skus` if you don't have it cached).
+      **When `custom_domain` is set on `deploy_app`**, the call broadcasts
+      TWO billing txes atomically (`create-lease` + `set-item-custom-domain`).
+      The single PreToolUse permission prompt covers both — the textual
+      DeploymentPlan + intent recap MUST itemize both fees and both txes
+      so the per-tx acknowledgement is in the textual flow. Estimate the
+      second tx by querying `mcp__manifest-lease__leases_by_tenant` for
+      the signer's first ACTIVE lease and running
+      `cosmos_estimate_fee({module: "billing", subcommand: "set-item-custom-domain", args: ["<existing_owned_lease_uuid>", "<fqdn-to-be-claimed>"[, "--service-name", "<svc>"]]})`.
+      The fee is essentially fixed for this msg type; using a
+      representative existing lease passes the keeper's ownership check.
+      If no representative lease exists, allowed degradation: render
+      `Tx fee (set-domain): (not estimated — no representative lease available)`
+      in the plan and surface the gap explicitly in the recap. Do NOT
+      silently omit it.
     - `close_lease`: call
       `cosmos_estimate_fee({module: "billing", subcommand: "close-lease", args: ["<lease_uuid>"]})`.
     - `fund_credit`: call
       `cosmos_estimate_fee({module: "billing", subcommand: "fund-credit", args: ["<amount>"[, "--tenant", "<addr>"]]})`
       where `<amount>` is the same string you'll pass to `fund_credit`
       (e.g. `"10000000umfx"`).
+    - `set_item_custom_domain` (standalone, not via deploy_app): call
+      `cosmos_estimate_fee({module: "billing", subcommand: "set-item-custom-domain", args: ["<lease_uuid>", "<fqdn>"[, "--service-name", "<svc>"][, "--clear"]]})`.
+      For clear-only, omit the `<fqdn>` positional and pass `--clear`.
 
   If `cosmos_estimate_fee` itself fails, surface the error and ask the
   user whether to proceed without an estimate — do NOT silently skip.
