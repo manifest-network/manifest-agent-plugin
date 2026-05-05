@@ -332,6 +332,42 @@ Final spec object:
 **Important**: per-service `image` (no top-level `image`); per-service `ports`
 (map, not single `port`).
 
+## Step 6.5 — Optional custom domain
+
+Ask the user via `AskUserQuestion`: "Attach a custom domain (FQDN) to this
+lease? Domains are claimed permanently on-chain until cleared. (Yes / Skip)".
+
+On **Skip**: continue to Step 7 with no `customDomain` in the spec.
+
+On **Yes**:
+
+1. Ask for the FQDN. Validate it client-side (catches obvious typos
+   before a wasted broadcast — the chain is the authoritative validator):
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/validate-domain.cjs" --domain "<fqdn>"
+   ```
+   Parse the JSON output. If `valid === false`, surface each entry in
+   `reasons[]` and re-ask. If valid, proceed.
+2. **For stacks (`SHAPE === 'stack'`)**: ask which service the domain
+   should attach to via `AskUserQuestion` populated from the keys of the
+   spec's `services` map. Store as `serviceName`.
+   **For single-service (`SHAPE === 'single'`)**: skip the picker. The
+   single-service shape uses one item; no service name needed.
+3. Add to the spec object under construction:
+   - top-level `customDomain: <fqdn>`
+   - top-level `serviceName: <picked-service>` (stacks only)
+4. Tell the user:
+   > Domain noted. The chain validates the format + reserved-suffix
+   > rules at deploy time; failures surface there. Make sure your DNS
+   > (CNAME or A record) is pointing at the provider's ingress before
+   > the deploy step runs — `/manifest-agent:deploy-app` runs a warn-only
+   > DNS pre-check but does not block on resolution.
+
+The saved spec file (Step 8) carries `customDomain` + `serviceName`
+verbatim — `mcp__manifest-fred__build_manifest_preview` and
+`mcp__manifest-fred__deploy_app` accept these as top-level input fields,
+so the agent can splat the spec into the deploy call without renaming.
+
 ## Step 7 — Validate via build_manifest_preview
 
 Call `mcp__manifest-fred__build_manifest_preview` with the spec object from
@@ -437,6 +473,7 @@ Tell the user:
 Saved:           <SAVED_PATH>
 meta_hash_hex:   <hex from Step 7>
 Format:          single | stack
+Custom domain:   <fqdn> -> service <name>      (only when set in Step 6.5)
 
 To deploy:       /manifest-agent:deploy-app <SAVED_PATH>
 
@@ -444,6 +481,8 @@ The file is plain JSON — feel free to edit it by hand or check it into your
 repo. Re-running this skill (or `build_manifest_preview` directly) on a
 hand-edited spec is the safest way to validate changes before deploying.
 ```
+
+Omit the `Custom domain:` line if no domain was set in Step 6.5.
 
 The image registry will be checked by the provider at deploy-time. If it's
 rejected, `deploy_app` will fail with a clear error.

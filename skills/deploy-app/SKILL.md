@@ -57,6 +57,13 @@ If `activeChain == "mainnet"`, ask via `AskUserQuestion`:
 
 Options: **Yes** (proceed) / **No** (stop). If No, stop immediately.
 
+If the spec being deployed (or the inline collection in Step 2) sets a
+`customDomain` AND chain is mainnet, append a second sentence to the
+warning:
+> This transaction also permanently associates the FQDN with this lease
+> on-chain until you `--clear` it or close the lease. FQDN squatting is
+> irreversible.
+
 ## Step 2 — Get the manifest spec
 
 Three input modes based on `$ARGUMENTS`. Choose deterministically using
@@ -97,6 +104,23 @@ Then load the spec into your context using the `Read` tool — NOT `cat`.
 `cat` would echo the entire spec to chat as a bash result; `Read` returns
 the file content as a structured tool result instead. The parsed spec
 object is your `SPEC`.
+
+**If the loaded spec has a top-level `customDomain`** (and optionally
+`serviceName` for stacks), surface it for confirmation via
+`AskUserQuestion` rather than re-asking blindly:
+> The spec sets a custom domain: `<fqdn>` → service `<name>` (or
+> "single-service lease" when serviceName omitted). What do you want
+> to do?
+> Options: **Keep** (deploy with this domain) / **Change** (provide a
+> different FQDN now) / **Clear** (deploy without a custom domain).
+On Change: ask for the new FQDN, validate via
+`scripts/validate-domain.cjs`, replace `SPEC.customDomain`. On Clear:
+delete both `customDomain` and `serviceName` from `SPEC`.
+
+**If the loaded spec has NO `customDomain`**, ask once via
+`AskUserQuestion` "Attach a custom domain to this deploy? (Yes / Skip)";
+on Yes, follow the FQDN-collection + (for stacks) service-picker flow
+described under the image fast-path below.
 
 ### When `$ARGUMENTS` is multiple image references (multi-service stack fast-path)
 
@@ -184,6 +208,20 @@ After all services collected, ask top-level **`storage`** and
 **`depends_on`** (e.g. `wordpress depends_on mysql` is a typical pattern
 — offer it but let the user say no).
 
+**Custom domain (optional)** — after all services collected and before
+the final SPEC is assembled, ask via `AskUserQuestion`:
+> Attach a custom domain (FQDN) to this stack? Pick which service it
+> routes to. (Yes / Skip)
+
+On Yes:
+1. Ask for the FQDN. Validate client-side via
+   `node "$MANIFEST_PLUGIN_ROOT/scripts/validate-domain.cjs" --domain "<fqdn>"`.
+   Re-ask on `valid: false`.
+2. Pick the service via `AskUserQuestion` populated from the confirmed
+   service names from the parse step (no chain query — you already have
+   them in memory).
+3. Add to the spec: top-level `customDomain: <fqdn>` + `serviceName: <picked>`.
+
 **Final SPEC** — services-map shape, one entry per token in the same
 order the user typed:
 
@@ -193,6 +231,8 @@ order the user typed:
     "wordpress": { image: "...", ports: { "80/tcp": { ingress: true } }, env: {...}, tmpfs: [...] },
     "mysql":     { image: "...", ports: { "3306/tcp": { ingress: false } }, env: {...}, tmpfs: [...] }
   },
+  customDomain?,                    // top-level FQDN (optional)
+  serviceName?,                     // top-level — service the domain attaches to (optional, required when customDomain is set on a stack)
   storage?,
   depends_on?
 }
@@ -239,6 +279,19 @@ Then collect only what's still needed:
 7. **`labels`**, **`health_check`** (only if image has none),
    **`storage`**, **`init`** — ask normally.
 
+**Custom domain (optional)** — after collection above and before the
+final SPEC is built, ask via `AskUserQuestion`:
+> Attach a custom domain (FQDN) to this lease? (Yes / Skip)
+
+On Yes:
+1. Ask for the FQDN. Validate via
+   `node "$MANIFEST_PLUGIN_ROOT/scripts/validate-domain.cjs" --domain "<fqdn>"`.
+   Re-ask on `valid: false`.
+2. No service picker — the single-service shape uses one service named
+   `app`, which is the implicit target.
+3. Add to the spec: top-level `customDomain: <fqdn>`. (Do NOT set
+   `serviceName`; the chain treats single-item leases as not needing it.)
+
 Build the `SPEC` object using the **services-map shape** so per-port
 ingress is encoded explicitly:
 
@@ -251,6 +304,7 @@ ingress is encoded explicitly:
       env?, labels?, health_check?, tmpfs?, init?
     }
   },
+  customDomain?,                                       // top-level FQDN (optional)
   storage?
 }
 ```
@@ -288,7 +342,14 @@ user wants a reusable saved spec; here we just author + deploy in one shot.
      the recommended path for secrets.
    - labels, health_check (only if image has none), storage, init —
      ask normally.
-5. Build the `SPEC` object using the **services-map shape** with explicit
+5. **Custom domain (optional)** — after all collection and before the
+   final SPEC is built: `AskUserQuestion` "Attach a custom domain (FQDN)
+   to this lease? (Yes / Skip)". On Yes: ask FQDN → validate via
+   `validate-domain.cjs` → for stacks pick service via `AskUserQuestion`
+   over `Object.keys(SPEC.services)`; for single, no picker. Add
+   `customDomain` (and `serviceName` for stacks) at the top level of the
+   spec.
+6. Build the `SPEC` object using the **services-map shape** with explicit
    `ports: { "<p>/<proto>": { ingress: <bool> } }` entries.
 
 Do NOT call `save-manifest-draft.cjs` in the image fast-path or interactive
@@ -402,6 +463,14 @@ Cover, in order:
    won't start; a mysql without `MYSQL_ROOT_PASSWORD` won't start. Be
    conservative — only flag cases you're confident about. If you're
    unsure, say so or skip the heads-up.
+6. **Custom domain** (only when `SPEC.customDomain` is set) — show the
+   line `Custom domain: <fqdn> -> service <name>` (or
+   `-> single-service lease` when `SPEC.serviceName` is omitted). Then
+   add a **dual-tx clarification**:
+   > Note: when a custom domain is set, `deploy_app` broadcasts TWO
+   > billing transactions atomically: `create-lease` AND
+   > `set-item-custom-domain`. The single permission prompt that fires
+   > later covers BOTH; this textual recap is your per-tx review.
 
 Then ask via `AskUserQuestion`:
 
@@ -414,6 +483,29 @@ Then ask via `AskUserQuestion`:
 
 On Amend: re-enter spec authoring. On Abort: stop. Only on Yes do you
 proceed to readiness.
+
+## Step 3.5 — DNS pre-check (custom domain only)
+
+Skip this section if `SPEC.customDomain` is unset.
+
+When set, run a warn-only DNS lookup so the user can catch a forgotten
+CNAME / A record before broadcasting:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/dns-precheck.cjs" --domain "<SPEC.customDomain>"
+```
+
+The script returns within ~5s either way. Parse the JSON output:
+- `resolved: true` → tell the user briefly what was found (a / aaaa /
+  cname). Continue silently.
+- `resolved: false` → surface `reason` and ask via `AskUserQuestion`:
+  > DNS doesn't resolve `<fqdn>` yet (`<reason>`). The chain claim will
+  > succeed regardless, but the domain won't route until DNS catches up.
+  > Continue anyway?
+  Options: **Continue** (proceed to readiness) / **Abort**.
+
+Never block. The chain is the authoritative arbiter; DNS pre-check is
+purely a heads-up for the operator.
 
 ## Step 4 — Pre-flight readiness
 
@@ -477,6 +569,48 @@ user and ask: "estimate failed; proceed without an estimate? (yes / no)".
 Do NOT silently skip. If the user says yes, set `ESTIMATE = null` and
 continue.
 
+### 5a-bis — Estimate the set-domain tx fee (custom domain only)
+
+Skip this if `SPEC.customDomain` is unset.
+
+When set, `deploy_app` will broadcast TWO billing txes (the runtime
+policy heredoc spells this out). Estimate the second one too. The
+challenge: the lease being created doesn't exist yet, but the chain's
+keeper validates ownership against the simulated msg sender. Use a
+representative existing lease the signer already owns.
+
+1. Query `mcp__manifest-lease__leases_by_tenant({ tenant: <address from
+   Step 0> })`.
+2. From the response, pick the FIRST lease whose `state` decodes to
+   `LEASE_STATE_ACTIVE`. Use `decode-lease-state.cjs` if needed:
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <int>
+   ```
+   Capture as `REP_UUID`.
+3. **If a representative lease exists**: call
+   ```
+   mcp__manifest-chain__cosmos_estimate_fee({
+     module: "billing",
+     subcommand: "set-item-custom-domain",
+     args: ["<REP_UUID>", "<SPEC.customDomain>"
+            // for stacks add: , "--service-name", "<SPEC.serviceName>"
+           ]
+   })
+   ```
+   Capture as `SET_DOMAIN_ESTIMATE`. The fee is essentially fixed for
+   this msg type, so it transfers cleanly to the about-to-be-created
+   lease.
+4. **If no ACTIVE lease exists** (fresh wallet, all prior leases closed):
+   set `SET_DOMAIN_ESTIMATE = "skipped"` (a sentinel — Step 5b's
+   `--set-domain-tx-fee skipped` flag renders the
+   "(not estimated — no representative lease available)" line per the
+   approved approach-3 fallback). The recap MUST surface this gap; the
+   PreToolUse + textual confirm steps still fire normally.
+
+If the second estimate itself errors out, surface the error and ask
+"proceed without a set-domain estimate? (yes / no)" — do NOT silently
+skip. On yes, set `SET_DOMAIN_ESTIMATE = "skipped"` and continue.
+
 ### 5b — Render the DeploymentPlan
 
 Compute a structural summary of the spec. Pass the spec via stdin from a
@@ -518,9 +652,19 @@ echo '{"summary": <summary JSON from above>, "readiness": <READINESS JSON>}' \
       --tx-fee "<human-readable fee string>"
 ```
 
+**When `SPEC.customDomain` is set**, also pass:
+- `--custom-domain "<SPEC.customDomain>"`
+- `--custom-domain-service "<SPEC.serviceName>"` (for stacks; omit for
+  single-service)
+- `--set-domain-tx-gas "<SET_DOMAIN_ESTIMATE.gasEstimate>"` (when the
+  second estimate succeeded)
+- `--set-domain-tx-fee "<human-readable set-domain fee>"` OR
+  `--set-domain-tx-fee skipped` (when approach-3 fallback fired)
+
 The script's stdout IS the plan. Print it to the user verbatim. Do not
 restate, reformat, or splice in additional fields — the script owns the
-canonical format.
+canonical format. With a custom domain set, the plan automatically
+shows two `Tx fee:` lines plus a `Total fee:` line.
 
 ## Step 6 — Wait for textual confirmation
 
@@ -538,16 +682,38 @@ abort entirely.
 ## Step 7 — Broadcast
 
 Call `mcp__manifest-fred__deploy_app` with the spec fields splatted as
-arguments. The PreToolUse hook will prompt for permission — that is
-expected.
+arguments. **When `SPEC.customDomain` is set**, splat
+`custom_domain: SPEC.customDomain` and (for stacks)
+`service_name: SPEC.serviceName` alongside the other fields. (deploy_app
+uses snake_case in its MCP input schema; the SPEC stores camelCase to
+mirror the underlying TypeScript signature — translate on the call.)
+
+The PreToolUse hook will prompt for permission — that is expected. Note
+that ONE permission prompt covers BOTH txes when `custom_domain` is set
+(the second tx fires server-side via `setItemCustomDomain`, never via
+the MCP tool surface).
 
 Stream `notifications/progress` events to the user as they arrive.
 
-If `deploy_app` raises (no response object), surface the error message and
-stop. There is no lease to clean up.
+**On a thrown error**: capture the error envelope as
+`{ message, details, code? }` and route through the error classifier:
 
-If `deploy_app` returns a response, capture it as `DEPLOY_RESPONSE` and
-proceed to Step 8.
+```bash
+echo '<error envelope JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/classify-deploy-error.cjs"
+# When SPEC.customDomain is set, also pass:
+#   --expected-custom-domain "<SPEC.customDomain>"
+```
+
+Branch on the script's `outcome`:
+- **`partially_succeeded`**: `create-lease` confirmed but the downstream
+  step (set-domain or upload/poll) fell over. The lease exists at
+  `details.lease_uuid` (or extracted from the message by the script).
+  Jump to **Step 11 partial-success sub-branch** with that UUID.
+- **`failed`**: no lease was created. Surface `reason` verbatim and
+  stop. No cleanup needed.
+
+If `deploy_app` returns a response (no throw), capture it as
+`DEPLOY_RESPONSE` and proceed to Step 8.
 
 ## Step 8 — Classify the response
 
@@ -601,6 +767,11 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest.cjs" \
   --meta-hash "$META_HASH" \
   --chain-id "$CHAIN_ID" \
   --manifest-file "/tmp/.manifest-${LEASE_UUID}.json"
+# When the deploy_app response carried a custom_domain (set-domain tx
+# confirmed), pass it through to the wrapper so troubleshoot-deployment
+# can surface it later. Add --custom-domain-service-name only for stacks.
+#   --custom-domain "<DEPLOY_RESPONSE.custom_domain>" \
+#   --custom-domain-service-name "<DEPLOY_RESPONSE.service_name>"   # stacks only
 rm -f "/tmp/.manifest-${LEASE_UUID}.json"
 ```
 
@@ -643,7 +814,62 @@ service is; do not narrate around it.
 
 ## Step 11 — Failure
 
-Two sub-cases based on whether the broadcast created a lease.
+Three sub-cases.
+
+### When `classify-deploy-error.cjs` returned `partially_succeeded` (custom-domain only)
+
+The `create-lease` tx confirmed (lease exists at the UUID returned by the
+script) but the downstream step (`set-item-custom-domain` or manifest
+upload / readiness poll) fell over. The lease is live and billing
+credits even though no custom domain attached.
+
+Show the user via `AskUserQuestion`:
+> Deploy partially succeeded:
+>   - Lease `<lease_uuid>` was created on-chain and is consuming credits.
+>   - Set-domain step did NOT complete: `<reason>`.
+> What do you want to do?
+>
+> Options:
+>   1. **Retry set-domain** — try again (same FQDN or a different one).
+>   2. **Close lease** — release the lease and stop credit burn.
+>   3. **Leave as-is** — keep the lease; no custom domain. The provider
+>      FQDN will still serve the app once it's ready.
+
+**On Retry set-domain**:
+1. Ask the user via `AskUserQuestion` whether to retry with the same
+   FQDN or a different one. On "different", ask for the new FQDN and
+   validate via `validate-domain.cjs`.
+2. Drive the manage-domain skill's reusable post-broadcast block inline
+   (Steps 4–6 of `/manifest-agent:manage-domain`):
+   `validate-domain.cjs` → `dns-precheck.cjs` (warn-only) →
+   `cosmos_estimate_fee` against `billing set-item-custom-domain` →
+   textual confirm with action + fee → `set_item_custom_domain` →
+   verify on-chain via `leases_by_tenant`. The retry MUST re-run
+   `cosmos_estimate_fee` (runtime policy demands it for every
+   broadcast).
+3. **Single retry only.** If it fails:
+   - Surface BOTH failures verbatim (the original partial-success
+     reason + the retry error).
+   - Re-offer options 2 (close) and 3 (leave-as-is); do NOT auto-loop.
+4. On success: persist the manifest wrapper via `save-manifest.cjs`
+   with `--custom-domain` populated. Print the `format-success.cjs`
+   block.
+
+**On Close lease**: follow the existing close-lease path below (skip to
+the `cosmos_estimate_fee` for `close-lease`, confirm, broadcast, verify
+on-chain, `remove-manifest.cjs`).
+
+**On Leave as-is**: persist the manifest wrapper via `save-manifest.cjs`
+WITHOUT the `--custom-domain` flag (the chain has no domain attached;
+don't store one). Then run `format-success.cjs` so the user gets the
+provider-FQDN ingress URL — they can use the lease normally without a
+custom domain.
+
+(After "Switching the domain on a live lease may cause a brief routing
+gap while the provider reconciles" — note this in the prompt when
+offering retry on a lease that already has a different domain attached;
+typically not the case in this partial-success path since the original
+attempt failed.)
 
 ### When the broadcast created a lease (`LEASE_UUID` present)
 
