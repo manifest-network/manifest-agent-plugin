@@ -80,6 +80,9 @@ function parseArgs(argv) {
   else if (wrapper.meta_hash)  lines.push(`meta_hash:        ${wrapper.meta_hash}`);
   if (wrapper.format)          lines.push(`Format:           ${wrapper.format}`);
   if (wrapper.schema_version)  lines.push(`Schema version:   ${wrapper.schema_version}`);
+  // v3 fields — guarded so v2 wrappers render identically to before.
+  if (wrapper.custom_domain)              lines.push(`Custom domain:    ${wrapper.custom_domain}`);
+  if (wrapper.custom_domain_service_name) lines.push(`Domain service:   ${wrapper.custom_domain_service_name}`);
 
   // Structural summary of manifest_json — counts only, env KEYS only.
   let manifestObj = null;

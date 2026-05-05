@@ -15,12 +15,17 @@
  *     service_count: number,
  *     port_count:    number,
  *     env_count:     number,
- *     env_keys:      string[],   // keys ONLY — never values
- *     images:        string[]    // one entry per service
+ *     env_keys:      string[],     // keys ONLY — never values
+ *     images:        string[],     // one entry per service
+ *     custom_domain?:  string,     // top-level spec.customDomain when present
+ *     service_name?:   string      // top-level spec.serviceName when present
+ *                                  //   (the service the customDomain attaches to)
  *   }
  *
  * Used by render-deployment-plan.cjs to populate the `Manifest:` summary line
- * without forcing the agent to count fields itself.
+ * AND the `Custom domain:` line (when set) without forcing the agent to count
+ * or extract fields itself. FQDNs are not secrets, so surfacing them here is
+ * safe.
  */
 
 const { readFileSync } = require('node:fs');
@@ -71,6 +76,15 @@ const { readFileSync } = require('node:fs');
     env_keys: Array.from(env_keys).sort(),
     images,
   };
+  // Surface top-level customDomain + serviceName if the spec carries them.
+  // Snake_case in output (script convention); spec uses camelCase (mirrors
+  // deploy_app input).
+  if (typeof spec.customDomain === 'string' && spec.customDomain.length > 0) {
+    out.custom_domain = spec.customDomain;
+  }
+  if (typeof spec.serviceName === 'string' && spec.serviceName.length > 0) {
+    out.service_name = spec.serviceName;
+  }
   console.log(JSON.stringify(out));
 })().catch((err) => {
   console.error(err.message);

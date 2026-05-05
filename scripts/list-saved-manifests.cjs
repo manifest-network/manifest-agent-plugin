@@ -7,12 +7,15 @@
  * Output (JSON array, pretty-printed): one entry per file, with ONLY the
  * non-sensitive wrapper fields:
  *
- *   { lease_uuid, image, size, deployed_at_iso, chain_id, format?, meta_hash_hex? }
+ *   { lease_uuid, image, size, deployed_at_iso, chain_id,
+ *     format?, meta_hash_hex?, schema_version?,
+ *     custom_domain?, custom_domain_service_name? }
  *
  * `manifest_json` is intentionally NEVER included — it can carry env values
  * the user supplied during authoring (DB URLs, API tokens). Skills should
  * call this script instead of reading the wrapper files directly to avoid
- * leaking sensitive data into chat.
+ * leaking sensitive data into chat. FQDNs (`custom_domain`,
+ * `custom_domain_service_name`) are NOT secrets — safe to surface.
  *
  * Used by troubleshoot-deployment as a fallback lease picker when the
  * manifest://leases/active MCP resource is empty or unavailable.
@@ -30,7 +33,7 @@ const { homedir } = require('node:os');
 
 const MANIFESTS_DIR = join(homedir(), '.manifest-agent', 'manifests');
 
-const SAFE_FIELDS = ['lease_uuid', 'image', 'size', 'deployed_at_iso', 'chain_id', 'format', 'meta_hash_hex'];
+const SAFE_FIELDS = ['lease_uuid', 'image', 'size', 'deployed_at_iso', 'chain_id', 'format', 'meta_hash_hex', 'schema_version', 'custom_domain', 'custom_domain_service_name'];
 
 (async () => {
   let entries;

@@ -31,6 +31,18 @@
  * surfaced an FQDN yet), the line reads
  * "Ingress: (none — service is internal or no FQDN reported)".
  *
+ * When the deploy_app response carries a `custom_domain` (the set-domain
+ * tx confirmed alongside create-lease), an additional line is emitted
+ * BEFORE the Ingress block:
+ *
+ *   Custom domain (provisioning):  https://<fqdn>/  — TLS may take a few
+ *     minutes; the Ingress URL below works immediately.
+ *
+ * The "(provisioning)" qualifier is honest — the chain tx confirmed but
+ * the provider hasn't necessarily issued the cert yet. The provider FQDN
+ * Ingress line stays so the user has an immediately-working endpoint
+ * during DNS cutover and TLS provisioning.
+ *
  * Lease state is decoded from the integer / "LEASE_STATE_*" string in
  * the deploy_response and rendered with the LEASE_STATE_ prefix
  * stripped (so "LEASE_STATE_ACTIVE" -> "ACTIVE"). Internal scaffolding
@@ -163,6 +175,14 @@ function findProviderName(catalog, providerUuid) {
     `  Lease UUID:    ${args.leaseUuid}`,
     `  Lease Status:  ${stateName}`,
   ];
+  // Custom domain line — chain tx confirmed but provider may still be
+  // provisioning the cert. Present BEFORE the Ingress block so the user
+  // sees the requested endpoint first, alongside the immediately-working
+  // provider FQDN.
+  if (typeof dr.custom_domain === 'string' && dr.custom_domain.length > 0) {
+    lines.push(`  Custom domain (provisioning):  https://${dr.custom_domain}/`);
+    lines.push('    — TLS may take a few minutes; the Ingress URL below works immediately.');
+  }
   if (ingresses.length === 0) {
     lines.push('  Ingress:       (none — service is internal or no FQDN reported)');
   } else if (ingresses.length === 1) {

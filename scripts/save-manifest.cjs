@@ -4,19 +4,32 @@
 /**
  * Persist a deployed manifest to ~/.manifest-agent/manifests/<lease_uuid>.json.
  *
- * Wrapper shape (schema_version 2):
+ * Wrapper shape (schema_version 3):
  *   {
- *     schema_version: 2,
+ *     schema_version: 3,
  *     lease_uuid, deployed_at_iso, deployed_at_unix,
  *     chain_id, image, size, meta_hash_hex,
- *     format,         // "single" or "stack" (derived from manifest_json content)
- *     manifest_json   // string — the canonical Fred-rendered manifest_json
- *                     // returned by build_manifest_preview, with any
- *                     // trailing whitespace stripped (normalizes the
- *                     // newline a heredoc-fed --manifest-file always
- *                     // contains). For valid input this preserves the
- *                     // exact bytes whose SHA-256 is meta_hash_hex.
+ *     format,                        // "single" or "stack" (derived from manifest_json content)
+ *     manifest_json,                 // string — the canonical Fred-rendered manifest_json
+ *                                    // returned by build_manifest_preview, with any
+ *                                    // trailing whitespace stripped (normalizes the
+ *                                    // newline a heredoc-fed --manifest-file always
+ *                                    // contains). For valid input this preserves the
+ *                                    // exact bytes whose SHA-256 is meta_hash_hex.
+ *     custom_domain?,                // (v3) FQDN attached to the lease item via
+ *                                    // set-item-custom-domain. Omitted when no
+ *                                    // domain is set. Snake_case mirrors the chain's
+ *                                    // service_name field naming.
+ *     custom_domain_service_name?    // (v3) for stack leases, the service inside
+ *                                    // `services` whose item holds the custom domain.
+ *                                    // Omitted for single-service leases (the only
+ *                                    // item gets the domain implicitly).
  *   }
+ *
+ * Schema versioning: v2 wrappers remain readable by all helpers
+ * (list-saved-manifests.cjs, summarize-manifest.cjs). Missing v3 fields
+ * are treated as undefined; new render lines are guarded so v2 records
+ * surface identically to before.
  *
  * `manifest_json` may contain sensitive values (env values typed during the
  * authoring flow). Exposure is mitigated by file mode 0600, parent dir 0700.
@@ -35,11 +48,17 @@
  *     --size <sku-name> \
  *     --meta-hash <hex> \
  *     --chain-id <chain-id> \
- *     --manifest-file <path-to-tmpfile-with-manifest_json-as-string>
+ *     --manifest-file <path-to-tmpfile-with-manifest_json-as-string> \
+ *     [--custom-domain <fqdn>] \
+ *     [--custom-domain-service-name <name>]
  *
  * --manifest-file must contain the canonical Fred-rendered manifest JSON (the
  * `manifest_json` string returned by build_manifest_preview), NOT the
  * structured spec input.
+ *
+ * --custom-domain-service-name may only be passed alongside --custom-domain;
+ * passing it alone is a usage error (the service name is meaningless without
+ * a domain to attach it to).
  */
 
 const { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, renameSync, unlinkSync } = require('node:fs');
@@ -70,6 +89,8 @@ function parseArgs(argv) {
     else if (flag === '--meta-hash' && next) { args.metaHash = next; i++; }
     else if (flag === '--chain-id' && next) { args.chainId = next; i++; }
     else if (flag === '--manifest-file' && next) { args.manifestFile = next; i++; }
+    else if (flag === '--custom-domain' && next) { args.customDomain = next; i++; }
+    else if (flag === '--custom-domain-service-name' && next) { args.customDomainServiceName = next; i++; }
   }
   return args;
 }
@@ -153,9 +174,16 @@ function atomicWrite(targetPath, contents) {
   mkdirSync(MANIFESTS_DIR, { recursive: true, mode: 0o700 });
   chmodSync(MANIFESTS_DIR, 0o700);
 
+  // Reject --custom-domain-service-name without --custom-domain — the service
+  // name is meaningless without a domain to attach it to.
+  if (args.customDomainServiceName && !args.customDomain) {
+    console.error('--custom-domain-service-name requires --custom-domain');
+    process.exit(1);
+  }
+
   const now = new Date();
   const wrapper = {
-    schema_version: 2,
+    schema_version: 3,
     lease_uuid: args.leaseUuid,
     deployed_at_iso: now.toISOString(),
     deployed_at_unix: Math.floor(now.getTime() / 1000),
@@ -169,6 +197,14 @@ function atomicWrite(targetPath, contents) {
     // the chain-recorded hash.
     manifest_json: trimmed,
   };
+  // Optional v3 fields — only persist when supplied so v3 wrappers without
+  // a custom domain stay shape-identical to v2 (modulo schema_version).
+  if (args.customDomain) {
+    wrapper.custom_domain = args.customDomain;
+  }
+  if (args.customDomainServiceName) {
+    wrapper.custom_domain_service_name = args.customDomainServiceName;
+  }
 
   const outPath = join(MANIFESTS_DIR, `${args.leaseUuid}.json`);
   atomicWrite(outPath, JSON.stringify(wrapper, null, 2) + '\n');
