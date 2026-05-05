@@ -171,7 +171,7 @@ The script prints `{ status, reasons, suggested_actions }`. Branch on `status`:
 ## Step 6 — Author the spec
 
 Use the `AskUserQuestion` tool throughout. Build a JavaScript object literal
-in your working memory; you'll feed it to `build_manifest_preview` in Step 7.
+in your working memory; you'll feed it to `build_manifest_preview` in Step 8.
 
 ### 6a — Single-service (`SHAPE == single`)
 
@@ -247,7 +247,7 @@ chmod 600 /tmp/<service>.env
 ```
 Tell them not to use `echo` (it lands in shell history). Wait for them to
 type the path back in chat. Store the path; the values are merged into the
-spec file in Step 8 — they do not flow through this conversation now.
+spec file in Step 9 — they do not flow through this conversation now.
 
 You may combine **Type in chat** and **From a file** (collect non-sensitive
 in chat, then offer the file option for the rest). The file overlays — keys
@@ -316,7 +316,7 @@ Required per service:
 
 Optional per service (same rules as single-service):
 - `env` — same three-option flow as single-service (file / chat / skip);
-  pass `--service-name <name>` to `merge-env.cjs` in Step 8 so the file's
+  pass `--service-name <name>` to `merge-env.cjs` in Step 9 so the file's
   values land in the right service's env map. Inter-service env wiring
   (e.g. `WORDPRESS_DB_HOST=mysql`, `MYSQL_ROOT_PASSWORD=...`) is the
   user's responsibility — pick whichever input mode fits each value.
@@ -344,12 +344,12 @@ Final spec object:
 **Important**: per-service `image` (no top-level `image`); per-service `ports`
 (map, not single `port`).
 
-## Step 6.5 — Optional custom domain
+## Step 7 — Optional custom domain
 
 Ask the user via `AskUserQuestion`: "Attach a custom domain (FQDN) to this
 lease? Domains are claimed permanently on-chain until cleared. (Yes / Skip)".
 
-On **Skip**: continue to Step 7 with no `customDomain` in the spec.
+On **Skip**: continue to Step 8 with no `customDomain` in the spec.
 
 On **Yes**:
 
@@ -375,12 +375,12 @@ On **Yes**:
    > the deploy step runs — `/manifest-agent:deploy-app` runs a warn-only
    > DNS pre-check but does not block on resolution.
 
-The saved spec file (Step 8) carries `customDomain` + `serviceName`
+The saved spec file (Step 9) carries `customDomain` + `serviceName`
 verbatim — `mcp__manifest-fred__build_manifest_preview` and
 `mcp__manifest-fred__deploy_app` accept these as top-level input fields,
 so the agent can splat the spec into the deploy call without renaming.
 
-## Step 7 — Validate via build_manifest_preview
+## Step 8 — Validate via build_manifest_preview
 
 Call `mcp__manifest-fred__build_manifest_preview` with the spec object from
 Step 6 splatted as input arguments. The response shape is:
@@ -405,17 +405,17 @@ If `validation.valid === false`:
    `validation.valid === true`.
 
 **Note on file-sourced env values**: `build_manifest_preview` here only sees
-the env vars the user typed in chat. Vars merged from a file in Step 8 are
+the env vars the user typed in chat. Vars merged from a file in Step 9 are
 NOT validated at this point — they are validated when the saved spec is
 loaded by `/manifest-agent:deploy-app` (which re-runs `build_manifest_preview`
 on the merged file). If a file-sourced env key is invalid (e.g. reserved
 name like `PATH`), the failure surfaces at deploy time, not here.
 
-Save `meta_hash_hex` for Step 9's report. Note: this hash will become stale
-once env vars are merged from files in Step 8; the deploy skill computes a
+Save `meta_hash_hex` for Step 10's report. Note: this hash will become stale
+once env vars are merged from files in Step 9; the deploy skill computes a
 fresh hash from the merged file.
 
-## Step 8 — Save the spec to disk
+## Step 9 — Save the spec to disk
 
 Use `AskUserQuestion` to ask where to save the spec:
 
@@ -477,15 +477,15 @@ Suggest the user delete each env file once they've confirmed the saved spec
 looks right (e.g. `rm /tmp/wordpress.env`). The values are now in the spec
 at `$SAVED_PATH` (mode 0600) and on the user's responsibility to manage.
 
-## Step 9 — Report
+## Step 10 — Report
 
 Tell the user:
 
 ```
 Saved:           <SAVED_PATH>
-meta_hash_hex:   <hex from Step 7>
+meta_hash_hex:   <hex from Step 8>
 Format:          single | stack
-Custom domain:   <fqdn> -> service <name>      (only when set in Step 6.5)
+Custom domain:   <fqdn> -> service <name>      (only when set in Step 7)
 
 To deploy:       /manifest-agent:deploy-app <SAVED_PATH>
 
@@ -494,7 +494,7 @@ repo. Re-running this skill (or `build_manifest_preview` directly) on a
 hand-edited spec is the safest way to validate changes before deploying.
 ```
 
-Omit the `Custom domain:` line if no domain was set in Step 6.5.
+Omit the `Custom domain:` line if no domain was set in Step 7.
 
 The image registry will be checked by the provider at deploy-time. If it's
 rejected, `deploy_app` will fail with a clear error.

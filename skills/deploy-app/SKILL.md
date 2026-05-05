@@ -58,9 +58,9 @@ If `activeChain == "mainnet"`, ask via `AskUserQuestion`:
 Options: **Yes** (proceed) / **No** (stop). If No, stop immediately.
 
 (The custom-domain mainnet warning — about FQDN reservations being
-permanent — fires later, in the **Confirm intent** step, because at this
-point in the flow the spec hasn't been loaded or built yet. By the time
-the recap runs, both the spec and the chosen FQDN are in hand.)
+permanent — fires later, in Step 4, because at this point in the flow
+the spec hasn't been loaded or built yet. By the time the recap runs,
+both the spec and the chosen FQDN are in hand.)
 
 ## Step 2 — Get the manifest spec
 
@@ -74,316 +74,16 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/dispatch-deploy-input.cjs" --arguments "$ARG
 The script's stdout JSON has `{ mode, tokens, spec_path?, services?, collisions?, reason? }`.
 Branch on `mode`:
 
-- **`empty`** → **Interactive authoring** (below).
-- **`spec_file`** → **Spec file path** (below). `spec_path` is the file to load.
-- **`multi_image`** → **Multi-image stack fast-path** (below). `services[]`
-  has `{ token, derived_name, valid }` per token, plus `collisions[]` when
-  two tokens derive to the same RFC 1123 DNS label.
-- **`single_image`** → **Image fast-path** (single-service, below).
-  `services[]` has one entry with the derived service name.
-- **`error`** → surface `reason` to the user verbatim and stop. The
-  reason is human-readable and explains exactly why the input wasn't
-  recognized (e.g. "argument is neither a readable file path nor a
-  recognizable image reference"). Do not guess — fail loudly.
+- **`empty`** | **`spec_file`** | **`multi_image`** | **`single_image`** →
+  `Read` `skills/deploy-app/references/spec-input-modes.md` and follow the
+  matching section. The reference walks each mode's authoring flow,
+  custom-domain collection, env-file merging, and the final services-map
+  SPEC shape.
+- **`error`** → surface `reason` to the user verbatim and stop. The reason
+  is human-readable and explains exactly why the input wasn't recognized
+  (e.g. "argument is neither a readable file path nor a recognizable image
+  reference"). Do not guess — fail loudly.
 
-### When `$ARGUMENTS` is a spec file path
-
-Treat `$ARGUMENTS` as a path to a JSON spec file. Validate it exists, is
-readable, and parses as JSON **without echoing its contents to chat** — spec
-files can contain user-supplied env values that may be sensitive:
-
-```bash
-node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log("ok")' "$ARGUMENTS"
-```
-
-If the command does not print `ok` (file missing, unreadable, or invalid
-JSON), surface the error verbatim to the user and stop.
-
-Then load the spec into your context using the `Read` tool — NOT `cat`.
-`cat` would echo the entire spec to chat as a bash result; `Read` returns
-the file content as a structured tool result instead. The parsed spec
-object is your `SPEC`.
-
-**If the loaded spec has a top-level `customDomain`** (and optionally
-`serviceName` for stacks), surface it for confirmation via
-`AskUserQuestion` rather than re-asking blindly:
-> The spec sets a custom domain: `<fqdn>` → service `<name>` (or
-> "single-service lease" when serviceName omitted). What do you want
-> to do?
-> Options: **Keep** (deploy with this domain) / **Change** (provide a
-> different FQDN now) / **Clear** (deploy without a custom domain).
-On Change: ask for the new FQDN, validate via
-`scripts/validate-domain.cjs`, replace `SPEC.customDomain`. On Clear:
-delete both `customDomain` and `serviceName` from `SPEC`.
-
-**If the loaded spec has NO `customDomain`**, ask once via
-`AskUserQuestion` "Attach a custom domain to this deploy? (Yes / Skip)";
-on Yes, follow the FQDN-collection + (for stacks) service-picker flow
-described under the image fast-path below.
-
-### When `mode == "multi_image"` (multi-service stack fast-path)
-
-The user typed something like `/manifest-agent:deploy-app wordpress:6 mysql:9`
-or `/manifest-agent:deploy-app wordpress:6 + mysql:9`. The dispatcher has
-already tokenized the input, derived a service name per token, and
-detected collisions. You consume `services[]` and `collisions?[]` from
-its output.
-
-**Confirm the parse before doing anything else** so the user can catch
-mistakes. Use `AskUserQuestion`. For each entry in `services[]` show
-`{derived_name} ({token})`; if any entry has `valid: false`, surface
-that the auto-derived name didn't conform to RFC 1123 and you'll need
-the user to provide a name.
-
-> Parsed your input as a stack of N services:
->   - `wordpress` (`docker.io/lifted/wordpress:6`)
->   - `mysql` (`docker.io/library/mysql:9`)
-> Proceed with these names? Options: yes / customize names / abort.
-
-On "customize names" let the user rename each service. On "abort" stop.
-
-**Service name collisions**: if `collisions[]` is non-empty, the parse
-confirmation must show the collision (e.g. `redis:7 redis:8` both
-derive to `redis`) and ask the user to disambiguate (suggest
-`redis-7` / `redis-8` or let them type names). Do NOT silently
-auto-suffix — the dispatcher reports the collision deliberately so the
-user makes the call.
-
-**SKU size**: after the parse is confirmed, ask for the SKU size once
-for the whole stack via `AskUserQuestion`, populated from
-`mcp__manifest-fred__browse_catalog`. Store as `SIZE`. (The SKU applies
-to the whole lease, not per-service; per-service compute sizing isn't
-exposed at the deploy_app surface.)
-
-**Per-service authoring** — for each service in order:
-1. Set `IMAGE = <token>` and call:
-   ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
-   ```
-   Capture as `SVC_INFO`. Same fail-soft semantics as the single-service
-   fast-path.
-2. **Ports**: from `SVC_INFO.ports`.
-   - 1 detected: use it.
-   - >1 detected: ask which (multi-select).
-   - 0 / inspection failed: ask the user to type each port-protocol pair.
-3. **Ingress per port**: in stacks the typical pattern is one
-   public-facing service (web tier) and the rest internal (DBs,
-   workers). **Always ask explicitly per port — do not default.** No
-   port number heuristic in this branch (the agent doesn't know which
-   service is the public tier).
-4. **tmpfs**: use `SVC_INFO.suggestedTmpfs` as the default with
-   `["Yes (Recommended)", "No", "Customize"]`.
-5. **env** — `AskUserQuestion` for the input mode:
-   - **From a file (recommended for secrets)** — user provides an absolute
-     path to a dotenv file. Tell them to create it in a separate terminal
-     (`cat > /tmp/<svc>.env` … Ctrl+D, then `chmod 600`), not via `echo`
-     (shell history). Wait for the path. Store the path with the service
-     name; values are merged BEFORE Step 3 — they do not enter chat now.
-   - **Type in chat (KEY=VALUE pairs)** — for non-sensitive only (log
-     levels, feature flags, etc.). Loop key/value/done.
-   - **Skip** — no env for this service.
-   You may combine the chat and file modes per service (the file overlays
-   the chat values; same-key entries take the file's value).
-6. **labels**, **health_check** (only if image has none), **storage**
-   (top-level, asked once after all services), **init** — ask normally.
-7. **Skip asking about** `command` / `args` / `user` / `workingDir` —
-   image defaults apply.
-
-**Inter-service env wiring is NOT auto-populated.** The user must add
-env vars like `WORDPRESS_DB_HOST=mysql`, `WORDPRESS_DB_PASSWORD=...`,
-`MYSQL_ROOT_PASSWORD=...` themselves via the per-service env prompts —
-either typed in chat (for non-sensitive values like the `_HOST=mysql`
-pointer) or via a per-service env file (recommended for passwords). The
-Intent recap below will heads-up on common gaps.
-
-After all services collected, ask top-level **`storage`** and
-**`depends_on`** (e.g. `wordpress depends_on mysql` is a typical pattern
-— offer it but let the user say no).
-
-**Custom domain (optional)** — after all services collected and before
-the final SPEC is assembled, ask via `AskUserQuestion`:
-> Attach a custom domain (FQDN) to this stack? Pick which service it
-> routes to. (Yes / Skip)
-
-On Yes:
-1. Ask for the FQDN. Validate client-side via
-   `node "$MANIFEST_PLUGIN_ROOT/scripts/validate-domain.cjs" --domain "<fqdn>"`.
-   Re-ask on `valid: false`.
-2. Pick the service via `AskUserQuestion` populated from the confirmed
-   service names from the parse step (no chain query — you already have
-   them in memory).
-3. Add to the spec: top-level `customDomain: <fqdn>` + `serviceName: <picked>`.
-
-**Final SPEC** — services-map shape, one entry per token in the same
-order the user typed:
-
-```js
-{
-  services: {
-    "wordpress": { image: "...", ports: { "80/tcp": { ingress: true } }, env: {...}, tmpfs: [...] },
-    "mysql":     { image: "...", ports: { "3306/tcp": { ingress: false } }, env: {...}, tmpfs: [...] }
-  },
-  customDomain?,                    // top-level FQDN (optional)
-  serviceName?,                     // top-level — service the domain attaches to (optional, required when customDomain is set on a stack)
-  storage?,
-  depends_on?
-}
-```
-
-This branch then continues to Step 3 validation, the Intent recap, the
-readiness check, etc., the same as the other input modes.
-
-### When `$ARGUMENTS` is an image reference (single-service fast-path)
-
-Treat `$ARGUMENTS` as the image. Set `IMAGE = $ARGUMENTS`. **Inspect the
-image first** to verify it's reachable and to auto-detect ports / cmd /
-tmpfs hints:
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
-```
-
-Capture the JSON result as `IMAGE_INFO`. If empty `{}` (inspection
-failed), surface the stderr reason and ask the user to either retry with
-a different image or proceed without auto-detection.
-
-Then collect only what's still needed:
-
-1. `AskUserQuestion` for SKU size, populated from
-   `mcp__manifest-fred__browse_catalog`.
-2. **Ports** — driven by `IMAGE_INFO.ports`:
-   - 1 detected: use it (don't ask).
-   - >1 detected: multi-select.
-   - 0 / no inspection: ask user to type each port-protocol pair.
-3. **Ingress per port** — for each chosen port:
-   - Single port AND number in `{80, 443, 8080, 8443}`: confirm with
-     options `["Yes (Recommended)", "No (internal only)"]`.
-   - Otherwise: ask explicitly per port, no default.
-4. **Skip asking about** `command` / `args` / `user` / `workingDir` — Fred
-   uses image defaults (visible in `IMAGE_INFO.cmd` etc.) unless overridden.
-5. **`tmpfs`** — if `IMAGE_INFO.suggestedTmpfs` is non-empty, offer it as
-   the default (`["Yes (Recommended)", "No", "Customize"]`); else ask
-   "Need any tmpfs mounts? (yes / skip)".
-6. **`env`** — three-option flow (file / chat / skip), same as the
-   multi-image fast-path env step above. Sensitive values via file is the
-   recommended path for secrets. The single-service shape uses the
-   service name `app` — pass `--service-name app` to `merge-env.cjs`.
-7. **`labels`**, **`health_check`** (only if image has none),
-   **`storage`**, **`init`** — ask normally.
-
-**Custom domain (optional)** — after collection above and before the
-final SPEC is built, ask via `AskUserQuestion`:
-> Attach a custom domain (FQDN) to this lease? (Yes / Skip)
-
-On Yes:
-1. Ask for the FQDN. Validate via
-   `node "$MANIFEST_PLUGIN_ROOT/scripts/validate-domain.cjs" --domain "<fqdn>"`.
-   Re-ask on `valid: false`.
-2. No service picker — the single-service shape uses one service named
-   `app`, which is the implicit target.
-3. Add to the spec: top-level `customDomain: <fqdn>`. (Do NOT set
-   `serviceName`; the chain treats single-item leases as not needing it.)
-
-Build the `SPEC` object using the **services-map shape** so per-port
-ingress is encoded explicitly:
-
-```js
-{
-  services: {
-    "app": {                                           // default service name
-      image: IMAGE,
-      ports: { "80/tcp": { ingress: true }, ... },
-      env?, labels?, health_check?, tmpfs?, init?
-    }
-  },
-  customDomain?,                                       // top-level FQDN (optional)
-  storage?
-}
-```
-
-This branch is single-service only. If the user supplied an image but
-actually wants a multi-service stack, tell them: "image-arg fast-path is
-single-service only; re-run as `/manifest-agent:deploy-app` (no argument)
-for interactive multi-service authoring, or as
-`/manifest-agent:deploy-app /path/to/spec.json` if you have a stack spec
-file." Then stop.
-
-### When `$ARGUMENTS` is empty (interactive authoring)
-
-Drive a thin authoring sequence inline (do NOT `Read` the
-`author-manifest/SKILL.md` file — the prose below is sufficient). The
-standalone `/manifest-agent:author-manifest` is the right entry point if the
-user wants a reusable saved spec; here we just author + deploy in one shot.
-
-1. Use `AskUserQuestion` for shape: **Single-service** or **Multi-service stack**.
-2. Use `AskUserQuestion` for SKU size, populated from
-   `mcp__manifest-fred__browse_catalog`.
-3. Ask for the image reference. Then immediately inspect it to verify
-   reachability and to auto-detect ports / cmd / suggested tmpfs:
-   ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
-   ```
-   Same fail-soft handling as the image fast-path above.
-4. Collect remaining fields per the same rules as `author-manifest`
-   Step 6a (single-service) or 6b (stack):
-   - Ports + ingress per port (with web-port default for single-service).
-   - Skip cmd / args / user (image defaults).
-   - tmpfs from `suggestedTmpfs`.
-   - **env** — three-option flow (file / chat / skip), same as the
-     multi-image fast-path env step above. Sensitive values via file is
-     the recommended path for secrets.
-   - labels, health_check (only if image has none), storage, init —
-     ask normally.
-5. **Custom domain (optional)** — after all collection and before the
-   final SPEC is built: `AskUserQuestion` "Attach a custom domain (FQDN)
-   to this lease? (Yes / Skip)". On Yes: ask FQDN → validate via
-   `validate-domain.cjs` → for stacks pick service via `AskUserQuestion`
-   over `Object.keys(SPEC.services)`; for single, no picker. Add
-   `customDomain` (and `serviceName` for stacks) at the top level of the
-   spec.
-6. Build the `SPEC` object using the **services-map shape** with explicit
-   `ports: { "<p>/<proto>": { ingress: <bool> } }` entries.
-
-Do NOT call `save-manifest-draft.cjs` in the image fast-path or interactive
-modes — the spec lives only in memory; the post-deploy wrapper at
-`~/.manifest-agent/manifests/<lease_uuid>.json` (Step 10) is the durable
-record. (When the user provided an existing spec file path, the spec already
-lives on disk by definition.)
-
-### Merge any file-sourced env (interactive paths only)
-
-Skip this section if the user provided a spec file path (the file already
-holds whatever env it has) OR if no service was given an env-file path.
-
-Otherwise, materialize the in-memory SPEC, merge each env file via the
-script (no values in chat), then re-load the merged spec:
-
-1. Use the `Write` tool to materialize SPEC at
-   `/tmp/.spec-env-${process_pid}.json`. The Write tool input shows the
-   spec content (image, ports, chat-typed env if any, etc.); file-sourced
-   values are NOT in this Write yet.
-2. For each `(service-name, env-file-path)` pair the user provided in
-   Step 2, run:
-   ```bash
-   cat "<env-file-path>" | node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" \
-     --spec-file "/tmp/.spec-env-${process_pid}.json" \
-     --service-name "<service-name>"
-   ```
-   Report the script's `keys_merged` to the user (keys only — no values
-   appear). On any error: surface verbatim, `rm -f` the tempfile, stop.
-3. Use the `Read` tool to load `/tmp/.spec-env-${process_pid}.json` back
-   into your context as the new SPEC. The Read result will contain the
-   merged env values — they enter your context here, but they have not
-   transited the chat input or any agent prose.
-4. `rm -f /tmp/.spec-env-${process_pid}.json` once the spec is loaded.
-5. Suggest the user delete each env file after a successful deploy
-   (e.g. `rm /tmp/wordpress.env`); they have served their purpose.
-
-(Architectural note: env values still appear in the `build_manifest_preview`
-and `deploy_app` MCP tool call args at Steps 3 and 7. Eliminating that
-exposure entirely needs upstream MCP support for "load spec from this
-path" and is out of scope here. What this flow does eliminate is the user
-typing secrets into the chat input.)
 
 ## Step 3 — Validate the spec
 
@@ -408,7 +108,7 @@ Capture from the response:
 - The `format` (`single` or `stack`) — surfaces in the DeploymentPlan
   summary.
 
-For `IMAGE`: the SKU pre-flight in Step 4 wants a single image. Note that
+For `IMAGE`: the SKU pre-flight in Step 5 wants a single image. Note that
 specs always use the services-map shape (every authoring path emits it),
 so derive the image from the first entry of `SPEC.services`:
 `IMAGE = Object.values(SPEC.services)[0].image`. For multi-service stacks
@@ -424,7 +124,7 @@ interactive flows (image fast-path, multi-image stack fast-path, or
 no-arg interactive authoring), `SIZE` was already collected in Step 2;
 reuse it.
 
-## Confirm intent (between spec validation and readiness)
+## Step 4 — Confirm intent
 
 Before any chain round-trips (readiness, fee estimate), show the user a
 plain-English **Intent recap** so misinterpretations get caught before any
@@ -479,7 +179,7 @@ Then ask via `AskUserQuestion`:
 On Amend: re-enter spec authoring. On Abort: stop. Only on Yes do you
 proceed to readiness.
 
-## Step 4 — Pre-flight readiness
+## Step 5 — Pre-flight readiness
 
 Always re-fetch — balances at broadcast time are what matter, not whatever
 the spec was authored against. Call:
@@ -504,14 +204,14 @@ echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness
 Branch on `status` exactly as `author-manifest` Step 5 does:
 - **`block`** → print `reasons`, stop.
 - **`warn`** → ask the user to proceed / fund_credit / request_faucet /
-  topup_wallet / abort. On fund_credit/request_faucet, re-run Step 4.
+  topup_wallet / abort. On fund_credit/request_faucet, re-run Step 5.
 - **`ok`** → silent.
 
 Save the readiness JSON as `READINESS`.
 
-## Step 5 — Estimate the deploy_app tx fee, then render the DeploymentPlan
+## Step 6 — Estimate the deploy_app tx fee, then render the DeploymentPlan
 
-### 5a — Estimate the chain tx fee
+### 6a — Estimate the chain tx fee
 
 The runtime policy mandates calling `cosmos_estimate_fee` before any
 billing-module broadcast. `deploy_app` wraps `cosmosTx("billing",
@@ -546,7 +246,7 @@ user and ask: "estimate failed; proceed without an estimate? (yes / no)".
 Do NOT silently skip. If the user says yes, set `ESTIMATE = null` and
 continue.
 
-### 5a-bis — Estimate the set-domain tx fee (custom domain only)
+### 6a-bis — Estimate the set-domain tx fee (custom domain only)
 
 Skip this if `SPEC.customDomain` is unset.
 
@@ -587,7 +287,7 @@ representative existing lease the signer already owns.
    this msg type, so it transfers cleanly to the about-to-be-created
    lease.
 4. **If no ACTIVE lease exists** (fresh wallet, all prior leases closed):
-   set `SET_DOMAIN_ESTIMATE = "skipped"`. Step 5b will pass
+   set `SET_DOMAIN_ESTIMATE = "skipped"`. Step 6b will pass
    `--set-domain-tx-fee skipped` to `render-deployment-plan.cjs`,
    which emits the canonical
    `Tx fee (set-domain): (not estimated — no representative lease available …)`
@@ -602,7 +302,7 @@ If the second estimate itself errors out, surface the error and ask
 "proceed without a set-domain estimate? (yes / no)" — do NOT silently
 skip. On yes, set `SET_DOMAIN_ESTIMATE = "skipped"` and continue.
 
-### 5b — Render the DeploymentPlan
+### 6b — Render the DeploymentPlan
 
 Compute a structural summary of the spec. Pass the spec via stdin from a
 file (NOT inline `echo` — the spec can carry user-supplied env values that
@@ -671,7 +371,7 @@ restate, reformat, or splice in additional fields — the script owns the
 canonical format. With a custom domain set, the plan automatically
 shows two `Tx fee:` lines plus a `Total fee:` line.
 
-## Step 6 — Wait for textual confirmation
+## Step 7 — Wait for textual confirmation
 
 Ask the user via `AskUserQuestion`:
 
@@ -684,7 +384,7 @@ substitute. Do not call `deploy_app` without an explicit affirmative.
 If the user says no, ask whether to amend the spec (return to Step 2) or
 abort entirely.
 
-## Step 7 — Broadcast
+## Step 8 — Broadcast
 
 Call `mcp__manifest-fred__deploy_app` with the spec fields splatted as
 arguments. **When `SPEC.customDomain` is set**, splat
@@ -718,9 +418,9 @@ Branch on the script's `outcome`:
   stop. No cleanup needed.
 
 If `deploy_app` returns a response (no throw), capture it as
-`DEPLOY_RESPONSE` and proceed to Step 8.
+`DEPLOY_RESPONSE` and proceed to Step 9.
 
-## Step 8 — Classify the response
+## Step 9 — Classify the response
 
 ```bash
 echo '<DEPLOY_RESPONSE JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/classify-deploy-response.cjs"
@@ -733,7 +433,7 @@ Capture `LEASE_UUID` from the script's output (always present except on
 
 Branch on `outcome`:
 
-- **`active`** → skip Step 9, go directly to Step 10.
+- **`active`** → proceed directly to Step 10.
 - **`needs_wait`** → call
   `mcp__manifest-fred__wait_for_app_ready({ lease_uuid: LEASE_UUID, timeout_seconds: 300 })`.
   On thrown error → Step 11. On success, call
@@ -741,10 +441,6 @@ Branch on `outcome`:
   `connection` into the response. Re-run `classify-deploy-response.cjs` on
   the merged response. Then continue to Step 10.
 - **`failed`** → Step 11.
-
-## Step 9 — (reserved)
-
-(Kept blank to preserve numbering used by Step 8 references.)
 
 ## Step 10 — Persist + success output
 
@@ -823,199 +519,21 @@ Three sub-cases.
 
 ### When `classify-deploy-error.cjs` returned `partially_succeeded`
 
-The `create-lease` tx confirmed (lease exists at the UUID returned by
-the script) but a downstream step in `deploy_app` fell over. Per the
-upstream pipeline order (`create-lease` → `set-item-custom-domain` →
-manifest upload to provider → readiness poll), this can happen at any
-step after the lease landed on-chain. **The most common case with a
-custom domain set is that set-domain failed, which means the manifest
-was NEVER uploaded to the provider** — the lease is on-chain, draining
-credits, but the provider has no app to run. State will likely be
-`LEASE_STATE_PENDING` with `payload_received: false`.
-
-**Step 11.a — diagnose state first.**
-
-Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })` to
-read the on-chain lease state and the provider's `payload_received` /
-`provisioning_started` flags. Decode the state via
-`decode-lease-state.cjs --state <int>`. This determines which cleanup
-primitive applies AND whether a salvage path is available.
-
-**Step 11.b — show the user the situation and offer recovery.**
-
-Render the prompt body + option list deterministically (do NOT hand-build
-the conditional template — the script handles the with-domain / no-domain
-branches and the option-1 omission):
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/render-partial-success-prompt.cjs" \
-  --lease-uuid "$LEASE_UUID" \
-  --decoded-state "$DECODED_STATE" \
-  --reason "<reason from classify-deploy-error.cjs output>" \
-  <when-domain-was-requested: --requested-custom-domain "$REQUESTED_FQDN">
-```
-
-Parse the script's stdout JSON ({ `prompt`, `options` }). Pass `prompt`
-as the AskUserQuestion body and `options` as the option list verbatim.
-
-The three recovery paths and what they do:
-  1. **Retry set-domain + upload** — re-attach the domain (same or
-     different FQDN), then trigger a manifest upload via `update_app`.
-     (Only present when a domain was requested.)
-  2. **Salvage without domain** — skip the domain entirely; just upload
-     the manifest now via `update_app` so the lease starts serving the
-     app on the provider FQDN.
-  3. **Cancel or close the lease** — release credits and abandon.
-
-**On Retry set-domain + upload**:
-1. Ask via `AskUserQuestion` whether to retry with the same FQDN or a
-   different one. On "different", validate the new FQDN via
-   `validate-domain.cjs`.
-2. Drive the manage-domain skill's reusable post-broadcast block inline
-   (Steps 4–6 of `/manifest-agent:manage-domain`):
-   `cosmos_estimate_fee` against `billing set-item-custom-domain`
-   (using `LEASE_UUID` directly — the lease exists, so no
-   representative-lease query is needed) → textual confirm with action
-   + fee → `mcp__manifest-lease__set_item_custom_domain` → verify
-   on-chain via `leases_by_tenant`. The retry MUST re-run
-   `cosmos_estimate_fee` per runtime policy. **Single retry only** — on
-   second failure, surface BOTH failures and re-offer options 2 and 3.
-3. After set-domain succeeds, fall through to the upload step below.
-
-**On Salvage without domain** (or after a successful retry):
-1. Call `mcp__manifest-fred__update_app({ lease_uuid: LEASE_UUID,
-   manifest: MANIFEST_JSON })` to upload the manifest the deploy was
-   supposed to send. PreToolUse will prompt — `update_app` is a
-   provider HTTPS call, no chain tx, no `cosmos_estimate_fee` needed
-   per the runtime policy bucket for provider tools.
-2. Wait for the lease to come up:
-   `mcp__manifest-fred__wait_for_app_ready({ lease_uuid: LEASE_UUID,
-   timeout_seconds: 300 })`. On thrown error: surface and stop;
-   troubleshoot-deployment can take it from here.
-3. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })` to
-   get the connection details (the provider FQDN, etc.). Synthesize the
-   `DEPLOY_RESPONSE`-shaped object that downstream classifiers consume,
-   via `synthesize-deploy-response.cjs` (do NOT hand-build it — the
-   shape is load-bearing for `format-success.cjs` and `save-manifest.cjs`):
-
-   ```bash
-   echo '<app_status JSON>' \
-     | node "$MANIFEST_PLUGIN_ROOT/scripts/synthesize-deploy-response.cjs" \
-         --lease-uuid "$LEASE_UUID" \
-         <FQDN-only-if-retry-succeeded: --custom-domain "<FQDN>">
-   ```
-
-   The script's stdout IS the `DEPLOY_RESPONSE`. Capture as `DEPLOY_RESPONSE`.
-4. Persist via `save-manifest.cjs` (with `--custom-domain` only when
-   the retry succeeded) and print `format-success.cjs` output.
-
-**On Cancel / Close**:
-1. **PENDING leases must be cancelled**, NOT closed (different chain
-   primitives — `MsgCancelLease` vs `MsgCloseLease`). Branch on the
-   decoded state from Step 11.a:
-   - `LEASE_STATE_PENDING` → use `mcp__manifest-chain__cosmos_tx`
-     against `billing cancel-lease <LEASE_UUID>` (no MCP wrapper exists
-     for cancel-lease today; cosmos_tx is the route).
-   - `LEASE_STATE_ACTIVE` → use `mcp__manifest-lease__close_lease`.
-   - Other states (closed, insufficient funds): nothing to do; the
-     lease is already terminal.
-2. Per runtime policy, call `cosmos_estimate_fee` first against the
-   relevant subcommand (`billing cancel-lease` or `billing close-lease`)
-   and surface the fee in a textual confirmation before broadcasting.
-3. After the broadcast confirms, verify on-chain via
-   `mcp__manifest-fred__app_status`. Decode the resulting state with
-   `decode-lease-state.cjs --state <int> --json` and check the
-   `terminal` flag (true for both `LEASE_STATE_CLOSED` and
-   `LEASE_STATE_INSUFFICIENT_FUNDS` — see decode-lease-state docstring).
-   On `terminal: true`, run `remove-manifest.cjs --lease-uuid
-   "$LEASE_UUID"` to clean up any saved wrapper. On `terminal: false`,
-   tell the user the tx was sent but the chain hasn't settled yet and
-   they can re-check via `/manifest-agent:troubleshoot-deployment
-   <uuid>` in ~30s.
+`Read` `skills/deploy-app/references/partial-success-recovery.md` and
+follow it inline. The file covers state diagnosis (Step 11.a), the
+recovery prompt rendering (Step 11.b via `render-partial-success-prompt.cjs`),
+and the three recovery paths (retry set-domain + upload / salvage without
+domain / cancel-or-close, with PENDING-vs-ACTIVE branching for the
+correct chain primitive).
 
 ### When the broadcast created a lease (`LEASE_UUID` present)
 
-Inline a thin troubleshoot sequence (do NOT `Read` the
-`troubleshoot-deployment/SKILL.md` file). Run in parallel:
-
-- `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`
-- `mcp__manifest-fred__app_diagnostics({ lease_uuid: LEASE_UUID })`
-- `mcp__manifest-fred__get_logs({ lease_uuid: LEASE_UUID, tail: 100 })`
-
-Render a brief Markdown report to the user with three sections (Status /
-Diagnostics / Recent logs). Decode the lease state:
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int>
-```
-
-Before offering cleanup, estimate the close-lease tx fee per the runtime
-policy:
-
-```
-mcp__manifest-chain__cosmos_estimate_fee({
-  module: "billing",
-  subcommand: "close-lease",
-  args: ["<LEASE_UUID>"]
-})
-```
-
-If the estimate fails, surface the error and ask the user whether to
-proceed without one — do not silently skip.
-
-Compute the human-readable fee string with `humanize-fee.cjs` (do NOT
-inline the math):
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
-  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
-  --fee-json '<ESTIMATE.fee.amount as JSON>'
-```
-
-Capture the script's stdout as `FEE_HUMAN`. Then offer cleanup via
-`AskUserQuestion`. Include the image AND the estimated fee in the prompt
-so the user knows what they're paying:
-
-> Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`)?
-> Estimated tx fee: `<FEE_HUMAN>` (gas `<gasEstimate>`).
-> Closing frees the credits this lease was reserving. (yes / no)
-
-If yes, call `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })`
-(PreToolUse hook will prompt).
-
-**Verify on-chain state after the tx returns** — a successful broadcast
-does not guarantee the lease actually transitioned to a terminal state.
-The tx might have been accepted into the mempool but reverted on
-execution, or the lease state might lag a block. Confirm explicitly:
-
-1. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
-2. Decode `chainState.state` via the JSON mode (which exposes a
-   `terminal` flag derived from the canonical state — both
-   `LEASE_STATE_CLOSED` and `LEASE_STATE_INSUFFICIENT_FUNDS` count as
-   terminal because the chain may transition through INSUFFICIENT_FUNDS
-   on a successful close-lease before settling on CLOSED):
-   ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int> --json
-   ```
-3. Branch on `terminal`:
-   - **`terminal: true`** → cleanup. Run:
-     ```bash
-     node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
-     ```
-     (no-op if the saved manifest record does not exist). Tell the user
-     "Lease is terminal on-chain (`<decoded-name>`). Removed local saved
-     manifest record."
-   - **`terminal: false`** (typically still `LEASE_STATE_ACTIVE` or
-     `LEASE_STATE_PENDING`) → tell the user: "close_lease tx accepted but
-     lease state is still `<decoded-name>`; chain may need a moment to
-     settle. Re-run `/manifest-agent:troubleshoot-deployment <LEASE_UUID>`
-     in ~30s to recheck. Local saved manifest record NOT removed yet."
-   - If `app_status` itself errors out: surface the error and tell the
-     user the tx was sent but verification failed. Do NOT remove the
-     local manifest record.
-
-If the user wants a deeper investigation, suggest
-`/manifest-agent:troubleshoot-deployment`.
+`Read` `skills/deploy-app/references/troubleshoot-after-deploy-failure.md`
+and follow it inline. The file contains the streamlined post-broadcast
+diagnostic + cleanup flow (parallel `app_status` / `app_diagnostics` /
+`get_logs`, brief Markdown report, fee-estimated close-lease offer,
+on-chain verification with `terminal`-flag branching for
+`remove-manifest.cjs` cleanup).
 
 ### When no lease was created (`LEASE_UUID` absent)
 
