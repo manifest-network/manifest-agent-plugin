@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * List saved post-deploy manifest wrappers under ~/.manifest-agent/manifests/.
+ * List saved post-deploy manifest wrappers under $MANIFEST_PLUGIN_DATA/manifests/.
  *
  * Output (JSON array, pretty-printed): one entry per file, with ONLY the
  * non-sensitive wrapper fields:
@@ -29,9 +29,9 @@
 
 const { readdirSync, readFileSync, statSync } = require('node:fs');
 const { join, basename } = require('node:path');
-const { homedir } = require('node:os');
+const { getDataDir } = require('./_io.cjs');
 
-const MANIFESTS_DIR = join(homedir(), '.manifest-agent', 'manifests');
+const MANIFESTS_DIR = join(getDataDir(), 'manifests');
 
 const SAFE_FIELDS = ['lease_uuid', 'image', 'size', 'deployed_at_iso', 'chain_id', 'format', 'meta_hash_hex', 'schema_version', 'custom_domain', 'custom_domain_service_name'];
 

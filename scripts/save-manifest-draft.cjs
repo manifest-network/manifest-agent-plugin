@@ -4,7 +4,7 @@
 /**
  * Save a structured manifest spec (the input shape for build_manifest_preview /
  * deploy_app) as a user-managed draft file under
- * ~/.manifest-agent/manifests-drafts/.
+ * $MANIFEST_PLUGIN_DATA/manifests-drafts/.
  *
  * The user can later pass that file path to /manifest-agent:deploy-app, edit
  * it by hand, version-control it, etc. It is the user-facing "deployment spec"
@@ -16,13 +16,12 @@
  *
  * Args:
  *   --path <abs-path>   (optional) full file path to write to. Must be
- *                       absolute. Parent dir must already exist UNLESS the
- *                       path is inside ~/.manifest-agent/manifests-drafts/
- *                       (which is auto-created); arbitrary paths inside
- *                       ~/.manifest-agent/ but outside manifests-drafts/ are
- *                       NOT auto-created.
+ *                       absolute and resolve inside $MANIFEST_PLUGIN_DATA/manifests-drafts/
+ *                       or the system tmpdir; any other location is rejected.
+ *                       Parent dir must already exist UNLESS the path is
+ *                       inside the drafts dir (which is auto-created).
  *                       If omitted, defaults to
- *                       ~/.manifest-agent/manifests-drafts/<auto-name>.json
+ *                       $MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json
  *                       where <auto-name> derives from the first image and a
  *                       timestamp (e.g. nginx-1-27-2026-05-01T13-30-00.json).
  *
@@ -35,12 +34,27 @@
  */
 
 const { existsSync, mkdirSync, chmodSync } = require('node:fs');
-const { join, isAbsolute } = require('node:path');
-const { homedir } = require('node:os');
-const { atomicWrite } = require('./_io.cjs');
+const { join, isAbsolute, resolve, sep } = require('node:path');
+const { tmpdir } = require('node:os');
+const { atomicWrite, getDataDir } = require('./_io.cjs');
 
-const AGENT_DIR = join(homedir(), '.manifest-agent');
+const AGENT_DIR = getDataDir();
 const DRAFTS_DIR = join(AGENT_DIR, 'manifests-drafts');
+
+// User-supplied --path is restricted to the drafts dir or the system tmpdir
+// (the latter so author-manifest can stage a spec for env-merge before the
+// user picks a final location). An unbounded --path would let a compromised
+// or buggy agent overwrite $MANIFEST_PLUGIN_DATA/config.json or any other
+// plugin state. Mirrors merge-env.cjs's ALLOWED_DIRS pattern.
+const ALLOWED_DIRS = [
+  resolve(DRAFTS_DIR) + sep,
+  resolve(tmpdir()) + sep,
+];
+
+function isAllowedPath(p) {
+  const r = resolve(p);
+  return ALLOWED_DIRS.some((d) => r.startsWith(d));
+}
 
 function parseArgs(argv) {
   const args = {};
@@ -103,15 +117,17 @@ function autoName(spec) {
       console.error(`--path must be absolute; got "${args.path}"`);
       process.exit(1);
     }
+    if (!isAllowedPath(args.path)) {
+      console.error(`--path must resolve inside ${DRAFTS_DIR} or the system tmpdir; got "${args.path}"`);
+      process.exit(1);
+    }
     outPath = args.path;
   } else {
-    mkdirSync(DRAFTS_DIR, { recursive: true, mode: 0o700 });
-    chmodSync(DRAFTS_DIR, 0o700);
     outPath = join(DRAFTS_DIR, autoName(spec));
   }
 
   // If writing into the default drafts dir, ensure it exists and is mode 0700.
-  if (outPath.startsWith(DRAFTS_DIR + '/')) {
+  if (outPath.startsWith(DRAFTS_DIR + sep)) {
     mkdirSync(DRAFTS_DIR, { recursive: true, mode: 0o700 });
     chmodSync(DRAFTS_DIR, 0o700);
   }

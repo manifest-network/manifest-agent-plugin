@@ -29,57 +29,37 @@ Run these MCP calls in parallel (single message, three tool calls):
 - `mcp__manifest-fred__app_diagnostics({ lease_uuid: LEASE_UUID })`
 - `mcp__manifest-fred__get_logs({ lease_uuid: LEASE_UUID, tail: 100 })`
 
-Render a brief Markdown report with three sections (Status / Diagnostics /
-Recent logs). For the Status section, pipe `app_status` through
-`summarize-app-status.cjs` and print its stdout verbatim:
+Render the report by piping all three responses to the canonical renderer.
+deploy-app just persisted the saved manifest record in Step 10 (or didn't,
+on partial-success — either way we don't surface it here), so omit the
+`saved_manifest` field:
 
 ```bash
-echo '<app_status JSON>' \
-  | node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-app-status.cjs"
+echo '{"app_status":<app_status JSON>, "app_diagnostics":<app_diagnostics JSON>, "get_logs":<get_logs JSON>}' \
+  | node "$MANIFEST_PLUGIN_ROOT/scripts/render-troubleshoot-report.cjs"
 ```
 
-For Diagnostics: surface `provision_status`, `fail_count`, and `last_error`
-from the `app_diagnostics` response, with a plain-English interpretation
-of `provision_status`.
-
-For Recent logs: print the log tail in a fenced code block. If logs are
-empty, say so.
+Print the script's stdout verbatim. Do not paraphrase the section bodies;
+the renderer owns the field labels and ordering so this flow and the
+standalone troubleshoot-deployment skill emit identical structure.
 
 ## Cleanup offer
 
-Before offering cleanup, estimate the close-lease tx fee per the runtime
-policy:
+Set up the inputs for the shared billing-tx confirm reference:
 
-```
-mcp__manifest-chain__cosmos_estimate_fee({
-  module: "billing",
-  subcommand: "close-lease",
-  args: ["<LEASE_UUID>"]
-})
-```
+- `<estimate-subcommand>` = `"close-lease"`
+- `<estimate-args>` = `["<LEASE_UUID>"]`
+- `<broadcast-call>` =
+  `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })`
+- `<prompt-body>`:
+  > Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`)?
+  > Closing frees the credits this lease was reserving.
 
-If the estimate fails, surface the error and ask the user whether to
-proceed without one — do not silently skip.
-
-Compute the human-readable fee string with `humanize-fee.cjs` (do NOT
-inline the math):
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
-  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
-  --fee-json '<ESTIMATE.fee.amount as JSON>'
-```
-
-Capture the script's stdout as `FEE_HUMAN`. Then offer cleanup via
-`AskUserQuestion`. Include the image AND the estimated fee in the prompt
-so the user knows what they're paying:
-
-> Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`)?
-> Estimated tx fee: `<FEE_HUMAN>` (gas `<gasEstimate>`).
-> Closing frees the credits this lease was reserving. (yes / no)
-
-If yes, call `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })`
-(PreToolUse hook will prompt).
+Then `Read` `references/billing-tx-confirm.md` (plugin-root shared
+reference; same file is loaded by troubleshoot-deployment Step 6 and
+manage-domain Step 6) and follow Steps 1–4 (estimate, fee humanization,
+textual confirm, broadcast). The PreToolUse hook will prompt — that's
+expected.
 
 ## Verify on-chain post-broadcast
 

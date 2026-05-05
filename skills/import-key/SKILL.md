@@ -2,9 +2,10 @@
 name: import-key
 description: >
   Import an existing mnemonic phrase into the Manifest agent config.
-  Use when the user wants to re-use an existing blockchain identity.
-  The mnemonic never enters the conversation.
+  The mnemonic flows through scripts via stdin and never enters the
+  conversation. User-invoked only — not for Claude to auto-discover.
 allowed-tools: Bash(*)
+disable-model-invocation: true
 ---
 
 # Import Existing Key
@@ -26,27 +27,16 @@ echo "$MANIFEST_PLUGIN_ROOT"
 
 If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
-## Step 1 — Check config exists
-
 Run:
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If the command fails, tell the user:
-> No agent configuration found. Run `/manifest-agent:init-agent` first to set up
-> the chain configuration and install dependencies.
+If it fails, tell the user to run `/manifest-agent:init-agent` first and stop. Otherwise parse the JSON; you need `activeChain` AND `gasPrice` — both are required in Step 2 to preserve the existing chain + gas-price settings when re-writing the config.
 
-Stop here.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains the key password. Always use `update-config.cjs --status` to read safe fields.
 
-Parse the JSON output to get `activeChain` AND `gasPrice` — you'll need
-both in Step 3 to preserve the existing chain + gas-price settings when
-re-writing the config.
-
-**IMPORTANT**: Do NOT read `~/.manifest-agent/config.json` directly — it contains
-the key password. Always use `update-config.cjs --status` to read safe fields.
-
-## Step 2 — Get mnemonic file path
+## Step 1 — Get mnemonic file path
 
 Ask the user to provide the **path to a file** containing their mnemonic. They
 should create this file themselves in a separate terminal, e.g.:
@@ -64,14 +54,14 @@ Wait for the user to provide the file path before proceeding.
 **CRITICAL**: Do NOT ask the user to paste the mnemonic in the conversation.
 Do NOT read the mnemonic file. The file content must never enter Claude's context.
 
-## Step 3 — Import key and update config
+## Step 2 — Import key and update config
 
 Run (replacing `MNEMONIC_FILE` with the user's file path, `ACTIVE_CHAIN`
-with the `activeChain` from Step 1, and `CURRENT_GAS_PRICE` with the
-`gasPrice` from Step 1):
+with the `activeChain` from Step 0, and `CURRENT_GAS_PRICE` with the
+`gasPrice` from Step 0):
 
 ```bash
-cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain ACTIVE_CHAIN --gas-price CURRENT_GAS_PRICE
+cat MNEMONIC_FILE | NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain ACTIVE_CHAIN --gas-price CURRENT_GAS_PRICE
 ```
 
 The mnemonic flows through the pipe (file → import-key → write-config).
@@ -82,7 +72,7 @@ Parse the JSON output to get `address` and `activeChain`.
 
 Suggest the user delete their mnemonic file after a successful import.
 
-## Step 4 — Report
+## Step 3 — Report
 
 Tell the user:
 1. Their imported agent address
@@ -96,4 +86,4 @@ Tell the user:
   ever seeing the content.
 - The key password also never appears — it flows via pipe from import-key to
   write-config.
-- Do NOT read the mnemonic file or `~/.manifest-agent/config.json`.
+- Do NOT read the mnemonic file or `$MANIFEST_PLUGIN_DATA/config.json`.

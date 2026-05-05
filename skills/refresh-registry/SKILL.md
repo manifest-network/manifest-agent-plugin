@@ -1,9 +1,11 @@
 ---
 name: refresh-registry
 description: >
-  Re-fetch chain registry data from the Cosmos chain registry. Use when
-  RPC endpoints, gas prices, or other chain parameters may have changed.
-allowed-tools: Bash(*), Read, Write
+  Re-fetch chain registry data (RPC endpoints, gas prices, chain
+  parameters) from the Cosmos chain registry. User-invoked only — not
+  for Claude to auto-discover.
+allowed-tools: Bash(*)
+disable-model-invocation: true
 ---
 
 # Refresh Chain Registry
@@ -52,12 +54,12 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --refresh-chains
 ```
 
 If the command fails because config.json doesn't exist, that's fine — the
-chain data files are still written to `~/.manifest-agent/chains/` for future
+chain data files are still written to `$MANIFEST_PLUGIN_DATA/chains/` for future
 use by `/manifest-agent:init-agent`.
 
 If it succeeds, capture `chains` from the output as `AFTER`.
 
-**IMPORTANT**: Do NOT read `~/.manifest-agent/config.json` directly — it
+**IMPORTANT**: Do NOT read `$MANIFEST_PLUGIN_DATA/config.json` directly — it
 contains the key password. Use the scripts above which never expose the
 password.
 

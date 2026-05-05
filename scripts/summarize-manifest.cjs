@@ -3,7 +3,7 @@
 
 /**
  * Print a redacted structural summary of a saved manifest wrapper at
- * ~/.manifest-agent/manifests/<lease_uuid>.json.
+ * $MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json.
  *
  * The inner `manifest_json` field can contain user-supplied env values that
  * may be sensitive. This script prints only:
@@ -23,10 +23,10 @@
 
 const { existsSync, readFileSync } = require('node:fs');
 const { join } = require('node:path');
-const { homedir } = require('node:os');
+const { getDataDir } = require('./_io.cjs');
 const { UUID_RE } = require('./_uuid.cjs');
 
-const MANIFESTS_DIR = join(homedir(), '.manifest-agent', 'manifests');
+const MANIFESTS_DIR = join(getDataDir(), 'manifests');
 
 function parseArgs(argv) {
   const args = {};

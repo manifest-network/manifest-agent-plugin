@@ -15,6 +15,13 @@
  * stays in prose — this script handles only the deterministic structural
  * extraction.
  *
+ * Two entry points:
+ *   - CLI: read JSON from stdin, write Markdown to stdout. Used directly
+ *     by skills today.
+ *   - Module export `renderStatusSection(s)`: returns the Markdown body
+ *     as a string. Used by `render-troubleshoot-report.cjs` to compose
+ *     the larger multi-section report without spawning a subprocess.
+ *
  * Stdin (JSON object): the `app_status` response. Expected shape (fields
  * are defensive — missing fields render with placeholder lines):
  *   {
@@ -28,24 +35,19 @@
  *
  * Output (stdout): a Markdown block ready to print under a "### Status"
  * heading. The skill prose owns the heading; the script owns the body.
+ * The body always contains a `- Terminal: yes/no` line so consumers (the
+ * suggestion-table prose in troubleshoot-deployment Step 5, the
+ * post-broadcast verification in Step 6) can branch on the flag without
+ * re-decoding the chain state themselves.
  */
 
 const { readFileSync } = require('node:fs');
 const { decode: decodeLeaseState, isTerminal } = require('./_lease-state.cjs');
 const { extractRunningEndpoints, formatEndpointAsUrl } = require('./_connection.cjs');
 
-(async () => {
-  const raw = readFileSync(0, 'utf8');
-  let s;
-  try {
-    s = JSON.parse(raw);
-  } catch (err) {
-    console.error(`stdin is not valid JSON: ${err.message}`);
-    process.exit(1);
-  }
+function renderStatusSection(s) {
   if (s === null || typeof s !== 'object' || Array.isArray(s)) {
-    console.error('stdin must be a JSON object (the app_status response)');
-    process.exit(1);
+    throw new Error('app_status must be a JSON object');
   }
 
   const lines = [];
@@ -58,10 +60,12 @@ const { extractRunningEndpoints, formatEndpointAsUrl } = require('./_connection.
     lines.push('- Provider UUID: (not set in response)');
   }
 
+  let terminal = false;
   if (chainState.state !== undefined) {
     const decoded = decodeLeaseState(chainState.state);
     if (decoded) {
-      const terminalNote = isTerminal(decoded) ? ' [terminal — no further transitions]' : '';
+      terminal = isTerminal(decoded);
+      const terminalNote = terminal ? ' [terminal — no further transitions]' : '';
       lines.push(`- Lease state: ${decoded} (raw: ${chainState.state})${terminalNote}`);
     } else {
       lines.push(`- Lease state: UNKNOWN (raw: ${chainState.state})`);
@@ -69,6 +73,7 @@ const { extractRunningEndpoints, formatEndpointAsUrl } = require('./_connection.
   } else {
     lines.push('- Lease state: (not set in response)');
   }
+  lines.push(`- Terminal: ${terminal ? 'yes' : 'no'}`);
 
   const endpoints = extractRunningEndpoints(s.connection);
   if (endpoints.length > 0) {
@@ -104,8 +109,25 @@ const { extractRunningEndpoints, formatEndpointAsUrl } = require('./_connection.
     }
   }
 
-  console.log(lines.join('\n'));
-})().catch((err) => {
-  console.error(err.message);
-  process.exit(1);
-});
+  return lines.join('\n');
+}
+
+module.exports = { renderStatusSection };
+
+// CLI entry — only run when invoked directly, not when require()'d as a module.
+if (require.main === module) {
+  (async () => {
+    const raw = readFileSync(0, 'utf8');
+    let s;
+    try {
+      s = JSON.parse(raw);
+    } catch (err) {
+      console.error(`stdin is not valid JSON: ${err.message}`);
+      process.exit(1);
+    }
+    console.log(renderStatusSection(s));
+  })().catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });
+}

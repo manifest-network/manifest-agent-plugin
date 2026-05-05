@@ -2,8 +2,10 @@
 name: author-manifest
 description: >
   Build and validate a Fred container deployment spec interactively
-  (single-service or multi-service stack). Saves a JSON spec file ready to
-  feed to /manifest-agent:deploy-app or directly to mcp__manifest-fred__deploy_app.
+  (single-service or multi-service stack), saving a JSON spec file the
+  user can hand to /manifest-agent:deploy-app, edit by hand, or
+  version-control. Use when the user wants a reusable spec rather than a
+  one-shot deploy.
 allowed-tools: Bash(*), Read, Write
 ---
 
@@ -22,9 +24,9 @@ The spec uses the same shape `mcp__manifest-fred__deploy_app` and
 **For all user choices, use the `AskUserQuestion` tool.**
 
 **Do not narrate the skill's internal structure in your chat output.**
-Step numbers (e.g. "Step 4", "Step 6b") are scaffolding for skill authors
+Step numbers (e.g. "Step 3", "Step 5b") are scaffolding for skill authors
 only. To the user, just describe what you're doing in plain language —
-e.g. "Now let me check your wallet and credit balance", not "Now in Step 5
+e.g. "Now let me check your wallet and credit balance", not "Now in Step 4
 the readiness check". Skip phrases like "Now in Step N" or "Switching to
 the multi-service branch"; describe the action itself.
 
@@ -37,20 +39,16 @@ echo "$MANIFEST_PLUGIN_ROOT"
 
 If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
-## Step 1 — Read current config
-
 Run:
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If it fails, tell the user to run `/manifest-agent:init-agent` first and
-stop. Otherwise parse the JSON; show the user `activeChain` and `address`.
+If it fails, tell the user to run `/manifest-agent:init-agent` first and stop. Otherwise parse the JSON; show the user `activeChain` and `address`.
 
-**Never** read `~/.manifest-agent/config.json` directly — it contains the key
-password.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains the key password.
 
-## Step 2 — Choose deployment shape
+## Step 1 — Choose deployment shape
 
 Use `AskUserQuestion`:
 
@@ -60,13 +58,13 @@ Use `AskUserQuestion`:
 
 Store the choice as `SHAPE` (`single` or `stack`).
 
-## Step 3 — Choose SKU size
+## Step 2 — Choose SKU size
 
 Call `mcp__manifest-fred__browse_catalog`. From the response, build an
 `AskUserQuestion` showing each available SKU's name, price (amount + denom),
 and provider name. The user picks one. Store as `SIZE`.
 
-## Step 4 — Image reference (single-service only)
+## Step 3 — Image reference (single-service only)
 
 If `SHAPE == single`:
 
@@ -95,27 +93,27 @@ Possible outcomes:
 - **Empty `{}`**: inspection failed (image not found, registry refused
   anonymous access, network issue — see stderr). Show the user the stderr
   reason and ask: "proceed without auto-detection? You'll need to provide
-  ports / tmpfs manually. (yes / abort)". On yes, set `IMAGE_INFO = {}` and
+  ports / tmpfs manually. (Yes / Abort)". On Yes, set `IMAGE_INFO = {}` and
   continue.
 - **Non-empty**: surface a brief detected-from-image summary so the user
   knows what we picked up:
     > Detected from `<IMAGE_INFO.image>`:
     >   ports: `<IMAGE_INFO.ports>`
     >   default cmd: `<IMAGE_INFO.cmd>` (will be used unless you override)
-    >   suggested tmpfs: `<IMAGE_INFO.suggestedTmpfs>` (offered in Step 6)
+    >   suggested tmpfs: `<IMAGE_INFO.suggestedTmpfs>` (offered in Step 5)
   `env` from the image is informational only (usually system stuff like
   `PATH`, `NGINX_VERSION`); do NOT auto-populate user env from it.
 
 If `SHAPE == stack`: defer image collection (and per-service inspection)
-to Step 6b.
+to Step 5b.
 
-## Step 5 — Pre-flight readiness
+## Step 4 — Pre-flight readiness
 
 Call `mcp__manifest-fred__check_deployment_readiness({ size: SIZE, image: IMAGE })`
 (`image` may be omitted for stacks — it's display-only on the readiness side).
 
 Pipe the response to the evaluator. Pass `--gas-price` from the config you
-read in Step 1 (it's the `gasPrice` field, e.g. `"1umfx"` or `"0.37upwr"`)
+read in Step 0 (it's the `gasPrice` field, e.g. `"1umfx"` or `"0.37upwr"`)
 so the script knows which wallet denom to check for gas. Also pass
 `--chain-data-file` pointing at the active chain's registry JSON so any
 warning reasons render with friendly token symbols (PWR / MFX) instead
@@ -124,21 +122,22 @@ of raw chain denoms:
 ```bash
 echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness.cjs" \
   --gas-price '<gasPrice from config>' \
-  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json"
+  --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json"
 ```
 
 The script prints `{ status, reasons, suggested_actions }`. `Read`
-`skills/author-manifest/references/readiness-branching.md` and follow it
-to handle the three statuses (`block` / `warn` / `ok`). For this skill,
-the "return to the SKU pick step" recovery means returning to Step 3;
-"re-run the readiness check" means returning to this Step 5.
+`references/readiness-branching.md` (plugin-root shared reference; same
+file is loaded by deploy-app) and follow it to handle the three statuses
+(`block` / `warn` / `ok`). For this skill, the "return to the SKU pick
+step" recovery means returning to Step 2; "re-run the readiness check"
+means returning to this Step 4.
 
-## Step 6 — Author the spec
+## Step 5 — Author the spec
 
 Use the `AskUserQuestion` tool throughout. Build a JavaScript object literal
-in your working memory; you'll feed it to `build_manifest_preview` in Step 8.
+in your working memory; you'll feed it to `build_manifest_preview` in Step 7.
 
-### 6a — Single-service (`SHAPE == single`)
+### 5a — Single-service (`SHAPE == single`)
 
 We always emit the **services-map shape** for the spec — even when there's
 only one service — because we need per-port `ingress: boolean` control,
@@ -161,7 +160,7 @@ name: `"app"` (the user can override).
   `["Yes (Recommended)", "No (internal only)"]`.
 - Otherwise (multiple ports, OR single non-web port): ask explicitly per
   port: "Should `<port>` be publicly reachable via the provider's ingress?
-  (yes / no)" — no default. Be explicit, do not guess.
+  (Yes / No)" — no default. Be explicit, do not guess.
 
 The chosen `ports` map is `{ "<port>/<proto>": { ingress: <bool> }, ... }`
 even when ingress is true (encode it explicitly so the spec is unambiguous
@@ -175,19 +174,19 @@ edit the saved spec file by hand.
 
 **Health check** — if `IMAGE_INFO.healthcheck` is non-null, mention it
 ("the image declares a HEALTHCHECK; Fred will use it") and skip. Otherwise
-ask: "Add a health check? (yes / skip)". On yes, collect `test` (string
+ask: "Add a health check? (Yes / Skip)". On Yes, collect `test` (string
 array, e.g. `["CMD", "curl", "-f", "http://localhost:8080/health"]`), and
 optional `interval`, `timeout`, `retries`, `start_period`.
 
 **Storage** — image can't tell us. Ask: "Add a persistent disk?
-(yes / no)". On yes, present storage SKU options from `browse_catalog`.
+(Yes / No)". On Yes, present storage SKU options from `browse_catalog`.
 
 **tmpfs** — driven by `IMAGE_INFO.suggestedTmpfs`:
 - If non-empty: `AskUserQuestion` "This image typically needs the following
   tmpfs mounts on a read-only rootfs: `<paths joined>`. Add them?" with
   options `["Yes (Recommended)", "No", "Customize"]`. On Customize, let the
   user edit the list.
-- If empty: ask "Need any tmpfs mounts? (yes / skip)". On yes, collect a
+- If empty: ask "Need any tmpfs mounts? (Yes / Skip)". On Yes, collect a
   list of paths.
 
 **env** — `AskUserQuestion` for the input mode:
@@ -212,7 +211,7 @@ chmod 600 /tmp/<service>.env
 ```
 Tell them not to use `echo` (it lands in shell history). Wait for them to
 type the path back in chat. Store the path; the values are merged into the
-spec file in Step 9 — they do not flow through this conversation now.
+spec file in Step 8 — they do not flow through this conversation now.
 
 You may combine **Type in chat** and **From a file** (collect non-sensitive
 in chat, then offer the file option for the rest). The file overlays — keys
@@ -251,7 +250,7 @@ default skip)".
 }
 ```
 
-### 6b — Multi-service stack (`SHAPE == stack`)
+### 5b — Multi-service stack (`SHAPE == stack`)
 
 Use `AskUserQuestion` to ask how many services. Then loop: for each service:
 
@@ -265,7 +264,7 @@ Required per service:
   ```bash
   node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
   ```
-  Capture the result as `SVC_INFO`. Same fail-soft semantics as Step 4
+  Capture the result as `SVC_INFO`. Same fail-soft semantics as Step 3
   (empty `{}` → ask user about everything; non-empty → use to drive the
   per-service prompts below).
 - **`ports`** — driven by `SVC_INFO.ports`:
@@ -281,7 +280,7 @@ Required per service:
 
 Optional per service (same rules as single-service):
 - `env` — same three-option flow as single-service (file / chat / skip);
-  pass `--service-name <name>` to `merge-env.cjs` in Step 9 so the file's
+  pass `--service-name <name>` to `merge-env.cjs` in Step 8 so the file's
   values land in the right service's env map. Inter-service env wiring
   (e.g. `WORDPRESS_DB_HOST=mysql`, `MYSQL_ROOT_PASSWORD=...`) is the
   user's responsibility — pick whichever input mode fits each value.
@@ -309,12 +308,12 @@ Final spec object:
 **Important**: per-service `image` (no top-level `image`); per-service `ports`
 (map, not single `port`).
 
-## Step 7 — Optional custom domain
+## Step 6 — Optional custom domain
 
 Ask the user via `AskUserQuestion`: "Attach a custom domain (FQDN) to this
 lease? Domains are claimed permanently on-chain until cleared. (Yes / Skip)".
 
-On **Skip**: continue to Step 8 with no `customDomain` in the spec.
+On **Skip**: continue to Step 7 with no `customDomain` in the spec.
 
 On **Yes**:
 
@@ -340,15 +339,15 @@ On **Yes**:
    > the deploy step runs — `/manifest-agent:deploy-app` runs a warn-only
    > DNS pre-check but does not block on resolution.
 
-The saved spec file (Step 9) carries `customDomain` + `serviceName`
+The saved spec file (Step 8) carries `customDomain` + `serviceName`
 verbatim — `mcp__manifest-fred__build_manifest_preview` and
 `mcp__manifest-fred__deploy_app` accept these as top-level input fields,
 so the agent can splat the spec into the deploy call without renaming.
 
-## Step 8 — Validate via build_manifest_preview
+## Step 7 — Validate via build_manifest_preview
 
 Call `mcp__manifest-fred__build_manifest_preview` with the spec object from
-Step 6 splatted as input arguments. The response shape is:
+Step 5 splatted as input arguments. The response shape is:
 
 ```json
 {
@@ -366,31 +365,31 @@ If `validation.valid === false`:
    - Reserved env names (e.g. `PATH`, `HOME`) — pick a different name.
    - Label keys starting with `fred.` — `fred.` is reserved.
    - Service names that are not RFC 1123 DNS labels.
-3. Loop back to Step 6 to fix. Re-call `build_manifest_preview`. Repeat until
+3. Loop back to Step 5 to fix. Re-call `build_manifest_preview`. Repeat until
    `validation.valid === true`.
 
 **Note on file-sourced env values**: `build_manifest_preview` here only sees
-the env vars the user typed in chat. Vars merged from a file in Step 9 are
+the env vars the user typed in chat. Vars merged from a file in Step 8 are
 NOT validated at this point — they are validated when the saved spec is
 loaded by `/manifest-agent:deploy-app` (which re-runs `build_manifest_preview`
 on the merged file). If a file-sourced env key is invalid (e.g. reserved
 name like `PATH`), the failure surfaces at deploy time, not here.
 
-Capture `meta_hash_hex` as `META_HASH`. **If Step 9 merges env files into
-the saved spec, the hash will change** — Step 9 re-validates and refreshes
-`META_HASH` after the merge so Step 10's report is always current.
+Capture `meta_hash_hex` as `META_HASH`. **If Step 8 merges env files into
+the saved spec, the hash will change** — Step 8 re-validates and refreshes
+`META_HASH` after the merge so Step 9's report is always current.
 
-## Step 9 — Save the spec to disk
+## Step 8 — Save the spec to disk
 
 Use `AskUserQuestion` to ask where to save the spec:
 
-- **Default** — `~/.manifest-agent/manifests-drafts/<auto-name>.json` (the
+- **Default** — `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json` (the
   helper picks a name from the first image + timestamp).
 - **Custom path** — let the user paste an absolute path.
 
 Write the spec via the helper. The helper handles atomic write + `0600` mode,
 and refuses to overwrite an existing file. Note: parent dir auto-creation
-applies only to the default `~/.manifest-agent/manifests-drafts/` location;
+applies only to the default `$MANIFEST_PLUGIN_DATA/manifests-drafts/` location;
 when the user supplies a custom `--path`, its parent directory must already
 exist (the script will fail with `ENOENT` otherwise).
 
@@ -419,7 +418,7 @@ into the chat transcript as a literal command):
 
 The script prints the saved file path on stdout. Capture it as `SAVED_PATH`.
 
-**If the user picked "From a file" for env in Step 6** (single-service or
+**If the user picked "From a file" for env in Step 5** (single-service or
 per-service in stacks), merge the file values into the saved spec now. For
 each (service-name, env-file-path) pair the user provided:
 
@@ -442,18 +441,17 @@ Suggest the user delete each env file once they've confirmed the saved spec
 looks right (e.g. `rm /tmp/wordpress.env`). The values are now in the spec
 at `$SAVED_PATH` (mode 0600) and on the user's responsibility to manage.
 
-**If any env files were merged**, refresh `META_HASH` from the post-merge
-spec — the Step 8 hash is computed against the pre-merge spec and is now
-stale. Re-load the saved spec via `Read` (returns the merged content as a
-structured tool result; the env values enter your context here) and
-re-call `build_manifest_preview` with the splatted spec. Capture the new
-`meta_hash_hex` and overwrite `META_HASH` so Step 10's report shows the
-hash that matches the saved file's bytes.
+After the merge phase (whether or not any env files were actually merged),
+refresh `META_HASH` from the on-disk spec — re-loading + re-validating is
+idempotent and cheap, and unconditionally re-validating eliminates the
+drift surface a "did we merge anything?" branch creates. Re-load the saved
+spec via `Read` (returns the spec as a structured tool result; any merged
+env values enter your context here) and re-call `build_manifest_preview`
+with the splatted spec. Capture the new `meta_hash_hex` and overwrite
+`META_HASH` so Step 9's report shows the hash that matches the saved
+file's bytes.
 
-If no env files were merged, `META_HASH` from Step 8 is already correct;
-skip the re-validation.
-
-## Step 10 — Report
+## Step 9 — Report
 
 Tell the user:
 
@@ -461,7 +459,7 @@ Tell the user:
 Saved:           <SAVED_PATH>
 meta_hash_hex:   <META_HASH>
 Format:          single | stack
-Custom domain:   <fqdn> -> service <name>      (only when set in Step 7)
+Custom domain:   <fqdn> -> service <name>      (only when set in Step 6)
 
 To deploy:       /manifest-agent:deploy-app <SAVED_PATH>
 
@@ -470,7 +468,7 @@ repo. Re-running this skill (or `build_manifest_preview` directly) on a
 hand-edited spec is the safest way to validate changes before deploying.
 ```
 
-Omit the `Custom domain:` line if no domain was set in Step 7.
+Omit the `Custom domain:` line if no domain was set in Step 6.
 
 The image registry will be checked by the provider at deploy-time. If it's
 rejected, `deploy_app` will fail with a clear error.

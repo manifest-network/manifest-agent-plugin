@@ -13,6 +13,12 @@
  * - `readJsonFile(path)` — read + JSON.parse + shape-check (must be a plain
  *   object). Throws a descriptive error; caller decides exit handling.
  *
+ * - `getDataDir()` — return the plugin's persistent data directory. Reads
+ *   $MANIFEST_PLUGIN_DATA, which is exported by the SessionStart hook from
+ *   Claude Code's `${CLAUDE_PLUGIN_DATA}` substitution (resolves to
+ *   `~/.claude/plugins/data/<id>/`). Throws if unset — scripts must be
+ *   launched from a Claude Code session or with the env var set manually.
+ *
  * Underscore prefix marks this as a sibling-only helper, not a CLI entry
  * point. Skills MUST NOT invoke it directly via Bash.
  */
@@ -56,4 +62,16 @@ function readJsonFile(filePath) {
   return parsed;
 }
 
-module.exports = { atomicWrite, readJsonFile };
+function getDataDir() {
+  const dir = process.env.MANIFEST_PLUGIN_DATA;
+  if (!dir) {
+    throw new Error(
+      'MANIFEST_PLUGIN_DATA env var is not set. ' +
+      'Restart Claude Code so the SessionStart hook runs, ' +
+      'or set it manually to ~/.claude/plugins/data/<plugin-id>/.'
+    );
+  }
+  return dir;
+}
+
+module.exports = { atomicWrite, readJsonFile, getDataDir };

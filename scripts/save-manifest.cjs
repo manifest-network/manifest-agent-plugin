@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Persist a deployed manifest to ~/.manifest-agent/manifests/<lease_uuid>.json.
+ * Persist a deployed manifest to $MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json.
  *
  * Wrapper shape (schema_version 3):
  *   {
@@ -64,11 +64,10 @@
 const { existsSync, readFileSync, mkdirSync, chmodSync } = require('node:fs');
 const { createHash } = require('node:crypto');
 const { join } = require('node:path');
-const { homedir } = require('node:os');
-const { atomicWrite } = require('./_io.cjs');
+const { atomicWrite, getDataDir } = require('./_io.cjs');
 const { UUID_RE } = require('./_uuid.cjs');
 
-const AGENT_DIR = join(homedir(), '.manifest-agent');
+const AGENT_DIR = getDataDir();
 const MANIFESTS_DIR = join(AGENT_DIR, 'manifests');
 // SHA-256 hex digest: 64 lowercase hex chars. The chain stores meta_hash as
 // raw bytes; build_manifest_preview returns the hex form. Validating the

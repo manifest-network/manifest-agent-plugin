@@ -8,10 +8,10 @@ A Claude Code plugin (`manifest-agent`) that bootstraps an autonomous agent for 
 
 ## Architecture
 
-**Plugin root is read-only in production.** Marketplace installs copy the plugin to `~/.claude/plugins/cache/`. All mutable state lives in `~/.manifest-agent/`.
+**Plugin root is read-only in production.** Marketplace installs copy the plugin to `~/.claude/plugins/cache/`. All mutable state lives in `${CLAUDE_PLUGIN_DATA}` — Claude Code's persistent per-plugin data directory, resolved at runtime to `~/.claude/plugins/data/<id>/` and exposed to scripts as `$MANIFEST_PLUGIN_DATA` (exported by the SessionStart hook).
 
 ```
-Plugin root (read-only)          Runtime data (~/.manifest-agent/)
+Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
 ├── scripts/*.cjs                ├── config.json        (0600, has key password)
 ├── skills/*/SKILL.md            ├── keys/agent-*.json  (0600, encrypted wallets)
 ├── hooks/hooks.json             ├── chains/{mainnet,testnet}.json
@@ -19,19 +19,23 @@ Plugin root (read-only)          Runtime data (~/.manifest-agent/)
 └── package.json                 └── package.json       (copied from plugin root)
 ```
 
-**Data flow**: Skills run scripts → scripts write to `~/.manifest-agent/` → MCP wrapper reads `config.json` at startup → spawns MCP binary with computed env vars.
+**Data flow**: Skills run scripts → scripts write to `$MANIFEST_PLUGIN_DATA` → MCP wrapper reads `config.json` at startup → spawns MCP binary with computed env vars.
 
-**Dependency resolution**: All scripts are CJS (`.cjs`) because NODE_PATH only works with CommonJS, not ESM. Skills invoke scripts with `NODE_PATH=$HOME/.manifest-agent/node_modules` so `require()` finds packages installed outside the plugin root.
+**Dependency resolution**: All scripts are CJS (`.cjs`) because NODE_PATH only works with CommonJS, not ESM. Skills invoke scripts with `NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules` so `require()` finds packages installed outside the plugin root.
 
-**Plugin root discovery**: A SessionStart hook exports `MANIFEST_PLUGIN_ROOT` via `CLAUDE_ENV_FILE`. Skills use `$MANIFEST_PLUGIN_ROOT` to locate scripts.
+**Plugin root + data discovery**: The SessionStart hook exports `MANIFEST_PLUGIN_ROOT` and `MANIFEST_PLUGIN_DATA` via `CLAUDE_ENV_FILE`, mirroring Claude Code's `${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_PLUGIN_DATA}` substitutions (which only expand inside `.mcp.json`, hooks, etc., not in scripts). Skills use `$MANIFEST_PLUGIN_ROOT` to locate scripts and `$MANIFEST_PLUGIN_DATA` for runtime files. Scripts read `process.env.MANIFEST_PLUGIN_DATA` (the `_io.cjs` `getDataDir()` helper centralizes the lookup + missing-var error).
+
+**Dependency bootstrap**: The SessionStart hook also runs the docs' diff-check + `npm install` pattern automatically when `package.json` differs between plugin root and `${CLAUDE_PLUGIN_DATA}`. First-run users don't need to call `init-agent` to get a working MCP wrapper.
 
 ## Key Patterns
 
-**All scripts use CJS** — `require()`, async IIFE with `.catch(() => process.exit(1))`, `os.homedir()` for paths (never literal `~` — Node doesn't expand it).
+**All scripts use CJS** — `require()`, async IIFE with `.catch(() => process.exit(1))`. Use `getDataDir()` from `_io.cjs` for the data directory path; never compose `homedir() + '.manifest-agent'` (the latter is the legacy pre-v0.5 path).
 
 **Secrets via stdin** — Mnemonics are piped via heredoc (`<<'EOF'`, single-quoted to prevent shell expansion), never as command-line args (visible in `/proc/*/cmdline`).
 
-**MCP wrapper** (`start-server.cjs`) — Reads `config.json`, builds env vars, spawns `~/.manifest-agent/node_modules/.bin/manifest-mcp-<name>` directly (not npx — 30ms vs 800ms startup). Forwards SIGTERM/SIGINT/SIGHUP. Uses `stdio: 'inherit'` so MCP JSON-RPC passes through transparently.
+**Underscore-prefix helpers** — Scripts named `_<topic>.cjs` (`_io.cjs`, `_uuid.cjs`, `_gas-price.cjs`, `_connection.cjs`, `_lease-state.cjs`) are sibling-only modules consumed via `require('./_X.cjs')`. Skills MUST NOT shell out to them.
+
+**MCP wrapper** (`start-server.cjs`) — Reads `config.json`, builds env vars, spawns `$MANIFEST_PLUGIN_DATA/node_modules/.bin/manifest-mcp-<name>` directly (not npx — 30ms vs 800ms startup). Forwards SIGTERM/SIGINT/SIGHUP. Uses `stdio: 'inherit'` so MCP JSON-RPC passes through transparently.
 
 **Falsy env vars** — The wrapper omits optional env vars when falsy rather than setting them to `''`. Empty `MANIFEST_KEY_PASSWORD` causes the MCP server to throw.
 
@@ -44,7 +48,7 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **switch-chain** — Switch testnet/mainnet with mainnet confirmation before write
 - **set-gas-price** — Change gas fee token, price, and/or gas multiplier
 - **refresh-registry** — Re-fetch chain data from Cosmos chain registry
-- **author-manifest** — Build + validate a Fred deployment spec interactively (single-service or multi-service stack) via `build_manifest_preview`. Saves the spec as a JSON file under `~/.manifest-agent/manifests-drafts/` (or any user-chosen path) for later use with `/manifest-agent:deploy-app`.
+- **author-manifest** — Build + validate a Fred deployment spec interactively (single-service or multi-service stack) via `build_manifest_preview`. Saves the spec as a JSON file under `$MANIFEST_PLUGIN_DATA/manifests-drafts/` (or any user-chosen path) for later use with `/manifest-agent:deploy-app`.
 - **troubleshoot-deployment** — Bundle `app_status` + `app_diagnostics` + `get_logs` into one report. Saved-manifest section uses `summarize-manifest.cjs` (env values redacted). Offers `close_lease` cleanup with `remove-manifest.cjs`.
 - **deploy-app** — Orchestrates the end-to-end flow with two entry points:
     - `/manifest-agent:deploy-app <path>` — load a structured spec JSON file and deploy it.
@@ -54,9 +58,12 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 
 ### `references/` files and cross-skill loading
 
-Skills with detailed flows (deploy-app, author-manifest) keep their `SKILL.md` short by extracting per-branch detail to `skills/<name>/references/*.md` files that the skill `Read`s on demand. The orchestrator stays under the 500-line guideline; references load only when their branch fires.
+Two flavors of reference file:
 
-**Cross-skill `Read` is permitted when prose is genuinely shared.** Today only one cross-skill reference exists: `skills/author-manifest/references/readiness-branching.md` is loaded by both `author-manifest` Step 5 and `deploy-app` Step 5 (the `block`/`warn`/`ok` branch handling is identical for both flows). The reference's preamble enumerates both consumers; if it ever needs to move, update both call sites in the same commit. A plugin-level `references/` directory would be more discoverable but isn't a documented Claude Code pattern, so we use skill-local references with the cross-cite + dual-consumer header instead.
+- **Skill-local** at `skills/<name>/references/*.md` — for branch detail used by exactly one skill. Today: `skills/deploy-app/references/{spec-input-modes,partial-success-recovery,troubleshoot-after-deploy-failure,set-domain-fee-estimate}.md`.
+- **Plugin-root** at `references/*.md` — for prose genuinely shared by two or more skills. Today: `references/readiness-branching.md` (loaded by author-manifest Step 4 + deploy-app Step 5) and `references/billing-tx-confirm.md` (loaded by troubleshoot-deployment Step 6, manage-domain Step 6, and deploy-app's `troubleshoot-after-deploy-failure.md` cleanup section). Plugin-root references aren't documented as a first-class Claude Code pattern, but they resolve correctly inside the plugin cache (the plugin is copied wholesale to `~/.claude/plugins/cache/<id>/<version>/`) and avoid having two skills reach into each other's directories.
+
+When a reference moves between skill-local and plugin-root, update every consumer's `Read` path in the same commit. Each reference's preamble must enumerate its consumers so a reader cold-loading the file can tell whether their context applies.
 
 References must declare a "Variables in scope" section near the top so a reader cold-loading the file knows which orchestrator-supplied symbols (`LEASE_UUID`, `MANIFEST_JSON`, `<activeChain>`, etc.) are expected to be available.
 
@@ -64,7 +71,7 @@ References must declare a "Variables in scope" section near the top so a reader 
 
 This plugin codifies a split between deterministic operations (CJS scripts in `scripts/`) and ambiguous-decision steps (prose in `skills/<name>/SKILL.md`).
 
-**In scripts:** UUID validation, path traversal guards, file mode + atomic write discipline, JSON parsing and shape validation, structural counting (`manifest-summary.cjs`), readiness evaluation with concrete thresholds (`evaluate-readiness.cjs`), `deploy_app`-response classification (`classify-deploy-response.cjs`), `deploy_app`-error classification for partial-success (`classify-deploy-error.cjs`), URL extraction from typed connection payloads (`format-success.cjs`), `DeploymentPlan` block rendering (`render-deployment-plan.cjs`), enum decoding (`decode-lease-state.cjs`), redacted summarization (`summarize-manifest.cjs`, `list-saved-manifests.cjs`), FQDN format validation (`validate-domain.cjs`), DNS resolution probes with hard timeouts (`dns-precheck.cjs`).
+**In scripts:** UUID validation, path traversal guards, file mode + atomic write discipline, JSON parsing and shape validation, structural counting (`summarize-spec.cjs` for input specs, `summarize-manifest.cjs` for saved post-deploy wrappers), readiness evaluation with concrete thresholds (`evaluate-readiness.cjs`), `deploy_app`-response classification (`classify-deploy-response.cjs`), `deploy_app`-error classification for partial-success (`classify-deploy-error.cjs`), URL extraction from typed connection payloads (`format-success.cjs`), `DeploymentPlan` block rendering (`render-deployment-plan.cjs`), enum decoding (`decode-lease-state.cjs`), troubleshoot report rendering (`render-troubleshoot-report.cjs`), redacted summarization (`summarize-manifest.cjs`, `list-saved-manifests.cjs`), FQDN format validation (`validate-domain.cjs`), DNS resolution probes with hard timeouts (`dns-precheck.cjs`).
 
 **In prose:** asking the user open-ended questions (image refs, env values, service names), interpreting fuzzy diagnostic signals (the `troubleshoot-deployment` suggestion table), branching on unstable response shapes that require LLM judgment.
 
@@ -115,18 +122,23 @@ Read-only tools and the testnet faucet (`mcp__manifest-chain__request_faucet`) a
 ## Testing Changes
 
 ```bash
-# Test the plugin locally
+# Test the plugin locally (SessionStart hook handles npm install + env export)
 claude --plugin-dir .
 
-# Test fetch-chain-registry independently
+# Test scripts independently — set MANIFEST_PLUGIN_DATA manually since
+# SessionStart only fires inside Claude Code. Pick any directory you can write
+# to; the helper just needs a path and the dir is auto-created on first use.
+export MANIFEST_PLUGIN_DATA="$HOME/.manifest-agent-dev"
+
+# Install deps into that dir
+mkdir -p "$MANIFEST_PLUGIN_DATA" && cp package.json "$MANIFEST_PLUGIN_DATA/"
+npm install --omit=dev --prefix "$MANIFEST_PLUGIN_DATA"
+
+# Test fetch-chain-registry
 node scripts/fetch-chain-registry.cjs
 
-# Install deps (one-time, before testing key scripts or MCP wrapper)
-mkdir -p ~/.manifest-agent && cp package.json ~/.manifest-agent/
-npm install --omit=dev --prefix ~/.manifest-agent
-
 # Test key generation
-NODE_PATH=$HOME/.manifest-agent/node_modules node scripts/gen-agent-key.cjs --prefix manifest
+NODE_PATH="$MANIFEST_PLUGIN_DATA/node_modules" node scripts/gen-agent-key.cjs --prefix manifest
 
 # Test MCP wrapper (requires config.json + deps)
 node scripts/start-server.cjs chain
@@ -139,7 +151,7 @@ Deployment specs are plain JSON files in the same shape `mcp__manifest-fred__bui
 - Single-service: `{ image, port, env?, labels?, command?, args?, health_check?, storage?, tmpfs?, init? }`
 - Multi-service: `{ services: { <name>: { image, ports, env?, ... }, ... }, storage?, depends_on? }`
 
-`/manifest-agent:author-manifest` walks the user through building one and saves it (default `~/.manifest-agent/manifests-drafts/<auto-name>.json`, or any user-chosen absolute path). Spec files are user-managed: hand-edit them in `$EDITOR`, version-control them in your app repo, generate them with a script, etc. The plugin doesn't garbage-collect drafts.
+`/manifest-agent:author-manifest` walks the user through building one and saves it (default `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json`, or any user-chosen absolute path inside the drafts dir or the system tmpdir). Spec files are user-managed: hand-edit them in `$EDITOR`, version-control them in your app repo, generate them with a script, etc. The plugin doesn't garbage-collect drafts.
 
 `/manifest-agent:deploy-app <path>` consumes a spec file. `/manifest-agent:deploy-app` with no argument drives the inline authoring sequence and deploys in one shot (no draft file written).
 
@@ -149,7 +161,7 @@ Helper: `scripts/save-manifest-draft.cjs` (atomic write + `0600`, refuses to ove
 
 Mirrors the mnemonic-import pattern used by `init-agent` / `import-key`. The user creates a dotenv file in a separate terminal (`cat > /tmp/<svc>.env` … Ctrl+D, then `chmod 600`), names the path in chat, and the agent pipes it through `scripts/merge-env.cjs` to mutate the spec file in place. The script outputs only the merged keys (never values), so the chat input box stays clean and the agent never echoes secrets in summaries. Author flow merges into the saved spec at `--spec-file <SAVED_PATH>`; deploy flow materializes the in-memory spec to a `/tmp/.spec-env-<pid>.json`, merges, then `Read`s it back.
 
-What this protects: the chat input never carries secrets, and prose summaries (intent recap, deployment plan) are keys-only by construction (`scripts/summarize-manifest.cjs`, `scripts/manifest-summary.cjs`).
+What this protects: the chat input never carries secrets, and prose summaries (intent recap, deployment plan) are keys-only by construction (`scripts/summarize-manifest.cjs`, `scripts/summarize-spec.cjs`).
 
 What it doesn't: env values still flow into the `build_manifest_preview` and `deploy_app` MCP tool call args at validation + broadcast time, which means they enter the agent's API context for those turns. Eliminating that exposure entirely needs upstream MCP support for "load env from this path" and is out of scope here.
 
@@ -181,7 +193,7 @@ What it doesn't: env values still flow into the `build_manifest_preview` and `de
 
 ## Saved post-deploy records
 
-After a successful broadcast `/manifest-agent:deploy-app` persists a wrapper at `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). Wrapper schema v3: `{ schema_version: 3, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash_hex, format, manifest_json, custom_domain?, custom_domain_service_name? }` where `manifest_json` is the canonical Fred-rendered string (preserves the exact bytes whose SHA-256 is `meta_hash_hex` for audit), `format` is `"single"` or `"stack"`, and the optional v3 fields capture any custom-domain attached at deploy time. v2 wrappers remain readable; the new v3 fields are treated as undefined when absent. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must NOT pretty-print `manifest_json` into chat unredacted.
+After a successful broadcast `/manifest-agent:deploy-app` persists a wrapper at `$MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). Wrapper schema v3: `{ schema_version: 3, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash_hex, format, manifest_json, custom_domain?, custom_domain_service_name? }` where `manifest_json` is the canonical Fred-rendered string (preserves the exact bytes whose SHA-256 is `meta_hash_hex` for audit), `format` is `"single"` or `"stack"`, and the optional v3 fields capture any custom-domain attached at deploy time. v2 wrappers remain readable; the new v3 fields are treated as undefined when absent. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must NOT pretty-print `manifest_json` into chat unredacted.
 
 Helpers (skills should use these instead of reading the wrapper file directly):
 

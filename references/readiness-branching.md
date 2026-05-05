@@ -1,10 +1,40 @@
 # Readiness branching (post-`evaluate-readiness.cjs`)
 
-This file is loaded by `skills/author-manifest/SKILL.md` Step 5 and
+This file is loaded by `skills/author-manifest/SKILL.md` Step 4 and
 `skills/deploy-app/SKILL.md` Step 5 after the readiness evaluator runs.
 Single source of truth for the `status` branch handling — both skills
 need the same logic and a free-form cross-skill cite ("the same way
-author-manifest Step 5 does it") was brittle to rewordings.
+author-manifest does it") was brittle to rewordings. Lives at the
+plugin root (`references/`) rather than under any single skill so
+neither consumer "owns" it; both load it as a shared dependency.
+
+## Variables in scope
+
+The orchestrator must have these in scope before loading this file:
+
+- `<activeChain>` — `"testnet"` or `"mainnet"`, derived from
+  `update-config.cjs --status` earlier in the skill. Used in the
+  `--chain-data-file` path passed to `humanize-fee.cjs`.
+- `<amount>` — user-supplied fund amount string (e.g. `"10000000umfx"`).
+  Collected via `AskUserQuestion` when the `fund_credit` action is
+  picked; passed unchanged to both `cosmos_estimate_fee` and
+  `fund_credit`.
+- `READINESS` — the JSON `{ status, reasons, suggested_actions }`
+  printed by `evaluate-readiness.cjs` immediately before this file
+  loads. Branching below keys off `READINESS.status`.
+
+## Per-skill recovery overrides
+
+The `pick_different_sku` action's "return to the SKU pick step" recovery
+differs by consumer:
+
+- **`/manifest-agent:author-manifest`**: return to Step 2 (the SKU pick
+  step in the authoring flow).
+- **`/manifest-agent:deploy-app`**: SKU rejection is terminal — the SKU
+  is supplied as input (CLI argument or spec field), not via a pick
+  step. Surface the rejection and stop.
+
+## Branches
 
 `evaluate-readiness.cjs` prints `{ status, reasons, suggested_actions }`.
 Branch on `status`:
@@ -34,7 +64,7 @@ Branch on `status`:
 
       ```bash
       node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
-        --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
+        --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json" \
         --fee-json '<ESTIMATE.fee.amount as JSON>'
       ```
 

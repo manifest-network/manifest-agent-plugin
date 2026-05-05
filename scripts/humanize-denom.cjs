@@ -7,7 +7,7 @@
  * built from `57738 factory/.../upwr`, etc.
  *
  * The denom -> symbol mapping is sourced from the chain registry data in
- * `~/.manifest-agent/chains/<chain>.json` (the `feeTokens[]` array,
+ * `$MANIFEST_PLUGIN_DATA/chains/<chain>.json` (the `feeTokens[]` array,
  * which carries `{ denom, symbol, ... }` for every token the chain
  * accepts as gas — by convention this list is the canonical denom -> symbol
  * map for the chain). Pass the chain-data file path via `--chain-data-file`

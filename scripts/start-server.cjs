@@ -4,8 +4,8 @@
 /**
  * MCP server wrapper for the manifest-agent plugin.
  *
- * Reads ~/.manifest-agent/config.json, builds env vars, and spawns the
- * appropriate MCP server binary from ~/.manifest-agent/node_modules/.bin/.
+ * Reads $MANIFEST_PLUGIN_DATA/config.json, builds env vars, and spawns the
+ * appropriate MCP server binary from $MANIFEST_PLUGIN_DATA/node_modules/.bin/.
  *
  * Usage: node start-server.cjs <chain|lease|fred|cosmwasm>
  */
@@ -18,11 +18,17 @@ if (major < 18) {
 
 const { existsSync, readFileSync } = require('node:fs');
 const { join } = require('node:path');
-const { homedir } = require('node:os');
 const { spawn } = require('node:child_process');
+const { getDataDir } = require('./_io.cjs');
 
 const VALID_SERVERS = ['chain', 'lease', 'fred', 'cosmwasm'];
-const AGENT_DIR = join(homedir(), '.manifest-agent');
+let AGENT_DIR;
+try {
+  AGENT_DIR = getDataDir();
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
 const CONFIG_PATH = join(AGENT_DIR, 'config.json');
 
 // --- Validate server name ---
@@ -131,6 +137,10 @@ console.error(`Starting manifest-mcp-${serverName} with env: ${envKeys.join(', '
 child = spawn(binaryPath, [], { stdio: 'inherit', env });
 
 child.on('error', (err) => {
+  // Mark exited before exiting: a SIGINT/SIGTERM landing during this window
+  // would otherwise drive forwardSignal() into child.kill() against a child
+  // that never started (ESRCH) and crash the wrapper with an unhandled throw.
+  childExited = true;
   console.error(`Failed to start manifest-mcp-${serverName}: ${err.message}`);
   process.exit(1);
 });

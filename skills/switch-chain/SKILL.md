@@ -1,9 +1,11 @@
 ---
 name: switch-chain
 description: >
-  Switch the Manifest agent between testnet and mainnet. Re-fetches chain
-  registry data and updates the active chain configuration.
-allowed-tools: Bash(*), Read, Write
+  Switch the Manifest agent's active chain between testnet and mainnet.
+  Re-fetches the Cosmos chain registry data and updates config.json.
+  User-invoked only — not for Claude to auto-discover.
+allowed-tools: Bash(*)
+disable-model-invocation: true
 ---
 
 # Switch Active Chain
@@ -15,7 +17,7 @@ You are switching the Manifest agent's active chain between testnet and mainnet.
 **Do not narrate the skill's internal structure in your chat output.**
 Step numbers are scaffolding for skill authors only. To the user, just
 describe what you're doing in plain language — e.g. "Switching to mainnet
-now", not "Now in Step 4 the broadcast confirmation".
+now", not "Now in Step 2 the broadcast confirmation".
 
 ## Step 0 — Verify environment
 
@@ -26,25 +28,16 @@ echo "$MANIFEST_PLUGIN_ROOT"
 
 If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
-## Step 1 — Read current status
-
 Run:
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If the command fails, tell the user:
-> No agent configuration found. Run `/manifest-agent:init-agent` first.
+If it fails, tell the user to run `/manifest-agent:init-agent` first and stop. Otherwise parse the JSON to get `activeChain` and `address`. Show the user their current active chain and agent address.
 
-Stop here.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains the key password. Always use `update-config.cjs --status` to read safe fields.
 
-Parse the JSON output to get `activeChain` and `address`. Show the user their
-current active chain and agent address.
-
-**IMPORTANT**: Do NOT read `~/.manifest-agent/config.json` directly — it contains
-the key password. Always use `update-config.cjs --status` to read safe fields.
-
-## Step 2 — Choose new chain
+## Step 1 — Choose new chain
 
 Use `AskUserQuestion` (do NOT prompt with free-form prose — the binary
 choice should be a click, not a typed answer):
@@ -55,7 +48,7 @@ choice should be a click, not a typed answer):
 Store the answer as `CHOSEN_CHAIN`. If `CHOSEN_CHAIN === activeChain`,
 tell the user "Already on `<chain>` — nothing to change" and stop.
 
-## Step 3 — Confirm mainnet switch (if applicable)
+## Step 2 — Confirm mainnet switch (if applicable)
 
 If `CHOSEN_CHAIN === "mainnet"`, ask via `AskUserQuestion` BEFORE running
 the registry fetch (warn before any side effect, even harmless ones):
@@ -65,7 +58,7 @@ the registry fetch (warn before any side effect, even harmless ones):
 
 Options: **Yes** / **No**. Stop on No.
 
-## Step 4 — Re-fetch registry data
+## Step 3 — Re-fetch registry data
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
@@ -73,7 +66,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
 
 This refreshes both chains' data from the Cosmos chain registry.
 
-## Step 5 — Update config
+## Step 4 — Update config
 
 Run:
 ```bash
@@ -84,7 +77,7 @@ Replace `CHOSEN_CHAIN` with `testnet` or `mainnet`.
 
 Parse the JSON output to confirm the chain was switched.
 
-## Step 6 — Report
+## Step 5 — Report
 
 Tell the user:
 1. Active chain is now `<new chain>`

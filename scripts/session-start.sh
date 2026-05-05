@@ -1,20 +1,27 @@
 #!/usr/bin/env bash
 # SessionStart hook for the manifest-agent plugin.
 #
-# Two responsibilities:
+# Three responsibilities:
 #   1. Emit the runtime transaction policy on stdout so it is injected
 #      into every Claude session that uses the plugin. Plugin CLAUDE.md
 #      files are developer docs and do NOT reach runtime sessions — this
 #      heredoc is the canonical source of the runtime-facing policy.
-#   2. Export MANIFEST_PLUGIN_ROOT via CLAUDE_ENV_FILE so skills can
-#      locate plugin scripts from bash commands.
+#   2. Export MANIFEST_PLUGIN_ROOT and MANIFEST_PLUGIN_DATA via
+#      CLAUDE_ENV_FILE so skills can locate plugin scripts and the
+#      runtime data directory from bash commands. MANIFEST_PLUGIN_DATA
+#      is Claude Code's persistent per-plugin data directory
+#      (~/.claude/plugins/data/<id>/) — survives plugin updates.
+#   3. Bootstrap npm dependencies on first run / when package.json
+#      changes (diff-check pattern from the docs). Removes the failure
+#      mode where a fresh user invokes /manifest-agent:deploy-app
+#      before /manifest-agent:init-agent and the MCP wrapper crashes
+#      with "binary not found".
 #
 # Ordering is deliberate: policy injection runs first so it is locked
-# into the session regardless of what happens with the env-file write.
-# `set -euo pipefail` + trailing env-file write means a failed write
-# produces a non-zero exit Claude Code can surface, rather than silently
-# leaving the session in a half-enforced state (policy present but
-# MANIFEST_PLUGIN_ROOT missing, causing later skill failures).
+# into the session regardless of what happens with the env-file write
+# or npm install. `set -euo pipefail` means a failed write produces a
+# non-zero exit Claude Code can surface, rather than silently leaving
+# the session in a half-enforced state.
 #
 # Edit the policy text below (not CLAUDE.md) if you need to change
 # runtime behavior.
@@ -154,5 +161,22 @@ summary (for other tools) from you, you have violated this policy.
 POLICY
 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-  echo "export MANIFEST_PLUGIN_ROOT=\"${CLAUDE_PLUGIN_ROOT}\"" >> "$CLAUDE_ENV_FILE"
+  # printf %q quotes the value so paths containing spaces or shell
+  # metacharacters round-trip correctly when CLAUDE_ENV_FILE is sourced.
+  printf 'export MANIFEST_PLUGIN_ROOT=%q\n' "${CLAUDE_PLUGIN_ROOT}" >> "$CLAUDE_ENV_FILE"
+  printf 'export MANIFEST_PLUGIN_DATA=%q\n' "${CLAUDE_PLUGIN_DATA}" >> "$CLAUDE_ENV_FILE"
+fi
+
+# Bootstrap deps when package.json differs (or on first run). Pattern from
+# the official Claude Code plugins-reference docs. The "|| rm -f" tail
+# discards a stale package.json copy on install failure so the next session
+# retries instead of pretending it succeeded.
+if [ -n "${CLAUDE_PLUGIN_DATA:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/package.json" ]; then
+  if ! diff -q "${CLAUDE_PLUGIN_ROOT}/package.json" "${CLAUDE_PLUGIN_DATA}/package.json" >/dev/null 2>&1; then
+    cp "${CLAUDE_PLUGIN_ROOT}/package.json" "${CLAUDE_PLUGIN_DATA}/package.json"
+    if ! (cd "${CLAUDE_PLUGIN_DATA}" && npm install --omit=dev --silent >/dev/null 2>&1); then
+      rm -f "${CLAUDE_PLUGIN_DATA}/package.json"
+      printf 'manifest-agent: npm install failed; will retry next session\n' >&2
+    fi
+  fi
 fi

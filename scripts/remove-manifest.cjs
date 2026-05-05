@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Remove a saved manifest at ~/.manifest-agent/manifests/<lease_uuid>.json.
+ * Remove a saved manifest at $MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json.
  *
  * Called after a successful close_lease (by /deploy-app failure branch and
  * troubleshoot-deployment) so the manifests dir tracks active leases.
@@ -16,10 +16,10 @@
 
 const { unlinkSync } = require('node:fs');
 const { join } = require('node:path');
-const { homedir } = require('node:os');
+const { getDataDir } = require('./_io.cjs');
 const { UUID_RE } = require('./_uuid.cjs');
 
-const MANIFESTS_DIR = join(homedir(), '.manifest-agent', 'manifests');
+const MANIFESTS_DIR = join(getDataDir(), 'manifests');
 
 function parseArgs(argv) {
   const args = {};

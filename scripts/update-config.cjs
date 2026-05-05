@@ -2,9 +2,9 @@
 'use strict';
 
 /**
- * Update ~/.manifest-agent/config.json without exposing the key password.
+ * Update $MANIFEST_PLUGIN_DATA/config.json without exposing the key password.
  *
- * Updates activeChain and/or refreshes chain data from ~/.manifest-agent/chains/.
+ * Updates activeChain and/or refreshes chain data from $MANIFEST_PLUGIN_DATA/chains/.
  * Preserves the existing agent section (keyFile, keyPassword, address) untouched.
  *
  * Usage:
@@ -30,11 +30,10 @@
 
 const { existsSync } = require('node:fs');
 const { join } = require('node:path');
-const { homedir } = require('node:os');
-const { atomicWrite, readJsonFile } = require('./_io.cjs');
+const { atomicWrite, readJsonFile, getDataDir } = require('./_io.cjs');
 const { composeGasPrice } = require('./_gas-price.cjs');
 
-const AGENT_DIR = join(homedir(), '.manifest-agent');
+const AGENT_DIR = getDataDir();
 const CONFIG_PATH = join(AGENT_DIR, 'config.json');
 const CHAINS_DIR = join(AGENT_DIR, 'chains');
 

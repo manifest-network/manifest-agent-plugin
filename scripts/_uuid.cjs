@@ -8,7 +8,7 @@
  * validation.
  *
  * Used to validate chain-issued lease UUIDs before joining them into file
- * paths under ~/.manifest-agent/manifests/. Without this guard a malicious
+ * paths under $MANIFEST_PLUGIN_DATA/manifests/. Without this guard a malicious
  * value containing path separators or `..` could escape the manifests
  * directory and overwrite agent state (e.g. config.json).
  *

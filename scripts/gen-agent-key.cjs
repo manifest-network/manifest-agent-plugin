@@ -4,7 +4,7 @@
 /**
  * Non-interactive key generation for Claude Code skills.
  *
- * Usage: NODE_PATH=~/.manifest-agent/node_modules node gen-agent-key.cjs [--prefix manifest] [--output path/to/key.json]
+ * Usage: NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node gen-agent-key.cjs [--prefix manifest] [--output path/to/key.json]
  *
  * Outputs JSON to stdout: { "address": "manifest1...", "keyfile": "/abs/path/to/key.json", "password": "...", "agentId": "..." }
  * All logs go to stderr so stdout stays machine-readable.
@@ -13,9 +13,8 @@
 const { mkdirSync, chmodSync } = require('node:fs');
 const { dirname, resolve, join } = require('node:path');
 const { randomBytes } = require('node:crypto');
-const { homedir } = require('node:os');
 const { DirectSecp256k1HdWallet } = require('@cosmjs/proto-signing');
-const { atomicWrite } = require('./_io.cjs');
+const { atomicWrite, getDataDir } = require('./_io.cjs');
 
 function parseArgs(argv) {
   const args = { prefix: 'manifest', output: null };
@@ -33,7 +32,7 @@ function parseArgs(argv) {
 
   const agentId = randomBytes(4).toString('hex');
   const keyfilePath = resolve(
-    args.output ?? join(homedir(), '.manifest-agent', 'keys', `agent-${agentId}.json`),
+    args.output ?? join(getDataDir(), 'keys', `agent-${agentId}.json`),
   );
 
   const wallet = await DirectSecp256k1HdWallet.generate(24, {

@@ -2,10 +2,12 @@
 name: manage-domain
 description: >
   Set, clear, or look up the custom domain (FQDN) attached to a Manifest
-  lease item. Use after a lease exists. With no argument, asks which
-  action and which lease. With a lease UUID argument, treats it as the
-  target. Set/clear go through cosmos_estimate_fee, textual confirmation,
-  and the PreToolUse permission prompt; lookup is read-only.
+  lease item. Use after a lease exists when the user wants to attach a
+  hostname, free a reservation, or reverse-resolve which lease owns an
+  FQDN. With no argument, asks which action and which lease. With a
+  lease UUID argument, treats it as the target. Set/clear go through
+  cosmos_estimate_fee, textual confirmation, and the PreToolUse permission
+  prompt; lookup is read-only.
 allowed-tools: Bash(*), Read
 ---
 
@@ -42,7 +44,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 If it fails, tell the user to run `/manifest-agent:init-agent` first and
 stop. Otherwise parse the JSON; you need `activeChain` and `address`.
 
-**Never** read `~/.manifest-agent/config.json` directly.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly.
 
 ## Step 1 — Pick the action
 
@@ -61,11 +63,16 @@ If `ACTION === "lookup"`, jump to Step 6 (read-only).
 
 If `activeChain == "mainnet"` AND `ACTION === "set"`, ask via
 `AskUserQuestion`:
-> You are about to claim a custom domain on mainnet. The FQDN is
-> permanently associated with this lease until you `--clear` it or close
-> the lease. FQDN squatting is irreversible. Continue?
+> Mainnet warning: this transaction permanently associates the FQDN with
+> this lease on-chain until you clear it via `/manifest-agent:manage-domain`
+> or close the lease. FQDN squatting is irreversible. Continue?
 
 Options: **Yes** / **No**. Stop on No.
+
+(This wording mirrors the `render-intent-recap.cjs` mainnet warning the
+deploy-app flow shows on `customDomain`-bearing specs — same substance,
+same phrasing, so users see consistent warnings whether they reach a
+domain claim through deploy-app or this skill.)
 
 For `clear` on mainnet, no extra warning beyond the textual confirmation
 in Step 5 — clearing a domain frees the reservation but doesn't burn
@@ -166,82 +173,67 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/build-set-domain-args.cjs" \
   <stacks-only: --service-name "$SERVICE_NAME">
 ```
 
-The script's stdout is a JSON array. Pass it as the `args` field:
+Capture the script's stdout (a JSON array) as `SET_DOMAIN_ARGS`.
 
-```
-mcp__manifest-chain__cosmos_estimate_fee({
-  module: "billing",
-  subcommand: "set-item-custom-domain",
-  args: <stdout of build-set-domain-args.cjs>
-})
-```
+Set up the inputs for the shared billing-tx confirm reference:
 
-If the estimate fails, surface the error and ask whether to proceed
-without one — do NOT silently skip.
+- `<estimate-subcommand>` = `"set-item-custom-domain"`
+- `<estimate-args>` = `SET_DOMAIN_ARGS` (from the script above)
+- `<broadcast-call>` (set) =
+  `mcp__manifest-lease__set_item_custom_domain({ lease_uuid: LEASE_UUID, custom_domain: FQDN, service_name: SERVICE_NAME || undefined })`
+- `<broadcast-call>` (clear) =
+  `mcp__manifest-lease__set_item_custom_domain({ lease_uuid: LEASE_UUID, service_name: SERVICE_NAME || undefined, clear: true })`
+- `<prompt-body>` (set):
+  > Set custom domain `<FQDN>` on lease `<LEASE_UUID>` (service
+  > `<SERVICE_NAME>` if set; "single-item lease" otherwise)?
+  > The chain validates format / reserved-suffix rules at broadcast time;
+  > if it rejects, no funds beyond gas are spent.
+- `<prompt-body>` (clear):
+  > Clear the custom domain currently on lease `<LEASE_UUID>` (service
+  > `<SERVICE_NAME>` if applicable)?
+  > Clearing frees the reverse-lookup entry so the FQDN can be re-claimed.
 
-Compute the human-readable fee string with `humanize-fee.cjs` (do NOT
-inline the math):
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
-  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
-  --fee-json '<ESTIMATE.fee.amount as JSON>'
-```
-
-Capture the script's stdout as `FEE_HUMAN`. Then ask via
-`AskUserQuestion` (set):
-> Set custom domain `<FQDN>` on lease `<LEASE_UUID>` (service
-> `<SERVICE_NAME>` if set; "single-item lease" otherwise)?
-> Estimated tx fee: `<FEE_HUMAN>` (gas `<gasEstimate>`).
-> The chain validates format / reserved-suffix rules at broadcast time;
-> if it rejects, no funds beyond gas are spent.
-> (yes / no)
-
-Or (clear):
-> Clear the custom domain currently on lease `<LEASE_UUID>` (service
-> `<SERVICE_NAME>` if applicable)?
-> Estimated tx fee: `<FEE_HUMAN>` (gas `<gasEstimate>`).
-> Clearing frees the reverse-lookup entry so the FQDN can be re-claimed.
-> (yes / no)
-
-On yes, call:
-```
-mcp__manifest-lease__set_item_custom_domain({
-  lease_uuid: LEASE_UUID,
-  custom_domain: FQDN,                        // omit for clear
-  service_name: SERVICE_NAME || undefined,    // omit for single-item
-  clear: true                                 // ONLY for clear
-})
-```
-PreToolUse will prompt — that is expected.
+Then `Read` `references/billing-tx-confirm.md` (plugin-root shared
+reference; same file is loaded by troubleshoot-deployment Step 6 and
+deploy-app's post-failure cleanup) and follow Steps 1–4 (estimate,
+humanize, textual confirm, broadcast). The PreToolUse hook will prompt
+— that's expected.
 
 **Verify on-chain state after the tx returns** — a successful broadcast
 does not guarantee the chain item now holds (or no longer holds) the
 domain. Re-query `mcp__manifest-lease__leases_by_tenant` and pipe
-through `extract-lease-items.cjs` again (same script as Step 4):
+through `verify-domain-state.cjs` (do NOT inline the equality check in
+prose — the script wraps `extract-lease-items.cjs` and does the
+comparison so this site, the partial-success retry path, and any future
+verifier all agree on the outcome shape):
 
 ```bash
 echo '<leases_by_tenant response>' \
-  | node "$MANIFEST_PLUGIN_ROOT/scripts/extract-lease-items.cjs" --lease-uuid "$LEASE_UUID"
+  | node "$MANIFEST_PLUGIN_ROOT/scripts/verify-domain-state.cjs" \
+      --lease-uuid "$LEASE_UUID" \
+      <stacks: --service-name "$SERVICE_NAME"> \
+      --expected '<set: $FQDN | clear: "">'
 ```
 
-From the script's `items[]`, find the matching item — for stacks, the
-one whose `serviceName === SERVICE_NAME`; for single-item leases, the
-sole entry. Check its `customDomain` field:
+For set, pass `--expected "$FQDN"`. For clear, pass `--expected ""`.
 
-- For **set**: confirm `item.customDomain === FQDN`. If yes, tell the
-  user "Custom domain `<FQDN>` confirmed on lease `<LEASE_UUID>`. TLS
-  may take a few minutes to provision at the provider; the provider's
-  default FQDN keeps working in the meantime."
-- For **clear**: confirm `item.customDomain === ""`. If yes, tell the
-  user "Domain cleared on lease `<LEASE_UUID>`."
-- If the verification doesn't match (chain may need a moment to
-  settle, or the tx was accepted but reverted): tell the user the tx
-  was sent but verification failed; suggest re-running this skill in
-  ~30s to re-check.
+The script's stdout is `{ outcome, actual?, reason? }`. Branch on `outcome`:
+
+- **`match`** (set): tell the user "Custom domain `<FQDN>` confirmed on
+  lease `<LEASE_UUID>`. TLS may take a few minutes to provision at the
+  provider; the provider's default FQDN keeps working in the meantime."
+- **`match`** (clear): tell the user "Domain cleared on lease
+  `<LEASE_UUID>`."
+- **`mismatch`**: the chain may need a moment to settle, or the tx was
+  accepted but reverted. Tell the user the tx was sent but verification
+  shows `<actual>` instead of the expected value; suggest re-running
+  this skill in ~30s to re-check.
+- **`not_found`**: surface `reason` and tell the user the lease + service
+  combination wasn't visible to the tenant query — verification couldn't
+  complete.
 
 **The saved manifest wrapper at
-`~/.manifest-agent/manifests/<LEASE_UUID>.json` is intentionally NOT
+`$MANIFEST_PLUGIN_DATA/manifests/<LEASE_UUID>.json` is intentionally NOT
 refreshed here.** `save-manifest.cjs` requires `--manifest-file` with
 the canonical `manifest_json` bytes (so it can SHA-256-verify against
 `meta_hash_hex`), and this skill never has that payload — re-reading

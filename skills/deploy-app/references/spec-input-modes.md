@@ -6,6 +6,27 @@ output `mode` selects which section below the orchestrator follows. The
 final "Merge any file-sourced env" section applies after the interactive /
 fast-path modes (not the spec-file mode).
 
+## Variables in scope
+
+The orchestrator must have these in scope before loading this file:
+
+- `$ARGUMENTS` — the raw argument from the slash-command invocation
+  (`/manifest-agent:deploy-app <args>`). Empty when invoked with no
+  argument.
+- `mode` — from `dispatch-deploy-input.cjs` stdout; one of
+  `"spec_file"`, `"single_image"`, `"multi_image"`, `"empty"`. Selects
+  which section below applies.
+- `tokens`, `services[]`, `collisions[]?`, `spec_path` — additional
+  fields from the dispatcher output, populated per `mode`.
+- `IMAGE`, `IMAGE_INFO`, `SVC_INFO`, `SIZE`, `SPEC` — collected during
+  the authoring loop. `IMAGE_INFO` / `SVC_INFO` are the JSON payload
+  from `inspect-image.cjs` (or `{}` on inspection failure).
+- `process_pid` — `$$` from bash; used in the `/tmp/.spec-env-${pid}.json`
+  staging path during the env-merge phase.
+- Per-service env-file paths — collected interactively during per-service
+  authoring (the `From a file` option of the env-input flow); consumed by
+  the `Merge any file-sourced env` section.
+
 ## When `mode == "spec_file"`
 
 The dispatcher already verified `spec_path` exists. Validate that it parses
@@ -187,7 +208,7 @@ Then collect only what's still needed:
    overridden.
 5. **`tmpfs`** — if `IMAGE_INFO.suggestedTmpfs` is non-empty, offer it as
    the default (`["Yes (Recommended)", "No", "Customize"]`); else ask
-   "Need any tmpfs mounts? (yes / skip)".
+   "Need any tmpfs mounts? (Yes / Skip)".
 6. **`env`** — three-option flow (file / chat / skip), same as the
    multi_image mode env step above. Sensitive values via file is the
    recommended path for secrets. The single-service shape uses the
@@ -273,7 +294,7 @@ shot.
 
 Do NOT call `save-manifest-draft.cjs` in the image fast-path or
 interactive modes — the spec lives only in memory; the post-deploy
-wrapper at `~/.manifest-agent/manifests/<lease_uuid>.json` (Step 10) is
+wrapper at `$MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json` (Step 10) is
 the durable record. (When the user provided an existing spec file path,
 the spec already lives on disk by definition.)
 

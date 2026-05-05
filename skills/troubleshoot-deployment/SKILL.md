@@ -1,11 +1,14 @@
 ---
 name: troubleshoot-deployment
 description: >
-  Diagnose a deployed Manifest lease. Optional argument: a lease UUID (omit
-  to pick from active leases or saved post-deploy records). Bundles app
-  status, provider diagnostics, and recent container logs into a single
-  Markdown report; suggests next steps based on the diagnostic signals; and
-  optionally offers close_lease to reclaim a lease that's beyond recovery.
+  Diagnose a deployed Manifest lease that isn't behaving. Use when a
+  /manifest-agent:deploy-app run shows the app unhealthy, when an
+  existing lease stops responding, or when the user wants a
+  status-plus-logs snapshot for an arbitrary lease. Optional argument:
+  a lease UUID (omit to pick from active leases or saved post-deploy
+  records). Bundles app status, provider diagnostics, and recent
+  container logs into a single Markdown report; suggests next steps;
+  optionally offers close_lease to reclaim a lease beyond recovery.
 allowed-tools: Bash(*), Read
 ---
 
@@ -42,7 +45,7 @@ If it fails, tell the user to run `/manifest-agent:init-agent` first and
 stop. Otherwise parse the JSON; you need `activeChain` for Step 6's fee
 humanization.
 
-**Never** read `~/.manifest-agent/config.json` directly.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly.
 
 ## Step 1 — Determine the lease UUID
 
@@ -103,49 +106,39 @@ information is better than nothing.
 
 ## Step 4 — Render the report
 
-Produce a unified Markdown report with these sections:
+Produce a unified Markdown report with `### Status`, `### Diagnostics`,
+`### Recent logs`, and (when present) `### Saved manifest` sections by
+piping the gathered data through the report renderer. The script handles
+the typed-shape extraction (lease state decode + `Terminal: yes/no` flag,
+connection URL walk, provision-status / fail-count / last-error formatting,
+log-tail rendering) so adjacent runs can't disagree on field labels.
 
-### Status
-
-Pipe the `app_status` response through `summarize-app-status.cjs` and
-print its stdout verbatim under this heading. The script handles the
-typed-shape extraction (lease UUID, provider UUID, state decode +
-terminal flag, URL extraction from `connection`, `providerError` /
-`connectionError` surfacing, and any populated `fredStatus` fields):
-
-```bash
-echo '<app_status response JSON>' \
-  | node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-app-status.cjs"
-```
-
-Do not paraphrase its output; the structural extraction is pinned in
-the script so adjacent runs cannot disagree on field labels.
-
-### Diagnostics
-
-From `app_diagnostics`: `provision_status`, `fail_count`, `last_error`. Plain
-English interpretation of `provision_status`.
-
-### Recent logs
-
-From `get_logs`: the full log tail in a fenced code block. If logs are empty,
-say so.
-
-### Saved manifest (only if present)
+First, capture the saved-manifest summary if one exists (the script
+prints a redacted summary — image, size, deployed_at_iso, chain_id,
+`meta_hash_hex`, structural counts, env *keys* — never values). It
+prints `(no saved manifest for <uuid>)` when absent:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-manifest.cjs" --lease-uuid "$LEASE_UUID"
 ```
 
-The script prints a redacted summary (image, size, deployed_at_iso, chain_id,
-`meta_hash_hex` for schema-v2 wrappers or `meta_hash` for legacy v1, plus
-structural counts and env *keys* — never values). If the file does not exist,
-the script prints `(no saved manifest for <uuid>)` and this section can be
-omitted.
+Capture stdout as `SAVED_SUMMARY`. If it starts with `(no saved manifest`,
+set `SAVED_SUMMARY = ""` so the renderer omits the section.
+
+Then render the full report. Pipe a JSON object with all three MCP
+responses + the saved summary on stdin:
+
+```bash
+echo '{"app_status":<app_status JSON>, "app_diagnostics":<app_diagnostics JSON>, "get_logs":<get_logs JSON>, "saved_manifest":"<SAVED_SUMMARY escaped as a JSON string>"}' \
+  | node "$MANIFEST_PLUGIN_ROOT/scripts/render-troubleshoot-report.cjs"
+```
+
+**Print the script's stdout verbatim.** Do not paraphrase, do not splice
+in extra fields; the script owns the canonical Markdown.
 
 **Do not** read or `cat` the saved-manifest file directly — its
 `manifest_json` field can contain user-supplied env values that may be
-sensitive. The summarize script is the only safe way to surface its
+sensitive. `summarize-manifest.cjs` is the only safe way to surface its
 contents.
 
 ## Step 5 — Suggest next steps
@@ -161,45 +154,27 @@ judgment is appropriate here — these signals don't map deterministically):
 | `connectionError` / `providerError` populated but lease is `LEASE_STATE_ACTIVE` | Provider transient issue. Try `app_status` again in 30s. Persistent errors → consider `restart_app`. |
 | Persistent failure with no recovery path | Offer `mcp__manifest-lease__close_lease` (see Step 6 — gated by PreToolUse hook). |
 
-## Step 6 — close_lease (when offered)
+## Step 6 — Offer close_lease cleanup
 
-When you offer `close_lease`, include the image AND the estimated tx fee
-in the prompt so the user can confirm what they're closing AND what they're
-paying. The image is in the saved manifest summary from Step 4 (if
-present); if there is no saved record, say "image: (no local record —
-chain has the canonical state)".
+Set up the inputs for the shared billing-tx confirm reference:
 
-Estimate the chain tx fee first per the runtime policy:
+- `<estimate-subcommand>` = `"close-lease"`
+- `<estimate-args>` = `["<LEASE_UUID>"]`
+- `<broadcast-call>` = `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })`
+- `<prompt-body>` (rendered before the estimated-fee line the reference
+  appends) = the image-aware close prompt:
+  > Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`)?
+  > Closing frees the credits this lease was reserving.
 
-```
-mcp__manifest-chain__cosmos_estimate_fee({
-  module: "billing",
-  subcommand: "close-lease",
-  args: ["<LEASE_UUID>"]
-})
-```
+  The image comes from the saved manifest summary in Step 4. If there is
+  no saved record, render `<IMAGE>` as `(no local record — chain has the
+  canonical state)`.
 
-If the estimate fails, surface the error and ask whether to proceed
-without one — do not silently skip.
-
-Compute the human-readable fee string with `humanize-fee.cjs` (do NOT
-inline the math):
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
-  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
-  --fee-json '<ESTIMATE.fee.amount as JSON>'
-```
-
-Capture the script's stdout as `FEE_HUMAN`. Then ask via `AskUserQuestion`:
-
-> Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`)?
-> Estimated tx fee: `<FEE_HUMAN>` (gas `<gasEstimate>`).
-> Closing frees the credits this lease was reserving. (yes / no)
-
-If the user accepts, call
-`mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })` (PreToolUse
-will prompt).
+Then `Read` `references/billing-tx-confirm.md` (plugin-root shared
+reference; same file is loaded by manage-domain Step 6 and deploy-app's
+post-failure cleanup) and follow Steps 1–4 (the estimate, fee
+humanization, textual confirm, and broadcast). The PreToolUse hook will
+prompt — that's expected.
 
 **Verify on-chain state after the tx returns** — a successful broadcast
 does not guarantee the lease actually transitioned to a terminal state.

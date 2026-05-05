@@ -23,7 +23,7 @@
  *                                 script owns the "Tx fee (set-domain):" label — no
  *                                 caller-supplied label flag.
  *   --chain-data-file <path>      (optional but recommended) path to the chain registry
- *                                 JSON (e.g. ~/.manifest-agent/chains/testnet.json) so
+ *                                 JSON (e.g. $MANIFEST_PLUGIN_DATA/chains/testnet.json) so
  *                                 SKU price / wallet / credit balances render with friendly
  *                                 token symbols (umfx → MFX, factory/.../upwr → PWR). When
  *                                 omitted the script warns on stderr and falls back to raw
@@ -38,7 +38,7 @@
  *
  * Stdin (JSON object):
  *   {
- *     summary: { format, service_count, port_count, env_count },  // from manifest-summary.cjs
+ *     summary: { format, service_count, port_count, env_count },  // from summarize-spec.cjs
  *     readiness: <check_deployment_readiness response>            // for sku.price + balances
  *   }
  *
@@ -183,7 +183,7 @@ function fmtCost(readiness, denomMap) {
   const summary = payload && payload.summary;
   const readiness = payload && payload.readiness;
   if (!summary || typeof summary !== 'object') {
-    console.error('stdin.summary is required (from manifest-summary.cjs)');
+    console.error('stdin.summary is required (from summarize-spec.cjs)');
     process.exit(1);
   }
   if (!readiness || typeof readiness !== 'object') {
@@ -197,7 +197,7 @@ function fmtCost(readiness, denomMap) {
   // stderr when the flag is omitted so a future call site that forgets
   // it doesn't silently render `37 factory/.../upwr` instead of `0.000037 PWR`.
   if (!args.chainDataFile) {
-    console.error('render-deployment-plan: --chain-data-file omitted; balances + SKU price will render with raw on-chain denoms. Pass --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" for friendly symbols.');
+    console.error('render-deployment-plan: --chain-data-file omitted; balances + SKU price will render with raw on-chain denoms. Pass --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json" for friendly symbols.');
   }
   const denomMap = loadChainDenomMap(args.chainDataFile);
 

@@ -4,7 +4,7 @@
 /**
  * Fetch chain registry data from the Cosmos chain registry on GitHub.
  *
- * Usage: node fetch-chain-registry.cjs [--data-dir ~/.manifest-agent]
+ * Usage: node fetch-chain-registry.cjs [--data-dir $MANIFEST_PLUGIN_DATA]
  *
  * Writes to <data-dir>/chains/{mainnet,testnet}.json and updates .last-registry-fetch.
  * Outputs JSON summary to stdout.
@@ -18,8 +18,7 @@ if (major < 18) {
 
 const { mkdirSync, chmodSync } = require('node:fs');
 const { join } = require('node:path');
-const { homedir } = require('node:os');
-const { atomicWrite } = require('./_io.cjs');
+const { atomicWrite, getDataDir } = require('./_io.cjs');
 
 const REGISTRY_BASE = 'https://raw.githubusercontent.com/cosmos/chain-registry/master';
 const CHAINS = {
@@ -79,7 +78,7 @@ function extractChainData(chainRaw, assetList) {
 
 (async () => {
   const args = parseArgs(process.argv);
-  const dataDir = args.dataDir || join(homedir(), '.manifest-agent');
+  const dataDir = args.dataDir || getDataDir();
   const chainsDir = join(dataDir, 'chains');
 
   mkdirSync(chainsDir, { recursive: true });

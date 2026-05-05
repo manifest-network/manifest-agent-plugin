@@ -1,11 +1,13 @@
 ---
 name: deploy-app
 description: >
-  Deploy a containerized app on Manifest end-to-end. Optional argument:
-  a JSON deployment spec path, an image reference (e.g. nginx:1.27 or
-  ghcr.io/me/app@sha256:...) for a single-service fast-path, or two-or-more
-  image refs separated by spaces (or +) for a multi-service stack
-  fast-path. Omit the argument for interactive authoring.
+  Deploy a containerized app to the Manifest blockchain end-to-end.
+  Use when the user wants to ship a container image to a Fred provider
+  lease. Optional argument: a JSON deployment spec path, an image
+  reference (e.g. nginx:1.27 or ghcr.io/me/app@sha256:...) for a
+  single-service fast-path, or two-or-more image refs separated by
+  spaces (or +) for a multi-service stack fast-path. Omit the argument
+  for interactive authoring.
 allowed-tools: Bash(*), Read, Write
 ---
 
@@ -43,7 +45,7 @@ If it fails, tell the user to run `/manifest-agent:init-agent` first and
 stop. Otherwise parse the JSON; you need `activeChain`, `address`, and
 `chains.<activeChain>.chainId`.
 
-**Never** read `~/.manifest-agent/config.json` directly.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly.
 
 ## Step 1 — Mainnet confirmation
 
@@ -105,14 +107,20 @@ Capture from the response:
 - The `format` (`single` or `stack`) — surfaces in the DeploymentPlan
   summary.
 
-For `IMAGE`: the SKU pre-flight in Step 5 wants a single image. Note that
-specs always use the services-map shape (every authoring path emits it),
-so derive the image from the first entry of `SPEC.services`:
-`IMAGE = Object.values(SPEC.services)[0].image`. For multi-service stacks
-this picks the first service's image as the representative — the provider
-validates all of them at deploy time. Legacy specs that still use the flat
-`SPEC.image` shape work as a fallback: `IMAGE = SPEC.image ||
-Object.values(SPEC.services || {})[0]?.image`.
+For `IMAGE`: the SKU pre-flight in Step 5 wants a single image. Pipe the
+spec through `extract-primary-image.cjs` (do NOT inline the shape branch
+in prose — the script wraps `_spec.cjs.firstImage` so this orchestrator,
+the intent recap, and the manifest summary all agree on which image is
+"primary"). Materialize SPEC to a tmpfile (the spec can carry env values
+that mustn't echo through chat), then:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/extract-primary-image.cjs" < /tmp/.spec-XXX.json
+```
+
+The script's stdout IS `IMAGE`. For multi-service stacks the provider
+validates all images at deploy time, so the readiness pre-flight on the
+first one is sufficient.
 
 For `SIZE`: spec files don't carry the SKU choice — when the user
 provided a spec file path, use `AskUserQuestion` populated from
@@ -188,21 +196,22 @@ mcp__manifest-fred__check_deployment_readiness({ size: SIZE, image: IMAGE })
 Pipe to the evaluator. Pass `--gas-price` from the config you read in Step 0
 (the `gasPrice` field, e.g. `"1umfx"` or `"0.37upwr"`) so the script knows
 which wallet denom to check for gas. Also pass `--chain-data-file` pointing
-at the active chain's registry JSON (`~/.manifest-agent/chains/<activeChain>.json`)
+at the active chain's registry JSON (`$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json`)
 so reasons[] are rendered with friendly token symbols (PWR / MFX) instead
 of raw chain denoms:
 
 ```bash
 echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness.cjs" \
   --gas-price '<gasPrice from config>' \
-  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json"
+  --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json"
 ```
 
-`Read` `skills/author-manifest/references/readiness-branching.md` and
-follow it to handle the three statuses (`block` / `warn` / `ok`). For
-this skill, "return to the SKU pick step" recovery is N/A (deploy-app
-takes SIZE as input, not via a pick step) — surface the SKU rejection
-and stop. "Re-run the readiness check" means returning to this Step 5.
+`Read` `references/readiness-branching.md` (plugin-root shared reference;
+same file is loaded by author-manifest) and follow it to handle the
+three statuses (`block` / `warn` / `ok`). For this skill, "return to
+the SKU pick step" recovery is N/A (deploy-app takes SIZE as input, not
+via a pick step) — surface the SKU rejection and stop. "Re-run the
+readiness check" means returning to this Step 5.
 
 Save the readiness JSON as `READINESS`.
 
@@ -265,7 +274,7 @@ would be re-rendered into chat as a literal bash command):
 2. Run:
 
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/manifest-summary.cjs" < /tmp/.spec-XXX.json
+   node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-spec.cjs" < /tmp/.spec-XXX.json
    rm -f /tmp/.spec-XXX.json
    ```
 
@@ -280,7 +289,7 @@ flow can't disagree on rounding):
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
-  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
+  --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json" \
   --fee-json '<ESTIMATE.fee.amount as JSON, e.g. [{"denom":"umfx","amount":"2300"}]>'
 ```
 
@@ -301,7 +310,7 @@ echo '{"summary": <summary JSON from above>, "readiness": <READINESS JSON>}' \
       --size "$SIZE" \
       --tx-gas "<ESTIMATE.gasEstimate>" \
       --tx-fee "<output of humanize-fee.cjs above>" \
-      --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json"
+      --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json"
 ```
 
 `--chain-data-file` lets the script humanize the SKU price, wallet, and
@@ -327,7 +336,7 @@ shows two `Tx fee:` lines plus a `Total fee:` line.
 
 Ask the user via `AskUserQuestion`:
 
-> Confirm to broadcast `deploy_app` with the plan above? (yes / no)
+> Confirm to broadcast `deploy_app` with the plan above? (Yes / No)
 
 This textual confirmation is the primary gate (per runtime policy). The
 PreToolUse permission prompt that fires next is a safety net, not a

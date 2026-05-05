@@ -62,8 +62,8 @@
 
 const { readFileSync } = require('node:fs');
 const { isAbsolute, resolve, sep } = require('node:path');
-const { homedir, tmpdir } = require('node:os');
-const { atomicWrite } = require('./_io.cjs');
+const { tmpdir } = require('node:os');
+const { atomicWrite, getDataDir } = require('./_io.cjs');
 
 // merge-env.cjs writes the spec back at mode 0o600 because env values
 // flowing through it can be sensitive (DB passwords, API tokens). For
@@ -73,7 +73,7 @@ const { atomicWrite } = require('./_io.cjs');
 // the user can copy the spec into the drafts dir or /tmp first if they
 // really want to merge secrets in.
 const ALLOWED_DIRS = [
-  resolve(homedir(), '.manifest-agent', 'manifests-drafts') + sep,
+  resolve(getDataDir(), 'manifests-drafts') + sep,
   resolve(tmpdir()) + sep,
 ];
 
@@ -142,7 +142,7 @@ function parseDotenv(text) {
   }
   if (!isAllowedSpecPath(args.specFile)) {
     console.error(
-      `--spec-file must live under ~/.manifest-agent/manifests-drafts/ or the system tmpdir; got "${args.specFile}". ` +
+      `--spec-file must live under $MANIFEST_PLUGIN_DATA/manifests-drafts/ or the system tmpdir; got "${args.specFile}". ` +
       `Refusing to merge env values into an external file because the merge writes mode 0o600, ` +
       `which would silently change a checked-in spec's permissions and bake secrets into a path outside the secret-handling boundary. ` +
       `Copy the spec into one of the allowed dirs first if you want to merge secrets in.`

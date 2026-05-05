@@ -1,10 +1,12 @@
 ---
 name: init-agent
 description: >
-  Set up a Manifest blockchain agent — install dependencies, choose a chain,
-  generate or import a keypair, and configure the MCP servers. Run this first
-  after installing the plugin.
-allowed-tools: Bash(*), Read, Write, Glob, Grep
+  Set up the Manifest agent's chain configuration and keypair. Run this once
+  after installing the plugin (or to re-key); it picks a chain, generates or
+  imports a wallet, and writes config.json. User-invoked only — not for
+  Claude to auto-discover.
+allowed-tools: Bash(*)
+disable-model-invocation: true
 ---
 
 # Initialize Manifest Agent
@@ -29,16 +31,7 @@ echo "$MANIFEST_PLUGIN_ROOT"
 
 If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
-## Step 1 — Install dependencies
-
-```bash
-mkdir -p ~/.manifest-agent && cp "$MANIFEST_PLUGIN_ROOT/package.json" ~/.manifest-agent/package.json && cd ~/.manifest-agent && npm install --omit=dev
-```
-
-**If npm install fails, STOP and report the error to the user. Do not proceed
-to subsequent steps.**
-
-## Step 2 — Fetch chain registry data
+## Step 1 — Fetch chain registry data
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
@@ -47,7 +40,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
 Parse the JSON output. This fetches both mainnet and testnet data from the
 Cosmos chain registry.
 
-## Step 3 — Choose chain
+## Step 2 — Choose chain
 
 Use AskUserQuestion to ask which chain to use, with these options:
 
@@ -56,9 +49,9 @@ Use AskUserQuestion to ask which chain to use, with these options:
 
 Store the answer as `CHOSEN_CHAIN` (`testnet` or `mainnet`).
 
-## Step 3b — Choose gas fee token
+## Step 3 — Choose gas fee token
 
-Look at the `feeTokens` array for the chosen chain from the Step 2 output.
+Look at the `feeTokens` array for the chosen chain from the Step 1 output.
 Each fee token has a `symbol` (human-readable name like "MFX" or "PWR") and
 a `fixedMinGasPrice`.
 
@@ -90,7 +83,7 @@ Confirm via `AskUserQuestion` (Yes / No) before continuing. Stop on No.
 If the command fails (no config.json yet), that's fine — skip the warning and
 proceed.
 
-**IMPORTANT**: Do NOT read `~/.manifest-agent/config.json` directly — it contains
+**IMPORTANT**: Do NOT read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains
 the key password. Always use `update-config.cjs --status` to read safe fields.
 
 ## Step 5 — Generate or import key and write config
@@ -106,11 +99,11 @@ The key script pipes directly into write-config so the password never enters the
 conversation:
 
 ```bash
-NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
 ```
 
-Replace `CHOSEN_CHAIN` with the user's choice from Step 3 and `GAS_TOKEN`
-with the symbol they chose in Step 3b (e.g., `MFX`).
+Replace `CHOSEN_CHAIN` with the user's choice from Step 2 and `GAS_TOKEN`
+with the symbol they chose in Step 3 (e.g., `MFX`).
 
 Parse the JSON output from stdout to get `address` and `activeChain`.
 
@@ -135,10 +128,10 @@ mnemonic in the conversation. Do NOT `Read` the mnemonic file.** The
 mnemonic must never enter Claude's context.
 
 Wait for the user to provide the path. Then run (substitute `MNEMONIC_FILE`,
-`CHOSEN_CHAIN` from Step 3, `GAS_TOKEN` from Step 3b):
+`CHOSEN_CHAIN` from Step 2, `GAS_TOKEN` from Step 3):
 
 ```bash
-cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+cat MNEMONIC_FILE | NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
 ```
 
 Parse the JSON output to get `address` and `activeChain`. Suggest the

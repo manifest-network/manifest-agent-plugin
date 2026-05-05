@@ -7,7 +7,7 @@
  *
  * Args:
  *   --gas-price <price>   The agent's configured gasPrice string from
- *                         ~/.manifest-agent/config.json, e.g. "1umfx" or
+ *                         $MANIFEST_PLUGIN_DATA/config.json, e.g. "1umfx" or
  *                         "0.37upwr". The denom is parsed out and used for
  *                         the wallet gas-balance check. REQUIRED — without
  *                         it the script cannot tell which wallet entry to
@@ -17,7 +17,7 @@
  *                         gas balance, in the smallest unit of the gas
  *                         denom. Defaults vary per denom (see DEFAULTS).
  *   --chain-data-file <path>  Optional but recommended. Path to the chain
- *                         registry JSON (e.g. ~/.manifest-agent/chains/<chain>.json)
+ *                         registry JSON (e.g. $MANIFEST_PLUGIN_DATA/chains/<chain>.json)
  *                         so `reasons[]` render with friendly token
  *                         symbols (MFX / PWR) instead of raw on-chain
  *                         denoms. When omitted, balances stay in raw form.
@@ -178,8 +178,8 @@ function asBigInt(s) {
     actions.add('fund_credit');
   } else if (r.sku && r.sku.price && r.sku.price.amount && r.sku.price.denom) {
     const skuPrice = r.sku.price;
-    const balances = Array.isArray(r.current_balance) ? r.current_balance : [];
-    const creditEntry = balances.find((b) => b && b.denom === skuPrice.denom);
+    const creditBalances = Array.isArray(r.current_balance) ? r.current_balance : [];
+    const creditEntry = creditBalances.find((b) => b && b.denom === skuPrice.denom);
     const pricePerHour = asBigInt(skuPrice.amount);
     if (creditEntry === undefined) {
       // The credit account has no entry in the SKU's price denom. This is
@@ -188,7 +188,7 @@ function asBigInt(s) {
       // upwr but the SKU prices in umfx, or vice-versa). Emit a specific
       // diagnostic so the user knows to fund_credit in the right denom
       // rather than seeing a false "0 hours of runtime" warning.
-      const fundedDenoms = balances.map((b) => b && b.denom).filter(Boolean);
+      const fundedDenoms = creditBalances.map((b) => b && b.denom).filter(Boolean);
       // Humanize the SKU denom for the user-facing message (e.g.
       // "factory/.../upwr" -> "PWR"); fall back to the raw denom when
       // the symbol map isn't available.

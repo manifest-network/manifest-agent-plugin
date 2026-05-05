@@ -2,19 +2,23 @@
   "mcpServers": {
     "manifest-chain": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "chain"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "chain"],
+      "env": { "MANIFEST_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}" }
     },
     "manifest-lease": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "lease"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "lease"],
+      "env": { "MANIFEST_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}" }
     },
     "manifest-fred": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "fred"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "fred"],
+      "env": { "MANIFEST_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}" }
     },
     "manifest-cosmwasm": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "cosmwasm"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "cosmwasm"],
+      "env": { "MANIFEST_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}" }
     }
   }
 }

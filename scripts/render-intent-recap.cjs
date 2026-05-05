@@ -25,11 +25,12 @@
  * Output (stdout): multi-paragraph text block, ready to print verbatim.
  *
  * Sensitive-value posture: env values and label values are NEVER printed;
- * only their keys appear. Mirrors manifest-summary.cjs's contract. FQDNs
+ * only their keys appear. Mirrors summarize-spec.cjs's contract. FQDNs
  * are not secrets so customDomain is surfaced.
  */
 
 const { readFileSync } = require('node:fs');
+const { normalizeServices: specNormalize } = require('./_spec.cjs');
 
 function parseArgs(argv) {
   const args = {};
@@ -40,26 +41,17 @@ function parseArgs(argv) {
 }
 
 function normalizeServices(spec) {
-  // Two spec shapes — produce a uniform `[{name, image, ports[], envKeys[], labelKeys[]}]`.
-  // For single-service the name is null (the only service is implicit; the recap
-  // omits per-service prefixes when name is null).
-  const isStack = spec.services && typeof spec.services === 'object' && !Array.isArray(spec.services);
-  if (isStack) {
-    return Object.entries(spec.services).map(([name, svc]) => ({
-      name,
-      image: svc.image || '(unknown image)',
-      ports: extractPorts(svc.ports),
-      envKeys: extractKeys(svc.env),
-      labelKeys: extractKeys(svc.labels),
-    }));
-  }
-  return [{
-    name: null,
-    image: spec.image || '(unknown image)',
-    ports: extractPortsLegacy(spec.port),
-    envKeys: extractKeys(spec.env),
-    labelKeys: extractKeys(spec.labels),
-  }];
+  // Produce a uniform `[{name, image, ports[], envKeys[], labelKeys[]}]`.
+  // The shape branch (single vs services-map) is in `_spec.cjs.normalizeServices`;
+  // here we layer the field projection (image fallback string, port + env key
+  // extraction) on top.
+  return specNormalize(spec).map(({ name, raw }) => ({
+    name,
+    image: raw.image || '(unknown image)',
+    ports: name === null ? extractPortsLegacy(raw.port) : extractPorts(raw.ports),
+    envKeys: extractKeys(raw.env),
+    labelKeys: extractKeys(raw.labels),
+  }));
 }
 
 function extractPorts(portsObj) {

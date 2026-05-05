@@ -15,12 +15,12 @@
  *
  * Usage:
  *   node humanize-fee.cjs \
- *     --chain-data-file ~/.manifest-agent/chains/testnet.json \
+ *     --chain-data-file $MANIFEST_PLUGIN_DATA/chains/testnet.json \
  *     --fee-json '[{"denom":"umfx","amount":"2300"}]'
  *
  *   # Or pipe via stdin (omit --fee-json):
  *   echo '[{"denom":"umfx","amount":"2300"}]' | \
- *     node humanize-fee.cjs --chain-data-file ~/.manifest-agent/chains/testnet.json
+ *     node humanize-fee.cjs --chain-data-file $MANIFEST_PLUGIN_DATA/chains/testnet.json
  *
  * Output (stdout, single line):
  *   "0.0023 MFX"                 // single-coin fee

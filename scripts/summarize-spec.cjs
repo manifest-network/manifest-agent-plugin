@@ -29,6 +29,7 @@
  */
 
 const { readFileSync } = require('node:fs');
+const { isStack, normalizeServices } = require('./_spec.cjs');
 
 (async () => {
   const raw = readFileSync(0, 'utf8'); // stdin
@@ -44,23 +45,16 @@ const { readFileSync } = require('node:fs');
     process.exit(1);
   }
 
-  const isStack = spec.services && typeof spec.services === 'object' && !Array.isArray(spec.services);
-  let format, services;
-  if (isStack) {
-    format = 'stack';
-    services = Object.entries(spec.services).map(([name, svc]) => ({ name, ...svc }));
-  } else {
-    format = 'single';
-    services = [{ name: null, image: spec.image, port: spec.port, env: spec.env, labels: spec.labels }];
-  }
+  const format = isStack(spec) ? 'stack' : 'single';
+  const services = normalizeServices(spec);
 
   let port_count = 0;
   let env_keys = new Set();
   const images = [];
 
-  for (const svc of services) {
+  for (const { raw: svc } of services) {
     if (svc.image) images.push(svc.image);
-    // Single-service uses `port` (number); multi-service uses `ports` (map).
+    // Legacy single-service uses `port` (number); services-map uses `ports` (object).
     if (typeof svc.port === 'number') port_count += 1;
     if (svc.ports && typeof svc.ports === 'object') port_count += Object.keys(svc.ports).length;
     if (svc.env && typeof svc.env === 'object') {
