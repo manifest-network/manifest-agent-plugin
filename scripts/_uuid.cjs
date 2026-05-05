@@ -1,7 +1,11 @@
 'use strict';
 
 /**
- * UUID v1–v5 / unspecified-version regex, shared across scripts.
+ * UUID-shaped regex (8-4-4-4-12 lowercase hex with dashes), shared across
+ * scripts. Permissive on the version byte: accepts any hex value, including
+ * v6/v7/v8 and v0. Chain-issued lease UUIDs are v4 today, but the regex is
+ * intentionally lenient so a future chain version-byte change doesn't break
+ * validation.
  *
  * Used to validate chain-issued lease UUIDs before joining them into file
  * paths under ~/.manifest-agent/manifests/. Without this guard a malicious

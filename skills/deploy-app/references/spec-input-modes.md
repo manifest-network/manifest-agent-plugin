@@ -289,8 +289,9 @@ script (no values in chat), then re-load the merged spec:
    `/tmp/.spec-env-${process_pid}.json`. The Write tool input shows the
    spec content (image, ports, chat-typed env if any, etc.); file-sourced
    values are NOT in this Write yet.
-2. For each `(service-name, env-file-path)` pair the user provided in
-   Step 2, run:
+2. For each `(service-name, env-file-path)` pair the user provided
+   during per-service authoring above (the multi_image / single_image /
+   empty modes each ask for env via the file / chat / skip flow), run:
    ```bash
    cat "<env-file-path>" | node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" \
      --spec-file "/tmp/.spec-env-${process_pid}.json" \

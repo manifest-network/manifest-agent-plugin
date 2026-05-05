@@ -6,6 +6,19 @@ This file is loaded by `skills/deploy-app/SKILL.md` Step 11 when the
 exists at the UUID returned by the script) but a downstream step in
 `deploy_app` fell over.
 
+## Variables in scope
+
+The orchestrator must have these in scope before loading this file:
+
+- `LEASE_UUID` — the lease that survived create-lease, extracted from the
+  error envelope by `classify-deploy-error.cjs`
+- `MANIFEST_JSON` — the canonical Fred-rendered manifest bytes captured at
+  Step 3 validation; needed for the salvage-without-domain `update_app`
+  call
+- `REQUESTED_FQDN` — only when the deploy was attempting a custom domain
+  (`SPEC.customDomain` was set); echoed in the recovery prompt and used
+  in the retry path
+
 Per the upstream pipeline order
 (`create-lease` → `set-item-custom-domain` → manifest upload to provider
 → readiness poll), this can happen at any step after the lease landed

@@ -18,11 +18,12 @@ differs.
 **For all user choices, use the `AskUserQuestion` tool.**
 
 **Do not narrate the skill's internal structure in your chat output.**
-Labels like "Step 2", "Branch A2", "Step 11b" are scaffolding for skill
-authors only. To the user, just describe what you're doing in plain
-language — e.g. "I'll use that as the image and ask you for the SKU and
-port", not "I'm following Branch A2". Skip phrases like "Now in Step N"
-or "Switching to the failure branch"; describe the action itself.
+Labels like "Step 2", "Step 6a-bis", "Step 11.a" are scaffolding for
+skill authors only. To the user, just describe what you're doing in
+plain language — e.g. "I'll use that as the image and ask you for the
+SKU and port", not "I'm following Step 6a-bis". Skip phrases like "Now
+in Step N" or "Switching to the failure branch"; describe the action
+itself.
 
 ## Step 0 — Verify environment
 
@@ -246,57 +247,12 @@ continue.
 
 Skip this if `SPEC.customDomain` is unset.
 
-When set, `deploy_app` will broadcast TWO billing txes (the runtime
-policy heredoc spells this out). Estimate the second one too. The
-challenge: the lease being created doesn't exist yet, but the chain's
-keeper validates ownership against the simulated msg sender. Use a
-representative existing lease the signer already owns.
-
-1. Query `mcp__manifest-lease__leases_by_tenant({ tenant: <address from
-   Step 0> })`.
-2. From the response, pick the FIRST lease whose `state` decodes to
-   `LEASE_STATE_ACTIVE`. Use `decode-lease-state.cjs` if needed:
-   ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <int>
-   ```
-   Capture as `REP_UUID`.
-3. **If a representative lease exists**: build the args[] array via
-   `build-set-domain-args.cjs` (do NOT hand-construct the array — the
-   script pins the shape):
-
-   ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/build-set-domain-args.cjs" \
-     --lease-uuid "$REP_UUID" \
-     --fqdn "$SPEC_CUSTOM_DOMAIN" \
-     <stacks-only: --service-name "$SPEC_SERVICE_NAME">
-   ```
-
-   Then estimate against the representative lease:
-   ```
-   mcp__manifest-chain__cosmos_estimate_fee({
-     module: "billing",
-     subcommand: "set-item-custom-domain",
-     args: <stdout of build-set-domain-args.cjs>
-   })
-   ```
-   Capture as `SET_DOMAIN_ESTIMATE`. The fee is essentially fixed for
-   this msg type, so it transfers cleanly to the about-to-be-created
-   lease.
-4. **If no ACTIVE lease exists** (fresh wallet, all prior leases closed):
-   set `SET_DOMAIN_ESTIMATE = "skipped"`. Step 6b will pass
-   `--set-domain-tx-fee skipped` to `render-deployment-plan.cjs`, which
-   emits its canonical "not estimated" marker line in the DeploymentPlan
-   block (the script owns the wording — do not quote it here, it'll
-   drift). **Do NOT add prose around this in the intent recap** — the
-   DeploymentPlan line itself is the single source of truth, and
-   stitching a "Heads-up: …" sentence into the recap creates awkward
-   paraphrases. PreToolUse + textual confirm still fire normally on the
-   printed plan.
-
-If the second estimate itself errors out, surface the error and confirm
-via `AskUserQuestion` (Yes / No): "proceed without a set-domain
-estimate?". Do NOT silently skip. On Yes, set
-`SET_DOMAIN_ESTIMATE = "skipped"` and continue.
+If set, `Read`
+`skills/deploy-app/references/set-domain-fee-estimate.md` and follow it
+inline. The reference covers the representative-lease lookup, the
+`build-set-domain-args.cjs` invocation, the `cosmos_estimate_fee` call,
+and the approach-3 fallback when no representative lease is available.
+Capture `SET_DOMAIN_ESTIMATE` as the result.
 
 ### 6b — Render the DeploymentPlan
 

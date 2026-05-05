@@ -10,6 +10,17 @@ It is a streamlined post-broadcast diagnostic flow — no lease-UUID picker
 summary (deploy-app just persisted it). For full diagnostics on an
 arbitrary lease, see `/manifest-agent:troubleshoot-deployment`.
 
+## Variables in scope
+
+The orchestrator must have these in scope before loading this file:
+
+- `LEASE_UUID` — the lease created by deploy-app
+- `IMAGE` — the primary image reference (used in the close-lease prompt
+  so the user knows what they're closing)
+- `<activeChain>` — the active chain name (`testnet` / `mainnet`),
+  captured at Step 0 from `update-config.cjs --status`; used to locate
+  the chain-data file for `humanize-fee.cjs`
+
 ## Diagnostics report
 
 Run these MCP calls in parallel (single message, three tool calls):

@@ -23,10 +23,11 @@
  *   For logs / status:  /manifest-agent:troubleshoot-deployment <uuid>
  *
  * Multi-instance / multi-service stacks emit "Ingresses:" followed by
- * one bare FQDN per running instance. When no externally-reachable
- * ingress is reported (internal-only services, or the provider hasn't
- * surfaced an FQDN yet), the line reads
- * "Ingress: (none — service is internal or no FQDN reported)".
+ * one bare FQDN per UNIQUE FQDN across running instances (instances
+ * sharing an FQDN — e.g. multiple replicas behind one subdomain — are
+ * deduped). When no externally-reachable ingress is reported (internal-
+ * only services, or the provider hasn't surfaced an FQDN yet), the
+ * line reads "Ingress: (none — service is internal or no FQDN reported)".
  *
  * When the deploy_app response carries a `custom_domain` (the set-domain
  * tx confirmed alongside create-lease), an additional line is emitted

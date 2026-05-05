@@ -2,8 +2,9 @@
 'use strict';
 
 /**
- * Render the AskUserQuestion prompt body + option list for the partial-
- * success recovery branch in deploy-app Step 11.
+ * Render the AskUserQuestion prompt body + option list for deploy-app's
+ * partial-success recovery branch (loaded from
+ * `references/partial-success-recovery.md`).
  *
  * The prompt has conditional inserts (different wording for "custom domain
  * was requested" vs "no custom domain", and option 1 is omitted entirely

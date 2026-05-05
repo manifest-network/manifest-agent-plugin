@@ -6,9 +6,9 @@
  * targeting `billing set-item-custom-domain`.
  *
  * Single source of truth for the arg-array shape across the plugin. Used by:
- *   - manage-domain (set / clear flows)
- *   - deploy-app Step 5a-bis (set-domain pre-broadcast estimate against a
- *     representative existing lease)
+ *   - manage-domain (set / clear flows; the estimate→confirm→broadcast spine)
+ *   - deploy-app set-domain pre-broadcast estimate sub-step (when SPEC.customDomain
+ *     is set; estimates against a representative existing lease)
  *
  * Without this script, three separate prose call-sites construct the array
  * with conditional inserts ("--service-name" for stacks, "--clear" for clear

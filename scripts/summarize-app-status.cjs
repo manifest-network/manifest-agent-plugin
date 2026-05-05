@@ -9,9 +9,11 @@
  * providerError/connectionError surfacing, fredStatus key dump) so the
  * report wording stays consistent across runs.
  *
- * The fuzzy diagnostic interpretation that needs LLM judgment
- * (Step 5's suggested-actions table in troubleshoot-deployment) stays in
- * prose — this script handles only the deterministic structural extraction.
+ * The fuzzy diagnostic interpretation that needs LLM judgment (the
+ * suggested-actions table in troubleshoot-deployment, which maps signals
+ * like `provision_status: image_pull_failed` to recovery suggestions)
+ * stays in prose — this script handles only the deterministic structural
+ * extraction.
  *
  * Stdin (JSON object): the `app_status` response. Expected shape (fields
  * are defensive — missing fields render with placeholder lines):

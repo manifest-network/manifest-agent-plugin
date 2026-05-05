@@ -7,9 +7,17 @@
  * redundant questions.
  *
  * Anonymous-only — the plugin does not support private registries today.
- * If a registry returns 401/403, the script prints `{}` on stdout, the
- * reason on stderr, and exits 0 (fail-soft → skill falls back to asking
- * the user for everything).
+ * Fail-soft contract: the script prints `{}` on stdout, the reason on
+ * stderr, and exits 0 in the following cases:
+ *   - registry returns 401 / 403 (auth required / private registry)
+ *   - Docker Hub returns 429 (rate-limited; reason includes retry hint)
+ *   - --image fails OCI Distribution Spec grammar (parseRef throws)
+ *   - manifest body exceeds the 10 MiB cap
+ *   - request timeout (10s)
+ *   - unparseable manifest / blob JSON
+ * Skill prose treats `{}` as "no info, ask the user" and surfaces the
+ * stderr reason verbatim — so the user sees rate-limit hints, OCI
+ * validation rejections, etc.
  *
  * Args:
  *   --image <ref>   image reference. Accepts:
@@ -22,7 +30,10 @@
  * Output (JSON object on stdout):
  *   {
  *     image:           "<canonical ref the script resolved>",
- *     digest:          "sha256:<hex>",        // manifest digest
+ *     digest:          "sha256:<hex>" | null, // manifest digest; null when
+ *                                              // the registry didn't echo
+ *                                              // docker-content-digest AND
+ *                                              // no digest was passed in --image
  *     ports:           ["80/tcp", ...],       // from OCI ExposedPorts (sorted)
  *     env:             { KEY: "value", ... }, // image's default env (often
  *                                              // PATH/NODE_VERSION/etc — informational only;
@@ -152,7 +163,16 @@ function registryHost(registry) {
 }
 
 function httpsJson(host, path, headers = {}) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolveOuter, rejectOuter) => {
+    // Settle-once guard. The body-size-cap path rejects directly from the
+    // data handler (rather than relying on req.destroy(err) → req.on('error')
+    // which races with res.on('end')), so we may get multiple rejection
+    // attempts (cap reject, then req 'error' from the destroy, then a later
+    // timeout). Coalesce them.
+    let settled = false;
+    const resolve = (v) => { if (!settled) { settled = true; resolveOuter(v); } };
+    const reject = (e) => { if (!settled) { settled = true; rejectOuter(e); } };
+
     const req = request({
       host,
       path,
@@ -168,7 +188,8 @@ function httpsJson(host, path, headers = {}) {
         received += c.length;
         if (received > MAX_BODY_BYTES) {
           aborted = true;
-          req.destroy(new Error(`response body exceeded ${MAX_BODY_BYTES} bytes (cap)`));
+          req.destroy();
+          reject(new Error(`response body exceeded ${MAX_BODY_BYTES} bytes (cap) on ${host}${path}`));
           return;
         }
         chunks.push(c);
@@ -180,7 +201,7 @@ function httpsJson(host, path, headers = {}) {
       });
     });
     req.on('error', reject);
-    req.on('timeout', () => { req.destroy(new Error('request timeout')); });
+    req.on('timeout', () => { req.destroy(new Error(`request timeout on ${host}${path}`)); });
     req.end();
   });
 }
@@ -192,8 +213,15 @@ async function followRedirect(url) {
 }
 
 async function getDockerHubToken(name) {
+  // Surface 429 specifically with retry guidance — anonymous Docker Hub
+  // pulls are limited per-IP and a 60-min wait fixes it. Without this
+  // special case the user sees the same fail-soft `{}` outcome as a hard
+  // 401, with no signal that the situation is temporary.
   // Docker Hub requires anonymous access still go through a token grant.
   const res = await httpsJson('auth.docker.io', `/token?service=registry.docker.io&scope=repository:${name}:pull`);
+  if (res.status === 429) {
+    throw new Error('Docker Hub token: HTTP 429 (anonymous pulls rate-limited per-IP; retry after ~60 min, or authenticate)');
+  }
   if (res.status !== 200) throw new Error(`Docker Hub token: HTTP ${res.status}`);
   let parsed;
   try { parsed = JSON.parse(res.body); } catch { throw new Error('Docker Hub token: invalid JSON'); }

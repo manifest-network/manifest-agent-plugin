@@ -13,7 +13,10 @@
  * steps failed. Close this lease with close_lease if needed. Error: …`
  * and `details.lease_uuid` populated when create-lease succeeded but
  * something downstream (set-domain, manifest upload, readiness poll) fell
- * over (see manifest-mcp-fred/dist/tools/deployApp.js:109,116-132).
+ * over. The throw path lives in `manifest-mcp-fred/dist/tools/deployApp.js`,
+ * in the block that constructs the message starting `Deploy partially
+ * succeeded:` (line numbers omitted intentionally — they shift on patch
+ * releases; grep the message string to find it).
  *
  * Stdin (JSON object): the MCP error envelope as the orchestrator captures
  * it from the thrown error. Recognised shapes:

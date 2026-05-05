@@ -52,7 +52,16 @@ function loadChainDenomMap(chainDataFilePath) {
   let raw;
   try {
     raw = JSON.parse(readFileSync(chainDataFilePath, 'utf8'));
-  } catch {
+  } catch (err) {
+    // The path was passed but read/parse failed. Warn loudly: a corrupted
+    // chain file silently downgrades all balance/fee rendering to raw
+    // chain denoms across the whole plugin, and the user only notices
+    // because the DeploymentPlan looks weird ("0.000037 PWR" vs "37 upwr").
+    process.stderr.write(
+      `humanize-denom: failed to load ${chainDataFilePath}: ${err.message}; ` +
+      `balances and fees will render with raw on-chain denoms. ` +
+      `Run /manifest-agent:refresh-registry to re-fetch chain data.\n`
+    );
     return empty;
   }
   // Normalize the feeTokens list into a denom -> { symbol, exponent } map.

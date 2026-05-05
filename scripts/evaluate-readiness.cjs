@@ -16,6 +16,11 @@
  *   --gas-warn-floor <n>  Optional. Override the warn threshold for low
  *                         gas balance, in the smallest unit of the gas
  *                         denom. Defaults vary per denom (see DEFAULTS).
+ *   --chain-data-file <path>  Optional but recommended. Path to the chain
+ *                         registry JSON (e.g. ~/.manifest-agent/chains/<chain>.json)
+ *                         so `reasons[]` render with friendly token
+ *                         symbols (MFX / PWR) instead of raw on-chain
+ *                         denoms. When omitted, balances stay in raw form.
  *
  * Input (stdin, JSON object):
  *   {

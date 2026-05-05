@@ -6,24 +6,27 @@
  * summarize-app-status.cjs (any consumer that needs to surface user-facing
  * URLs from app_status / deploy_response).
  *
- * The provider's ConnectionDetails schema (manifest-mcp-fred 0.8.0) can
- * carry instance lists in two places, BOTH of which must be walked:
- *   - top-level `connection.instances[]` (single-service / legacy
- *     non-services-map shape)
+ * The provider's ConnectionDetails schema (manifest-mcp-fred 0.8.0) carries
+ * instance lists in one or both of:
+ *   - top-level `connection.instances[]` (single-service / non-services-map
+ *     shape)
  *   - per-service `connection.services.<name>.instances[]` (stack /
  *     services-map shape — emitted whenever the spec uses the services-map
  *     form, which author-manifest now always does even for single-service
  *     deploys to enable per-port `ingress: bool`)
  *
- * Returns a deduped list of running instances. Each instance has at least
- * `fqdn`. The legacy fallback (top-level `connection.host` + `connection.ports`
- * when no instances are found) returns `{host, port}` entries instead of
- * fqdn — callers must check the shape before formatting URLs.
+ * Returns a deduped list of running instances; each entry has `fqdn`.
+ * Subdomain-based routing on the provider means the port is NOT part of
+ * the URL: one user-facing URL per FQDN regardless of how many container
+ * ports the instance exposes.
  *
- * Subdomain-based routing on the provider means port is NOT part of the URL
- * for the modern instances form: one user-facing URL per FQDN regardless of
- * how many container ports it exposes. The legacy host:port shape predates
- * subdomain routing.
+ * Unrecognized shape: if `connection` is non-null but has neither
+ * `instances` nor `services` keys, the helper returns `[]` AND emits a
+ * stderr warning so a future provider-shape divergence is loud rather
+ * than silent. (Older shapes with top-level `connection.host` +
+ * `connection.ports` were supported historically; they have not been
+ * observed in any manifest-mcp-fred 0.8.0+ response and are no longer
+ * handled. If a caller needs them again, restore as a documented branch.)
  */
 
 function extractRunningEndpoints(connection) {
@@ -47,41 +50,35 @@ function extractRunningEndpoints(connection) {
     }
   }
 
-  // Legacy fallback: top-level host + ports map. Only fires when the modern
-  // shape (instances[] OR services.<name>.instances[]) is genuinely ABSENT
-  // from the response — not just empty. If `instances` or `services` keys
-  // exist but no instance is `status === "running"` yet (e.g. lease still
-  // pending, wait_for_app_ready hasn't returned), the modern path is the
-  // truth and the empty endpoints array means "not ready yet". Falling back
-  // to legacy host/ports here would surface a stale URL and push
-  // classify-deploy-response.cjs from `needs_wait` to `active` incorrectly.
+  // Diagnose unrecognized shapes loudly. The empty-but-present case
+  // (instances/services keys exist but no instance is `status: "running"`)
+  // legitimately returns [] — the lease is pending, wait_for_app_ready
+  // hasn't returned, etc. — so we only warn when neither key is present.
   const hasModernShape =
     Object.prototype.hasOwnProperty.call(connection, 'instances') ||
     Object.prototype.hasOwnProperty.call(connection, 'services');
-  if (!hasModernShape && connection.host && connection.ports) {
-    // Legacy: host is typically a raw IP, no subdomain routing — caller
-    // still needs the port to construct a URL.
-    for (const portKey of Object.keys(connection.ports)) {
-      const v = connection.ports[portKey];
-      const port = typeof v === 'number' || typeof v === 'string' ? v : (v && v.host_port);
-      if (port !== undefined) endpoints.push({ host: connection.host, port });
-    }
+  if (!hasModernShape) {
+    const keys = Object.keys(connection).slice(0, 8).join(', ') || '(empty)';
+    process.stderr.write(
+      `_connection: unrecognized connection shape (no \`instances\` or \`services\` key found; keys present: ${keys}). ` +
+      `Returning empty endpoints — the orchestrator will report no ingresses for this lease. ` +
+      `Provider may have shipped a new shape; check manifest-mcp-fred ConnectionDetails.\n`
+    );
   }
+
   return endpoints;
 }
 
-// Convenience: render an endpoint as a bare FQDN string (for ingress lists)
-// or "host:port" for the legacy shape. Use formatEndpointAsUrl when you
-// want a full https:// URL.
+// Render an endpoint as a bare FQDN string (for ingress lists). Returns
+// null if the endpoint shape is unsupported.
 function formatEndpointAsIngress(ep) {
-  if (ep.fqdn) return ep.fqdn;
-  if (ep.host && ep.port !== undefined) return `${ep.host}:${ep.port}`;
+  if (ep && ep.fqdn) return ep.fqdn;
   return null;
 }
 
+// Render an endpoint as a full https:// URL.
 function formatEndpointAsUrl(ep) {
-  if (ep.fqdn) return `https://${ep.fqdn}/`;
-  if (ep.host && ep.port !== undefined) return `https://${ep.host}:${ep.port}/`;
+  if (ep && ep.fqdn) return `https://${ep.fqdn}/`;
   return null;
 }
 

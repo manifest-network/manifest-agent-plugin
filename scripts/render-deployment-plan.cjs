@@ -22,12 +22,19 @@
  *                                 representative lease)" line per approach-3 fallback. The
  *                                 script owns the "Tx fee (set-domain):" label — no
  *                                 caller-supplied label flag.
+ *   --chain-data-file <path>      (optional but recommended) path to the chain registry
+ *                                 JSON (e.g. ~/.manifest-agent/chains/testnet.json) so
+ *                                 SKU price / wallet / credit balances render with friendly
+ *                                 token symbols (umfx → MFX, factory/.../upwr → PWR). When
+ *                                 omitted the script warns on stderr and falls back to raw
+ *                                 on-chain denoms — orchestrator should always pass it.
  *
  * When `--tx-fee` is omitted, the fee line shows "(not estimated)" so the
  * runtime-policy violation is visible. When `--set-domain-tx-fee` is set
  * alongside `--tx-fee`, two labeled fee lines are emitted plus a `Total fee:`
  * line summing the human-readable amounts (same-denom: numeric sum;
- * different-denom: `<a> + <b>`).
+ * different-denom: `<a> + <b>`). When neither domain flag is set, a single
+ * `Tx fee:` line is emitted (no labels needed).
  *
  * Stdin (JSON object):
  *   {

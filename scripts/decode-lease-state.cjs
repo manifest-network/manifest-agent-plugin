@@ -11,8 +11,12 @@
  * return the JSON-encoded string (e.g. `state: "LEASE_STATE_ACTIVE"`),
  * depending on encoding paths. This script normalizes both.
  *
- * Embedded table avoids forcing the LLM to recall enum mappings, which is a
- * known hallucination source for chain-specific enums.
+ * Wraps the shared `_lease-state.cjs` table behind a CLI so prose paths
+ * can decode without a `require`. The table itself lives in
+ * `_lease-state.cjs` (single source of truth across consumers); this
+ * script is a thin entry point. Centralizing the table avoids forcing
+ * the LLM to recall enum mappings — a known hallucination source for
+ * chain-specific enums.
  *
  * Terminal states: `LEASE_STATE_CLOSED` AND `LEASE_STATE_INSUFFICIENT_FUNDS`.
  * The chain transitions a lease through INSUFFICIENT_FUNDS when its credit

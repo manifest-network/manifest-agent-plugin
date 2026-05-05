@@ -24,8 +24,9 @@
  *     error_summary?: string           // present only when outcome=failed
  *   }
  *
- * "active": state is LEASE_STATE_ACTIVE AND at least one running instance with
- *           a host port. The orchestrator can skip wait_for_app_ready.
+ * "active": state is LEASE_STATE_ACTIVE AND at least one running instance
+ *           with an FQDN (modern subdomain-routing shape). The
+ *           orchestrator can skip wait_for_app_ready.
  * "needs_wait": lease created but not yet active OR connection details missing.
  *               Orchestrator should call wait_for_app_ready as a fallback.
  * "failed": no lease_uuid present, OR state is a terminal failure state

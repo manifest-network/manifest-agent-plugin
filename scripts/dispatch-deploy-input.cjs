@@ -15,8 +15,15 @@
  *   "spec_file"    — argument is an existing readable file path → load it
  *   "multi_image"  — 2+ image-shaped tokens → multi-service stack fast-path
  *   "single_image" — exactly 1 image-shaped token → single-service fast-path
- *   "error"        — input matches none of the above → orchestrator stops
- *                    and surfaces `reason`
+ *   "error"        — emitted in any of these cases:
+ *                      - input matches none of the above
+ *                      - argument is a path-shaped token (/-prefixed +
+ *                        .json/.yaml/.yml suffix) but the file doesn't
+ *                        exist (typo before file creation)
+ *                      - argument is `~/...` or a relative path with a
+ *                        spec extension (Node doesn't expand ~; we hint)
+ *                      - argument exists on disk but is a directory
+ *                    The orchestrator surfaces `reason` verbatim and stops.
  *
  * Image reference shape: contains `:` (tag form) or `@sha256:` (digest form).
  * Plain bare names like `nginx` (no tag) match neither and are rejected;
@@ -122,7 +129,15 @@ function parseArgs(argv) {
       console.log(JSON.stringify({ mode: 'spec_file', tokens: [trimmed], spec_path: trimmed }));
       return;
     }
-    // Path exists but is a directory — fall through to error after token scan
+    // Path exists but is not a regular file (most likely a directory).
+    // Emit an explicit error rather than falling through — otherwise the
+    // path-shaped guard below would misreport this as "no file exists".
+    console.log(JSON.stringify({
+      mode: 'error',
+      tokens: [trimmed],
+      reason: `path "${trimmed}" exists but is not a regular file (likely a directory). Pass a spec JSON file or an image reference.`,
+    }));
+    return;
   }
 
   // Path-shaped intent that doesn't exist on disk → mode:error rather than
@@ -130,6 +145,19 @@ function parseArgs(argv) {
   // a spec-file path whose basename contains a colon (e.g. "/tmp/spec:v1.json"
   // typed before the file is created) gets `looksLikeImageRef → true` and
   // silently misclassifies as single_image with derived_name "spec".
+  //
+  // Hint for unexpanded "~" (Node doesn't expand it) and bare relative
+  // paths — these don't trigger looksPathShaped (no leading "/") so we
+  // emit a tailored hint here before falling through to image-classify.
+  if ((trimmed.startsWith('~/') || /^[A-Za-z0-9._-]+\/.+\.(json|yaml|yml)$/i.test(trimmed))
+      && !trimmed.includes(' ')) {
+    console.log(JSON.stringify({
+      mode: 'error',
+      tokens: [trimmed],
+      reason: `argument "${trimmed}" looks like a file path but cannot be located. ${trimmed.startsWith('~/') ? 'Note: ~ is not expanded by the dispatcher; pass an absolute path (e.g. "/home/<user>/...").' : 'Pass an absolute path, or cd into the directory containing the spec.'}`,
+    }));
+    return;
+  }
   if (looksPathShaped(trimmed) && !trimmed.includes(' ')) {
     console.log(JSON.stringify({
       mode: 'error',

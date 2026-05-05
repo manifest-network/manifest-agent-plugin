@@ -52,6 +52,14 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
   Both paths: validate via `build_manifest_preview` → `evaluate-readiness.cjs` → `render-deployment-plan.cjs` → confirm → `deploy_app` → `classify-deploy-response.cjs` → persist via `save-manifest.cjs` → `format-success.cjs`. On the typical happy path the orchestrator reads connection details directly from `deploy_app`'s response; the fallback path calls `wait_for_app_ready` and `app_status` only when `deploy_app` returns without an active connection. Failure path runs an inline troubleshoot sequence and offers `close_lease`. **When `customDomain` is set in the spec**, `deploy_app` broadcasts TWO billing txes atomically (`create-lease` + `set-item-custom-domain`); the orchestrator estimates both fees, shows them line-by-line in the DeploymentPlan, and on partial failure (`Deploy partially succeeded:` MCP error) routes through `classify-deploy-error.cjs` to a retry-set-domain / close-lease / leave-as-is branch.
 - **manage-domain** — Set, clear, or look up the custom domain (FQDN) attached to an existing lease item. Three sub-flows via `AskUserQuestion`. Set/clear go through `cosmos_estimate_fee` + textual confirm + PreToolUse + on-chain verification (re-query `leases_by_tenant`, find item, check `customDomain`). Lookup is read-only (`lease_by_custom_domain` reverse query).
 
+### `references/` files and cross-skill loading
+
+Skills with detailed flows (deploy-app, author-manifest) keep their `SKILL.md` short by extracting per-branch detail to `skills/<name>/references/*.md` files that the skill `Read`s on demand. The orchestrator stays under the 500-line guideline; references load only when their branch fires.
+
+**Cross-skill `Read` is permitted when prose is genuinely shared.** Today only one cross-skill reference exists: `skills/author-manifest/references/readiness-branching.md` is loaded by both `author-manifest` Step 5 and `deploy-app` Step 5 (the `block`/`warn`/`ok` branch handling is identical for both flows). The reference's preamble enumerates both consumers; if it ever needs to move, update both call sites in the same commit. A plugin-level `references/` directory would be more discoverable but isn't a documented Claude Code pattern, so we use skill-local references with the cross-cite + dual-consumer header instead.
+
+References must declare a "Variables in scope" section near the top so a reader cold-loading the file knows which orchestrator-supplied symbols (`LEASE_UUID`, `MANIFEST_JSON`, `<activeChain>`, etc.) are expected to be available.
+
 ## Scripts vs prose
 
 This plugin codifies a split between deterministic operations (CJS scripts in `scripts/`) and ambiguous-decision steps (prose in `skills/<name>/SKILL.md`).

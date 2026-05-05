@@ -85,15 +85,26 @@ function parseArgs(argv) {
   if (wrapper.custom_domain_service_name) lines.push(`Domain service:   ${wrapper.custom_domain_service_name}`);
 
   // Structural summary of manifest_json — counts only, env KEYS only.
+  // The manifest_json bytes are the canonical Fred-rendered string whose
+  // SHA-256 is meta_hash_hex; save-manifest.cjs verified parseability on
+  // the way in. If we can't parse them on read-back, the wrapper is
+  // corrupted (file mode is 0o600, no other writer should exist). Surface
+  // the corruption explicitly rather than silently downgrading the
+  // troubleshoot-deployment "Saved manifest" appendix to no counts.
   let manifestObj = null;
+  let manifestParseError = null;
   if (wrapper.manifest_json) {
     try {
       manifestObj = typeof wrapper.manifest_json === 'string'
         ? JSON.parse(wrapper.manifest_json)
         : wrapper.manifest_json;
-    } catch {
-      // ignore — print what we have
+    } catch (err) {
+      manifestParseError = err.message;
     }
+  }
+  if (manifestParseError) {
+    lines.push('');
+    lines.push(`(manifest_json bytes unparseable: ${manifestParseError} — wrapper at ${path} may be corrupted; the SHA-256 audit invariant is violated)`);
   }
 
   if (manifestObj && typeof manifestObj === 'object' && !Array.isArray(manifestObj)) {

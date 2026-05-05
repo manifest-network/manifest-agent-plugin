@@ -4,11 +4,11 @@
 /**
  * Extract a target lease's items[] from a `leases_by_tenant` response.
  *
- * Pins the typed-shape decoding that was in `manage-domain` Step 4 (service
- * picker) and Step 6 verification (post-broadcast custom-domain check).
- * Both call sites previously walked `response.leases[]` → match by UUID →
- * read `items[].serviceName / customDomain` in prose. Centralizing here
- * means the chain shape is decoded once.
+ * Pins the typed-shape decoding that was in manage-domain's stack service
+ * picker and post-broadcast custom-domain verification. Both call sites
+ * previously walked `response.leases[]` → match by UUID → read
+ * `items[].serviceName / customDomain` in prose. Centralizing here means
+ * the chain shape is decoded once.
  *
  * Stdin (JSON object): the raw `leases_by_tenant` response. Tolerates
  * either `{leases: [...]}` (current chain shape) or a bare array — the
