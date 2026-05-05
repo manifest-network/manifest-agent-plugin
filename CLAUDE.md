@@ -49,13 +49,14 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **deploy-app** — Orchestrates the end-to-end flow with two entry points:
     - `/manifest-agent:deploy-app <path>` — load a structured spec JSON file and deploy it.
     - `/manifest-agent:deploy-app` (no arg) — drive a thin inline authoring sequence and deploy in one shot.
-  Both paths: validate via `build_manifest_preview` → `evaluate-readiness.cjs` → `render-deployment-plan.cjs` → confirm → `deploy_app` → `classify-deploy-response.cjs` → persist via `save-manifest.cjs` → `format-success.cjs`. On the typical happy path the orchestrator reads connection details directly from `deploy_app`'s response; the fallback path calls `wait_for_app_ready` and `app_status` only when `deploy_app` returns without an active connection. Failure path runs an inline troubleshoot sequence and offers `close_lease`.
+  Both paths: validate via `build_manifest_preview` → `evaluate-readiness.cjs` → `render-deployment-plan.cjs` → confirm → `deploy_app` → `classify-deploy-response.cjs` → persist via `save-manifest.cjs` → `format-success.cjs`. On the typical happy path the orchestrator reads connection details directly from `deploy_app`'s response; the fallback path calls `wait_for_app_ready` and `app_status` only when `deploy_app` returns without an active connection. Failure path runs an inline troubleshoot sequence and offers `close_lease`. **When `customDomain` is set in the spec**, `deploy_app` broadcasts TWO billing txes atomically (`create-lease` + `set-item-custom-domain`); the orchestrator estimates both fees, shows them line-by-line in the DeploymentPlan, and on partial failure (`Deploy partially succeeded:` MCP error) routes through `classify-deploy-error.cjs` to a retry-set-domain / close-lease / leave-as-is branch.
+- **manage-domain** — Set, clear, or look up the custom domain (FQDN) attached to an existing lease item. Three sub-flows via `AskUserQuestion`. Set/clear go through `cosmos_estimate_fee` + textual confirm + PreToolUse + on-chain verification (re-query `leases_by_tenant`, find item, check `customDomain`). Lookup is read-only (`lease_by_custom_domain` reverse query).
 
 ## Scripts vs prose
 
 This plugin codifies a split between deterministic operations (CJS scripts in `scripts/`) and ambiguous-decision steps (prose in `skills/<name>/SKILL.md`).
 
-**In scripts:** UUID validation, path traversal guards, file mode + atomic write discipline, JSON parsing and shape validation, structural counting (`manifest-summary.cjs`), readiness evaluation with concrete thresholds (`evaluate-readiness.cjs`), `deploy_app`-response classification (`classify-deploy-response.cjs`), URL extraction from typed connection payloads (`format-success.cjs`), `DeploymentPlan` block rendering (`render-deployment-plan.cjs`), enum decoding (`decode-lease-state.cjs`), redacted summarization (`summarize-manifest.cjs`, `list-saved-manifests.cjs`).
+**In scripts:** UUID validation, path traversal guards, file mode + atomic write discipline, JSON parsing and shape validation, structural counting (`manifest-summary.cjs`), readiness evaluation with concrete thresholds (`evaluate-readiness.cjs`), `deploy_app`-response classification (`classify-deploy-response.cjs`), `deploy_app`-error classification for partial-success (`classify-deploy-error.cjs`), URL extraction from typed connection payloads (`format-success.cjs`), `DeploymentPlan` block rendering (`render-deployment-plan.cjs`), enum decoding (`decode-lease-state.cjs`), redacted summarization (`summarize-manifest.cjs`, `list-saved-manifests.cjs`), FQDN format validation (`validate-domain.cjs`), DNS resolution probes with hard timeouts (`dns-precheck.cjs`).
 
 **In prose:** asking the user open-ended questions (image refs, env values, service names), interpreting fuzzy diagnostic signals (the `troubleshoot-deployment` suggestion table), branching on unstable response shapes that require LLM judgment.
 
@@ -97,6 +98,7 @@ The heredoc references `scripts/render-deployment-plan.cjs` as the canonical ren
 - `mcp__manifest-fred__update_app`
 - `mcp__manifest-lease__fund_credit`
 - `mcp__manifest-lease__close_lease`
+- `mcp__manifest-lease__set_item_custom_domain`
 
 Read-only tools and the testnet faucet (`mcp__manifest-chain__request_faucet`) are intentionally not gated.
 
@@ -143,9 +145,35 @@ What this protects: the chat input never carries secrets, and prose summaries (i
 
 What it doesn't: env values still flow into the `build_manifest_preview` and `deploy_app` MCP tool call args at validation + broadcast time, which means they enter the agent's API context for those turns. Eliminating that exposure entirely needs upstream MCP support for "load env from this path" and is out of scope here.
 
+## Custom domains
+
+`manifest-mcp-node@0.8.0` added FQDN support to the lease layer. Three integration points in this plugin:
+
+**Spec-file shape (camelCase, mirrors deploy_app input):** top-level `customDomain?: string` and `serviceName?: string`. `serviceName` is required when `customDomain` is set on a stack and must match a key in the `services` map; for single-service specs it's omitted (the only item is the implicit target). Spec uses camelCase so the agent can splat the spec into the `deploy_app` MCP call without renaming.
+
+**Wrapper-file shape (snake_case, mirrors v2 + chain `service_name`):** `custom_domain?: string` and `custom_domain_service_name?: string` added at `schema_version: 3`. v2 wrappers remain readable; missing v3 fields render as undefined.
+
+**Naming asymmetry rationale:** spec → camelCase (deploy_app input contract); wrapper → snake_case (existing v2 + chain response convention); intent recap / DeploymentPlan / format-success → human prose. Each layer mirrors its source-of-truth.
+
+**Dual-tx broadcast on `deploy_app`:** when `customDomain` is set, `deploy_app` broadcasts TWO billing txes atomically — `create-lease` first, then `set-item-custom-domain` — both inside one MCP tool call. The PreToolUse permission prompt fires once and covers both. The DeploymentPlan + intent recap MUST itemize both fees (line-by-line, with `Total fee:`) so the per-tx review is in the textual flow.
+
+**`set-item-custom-domain` pre-broadcast fee estimation:** the chain keeper validates lease existence + ownership against the simulated msg sender, so simulating against a non-owned placeholder UUID fails. Use a representative existing ACTIVE lease owned by the signer (query `leases_by_tenant` and pick the first ACTIVE entry); the fee transfers cleanly because it's essentially fixed for this msg type. If no representative lease exists (fresh wallet), the orchestrator renders `Tx fee (set-domain): (not estimated — no representative lease available)` per the approved approach-3 fallback; the recap surfaces the gap explicitly.
+
+**Partial-success failure mode:** when create-lease confirms but the downstream step (set-domain or upload/poll) fails, `deploy_app` THROWS a `ManifestMCPError` with message starting `Deploy partially succeeded: lease ${uuid} was created…` and `details.lease_uuid` populated — there is NO returned `deploy_response` in this case. The orchestrator routes the thrown envelope through `scripts/classify-deploy-error.cjs` (separate from `classify-deploy-response.cjs`, which only handles the return path), which extracts the lease UUID and outputs `outcome: "partially_succeeded"`. The deploy-app skill's Step 11 then offers retry-set-domain / close-lease / leave-as-is.
+
+**Standalone management:** `/manifest-agent:manage-domain` skill handles set / clear / lookup on existing leases. `set` and `clear` go through the same `cosmos_estimate_fee` → textual confirm → PreToolUse → on-chain verification pattern as `close-lease` (mirrors `troubleshoot-deployment` Step 6). `lookup` uses `lease_by_custom_domain` for reverse FQDN → lease resolution; read-only, ungated.
+
+**Where the new tools live:** `set_item_custom_domain` and `lease_by_custom_domain` are in `manifest-mcp-lease` (NOT `manifest-fred`); the PreToolUse matcher uses the `mcp__manifest-lease__…` form.
+
+**DNS pre-check (warn-only):** `scripts/dns-precheck.cjs` issues `resolve4`/`resolve6`/`resolveCname` concurrently with a hard `Promise.race` 5 s timeout (libuv's getaddrinfo otherwise hangs ~10 s × 2 attempts × 3 lookups = up to 30 s). Outputs `{ resolved, a, aaaa, cname?, reason? }`. The deploy-app and manage-domain skills surface the result and ask proceed/abort; never block. The chain is the authoritative arbiter of FQDN format and reservation; DNS pre-check is purely a heads-up for the operator.
+
+**FQDN client-side validation:** `scripts/validate-domain.cjs` enforces length ≤ 253, lowercase, ≥1 dot, no leading/trailing dots/hyphens, non-numeric TLD. Catches obvious typos before broadcasting. Authoritative validation is on-chain.
+
+**Custom domains in saved manifests:** the v3 wrapper persists `custom_domain` + `custom_domain_service_name` when `deploy_app`'s response carried them. `summarize-manifest.cjs` and `list-saved-manifests.cjs` surface them safely (FQDNs are not secrets). `troubleshoot-deployment` Step 1 picker also adds a "lookup by custom domain" option using `lease_by_custom_domain`, and Step 4's saved-manifest section shows `Custom domain:` / `Domain service:` lines when present.
+
 ## Saved post-deploy records
 
-After a successful broadcast `/manifest-agent:deploy-app` persists a wrapper at `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). Wrapper schema v2: `{ schema_version: 2, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash_hex, format, manifest_json }` where `manifest_json` is the canonical Fred-rendered string (preserves the exact bytes whose SHA-256 is `meta_hash_hex` for audit) and `format` is `"single"` or `"stack"`. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must NOT pretty-print `manifest_json` into chat unredacted.
+After a successful broadcast `/manifest-agent:deploy-app` persists a wrapper at `~/.manifest-agent/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). Wrapper schema v3: `{ schema_version: 3, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash_hex, format, manifest_json, custom_domain?, custom_domain_service_name? }` where `manifest_json` is the canonical Fred-rendered string (preserves the exact bytes whose SHA-256 is `meta_hash_hex` for audit), `format` is `"single"` or `"stack"`, and the optional v3 fields capture any custom-domain attached at deploy time. v2 wrappers remain readable; the new v3 fields are treated as undefined when absent. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must NOT pretty-print `manifest_json` into chat unredacted.
 
 Helpers (skills should use these instead of reading the wrapper file directly):
 

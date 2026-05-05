@@ -100,6 +100,20 @@ All three paths assume you already have a public container image (e.g. `ghcr.io/
 
 A confirmation step shows the deployment plan (image, SKU, cost, wallet/credit balances) before any broadcast. Failed deploys auto-invoke a troubleshoot sequence and offer to reclaim the lease.
 
+### Custom domains
+
+Attach an FQDN to a lease item so users reach the app via your own hostname instead of the provider-assigned subdomain. Available at deploy time (set via `customDomain` in the spec or in any of the interactive flows) and standalone via `/manifest-agent:manage-domain` after the lease exists.
+
+```
+/manifest-agent:manage-domain    # interactive: set / clear / lookup
+```
+
+When `customDomain` is set on a deploy, `deploy_app` broadcasts TWO billing transactions atomically: `create-lease` AND `set-item-custom-domain`. The DeploymentPlan shows both fees line-by-line plus a `Total fee:` so you see the full cost before approving. The single permission prompt that fires next covers both transactions.
+
+**DNS setup is your responsibility:** point your CNAME (or A record for an apex) at the provider's ingress hostname BEFORE running the deploy. The plugin runs a warn-only DNS pre-check via Node's resolver — if the FQDN doesn't resolve yet, you get a heads-up but the broadcast is not blocked (chain claims succeed regardless; the domain just won't route until DNS catches up). TLS is provisioned by the provider after the lease item picks up the domain — typically takes a few minutes.
+
+**On a partial-success failure** (lease created but the set-domain step didn't land — e.g. FQDN already claimed by another tenant), the orchestrator detects the case via the upstream `Deploy partially succeeded:` error, surfaces the reason, and offers three options: retry set-domain (single retry, with the same or a different FQDN), close the new lease, or leave it running with no custom domain (the provider FQDN still works).
+
 ## Skills
 
 | Skill | Description |
@@ -109,9 +123,10 @@ A confirmation step shows the deployment plan (image, SKU, cost, wallet/credit b
 | `/manifest-agent:switch-chain` | Switch between testnet and mainnet |
 | `/manifest-agent:set-gas-price` | Change the gas fee token, price, and/or gas multiplier |
 | `/manifest-agent:refresh-registry` | Re-fetch chain data from the Cosmos chain registry |
-| `/manifest-agent:deploy-app [path-or-images]` | Deploy a containerized app end-to-end. Optional argument: a JSON spec file path, OR a single image reference (e.g. `nginx:1.27`) for a single-service fast-path, OR multiple whitespace-separated image references (e.g. `wordpress:6 mysql:9`) for a multi-service stack fast-path. Omit for full interactive authoring. Pre-flight → plan → confirm → broadcast → URL |
-| `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `~/.manifest-agent/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app` |
-| `/manifest-agent:troubleshoot-deployment` | Bundle status, diagnostics, and recent logs for a deployed lease into a unified report |
+| `/manifest-agent:deploy-app [path-or-images]` | Deploy a containerized app end-to-end. Optional argument: a JSON spec file path, OR a single image reference (e.g. `nginx:1.27`) for a single-service fast-path, OR multiple whitespace-separated image references (e.g. `wordpress:6 mysql:9`) for a multi-service stack fast-path. Omit for full interactive authoring. Pre-flight → plan → confirm → broadcast → URL. Optional `customDomain` in the spec triggers a dual-tx broadcast (create-lease + set-item-custom-domain) with line-by-line fees in the plan |
+| `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `~/.manifest-agent/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app`. Optionally collects a custom domain (FQDN + service for stacks) |
+| `/manifest-agent:manage-domain` | Set, clear, or look up the custom domain (FQDN) on an existing lease item. Set/clear go through cosmos_estimate_fee + textual confirm + permission prompt + on-chain verification; lookup is read-only |
+| `/manifest-agent:troubleshoot-deployment` | Bundle status, diagnostics, and recent logs for a deployed lease into a unified report. Lease picker now includes a "lookup by custom domain" option |
 
 ## MCP Servers
 
