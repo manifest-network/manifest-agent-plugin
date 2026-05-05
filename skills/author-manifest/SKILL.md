@@ -19,8 +19,7 @@ The spec uses the same shape `mcp__manifest-fred__deploy_app` and
 - **Single-service**: `{ image, port, env?, labels?, command?, args?, health_check?, storage?, tmpfs?, init? }`
 - **Multi-service**: `{ services: { <name>: { image, ports, env?, ... }, ... }, storage?, depends_on? }`
 
-**For all user choices in this skill, use the `AskUserQuestion` tool to
-present options as a list rather than asking the user to type.**
+**For all user choices, use the `AskUserQuestion` tool.**
 
 **Do not narrate the skill's internal structure in your chat output.**
 Step numbers (e.g. "Step 4", "Step 6b") are scaffolding for skill authors

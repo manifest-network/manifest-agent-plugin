@@ -12,8 +12,7 @@ allowed-tools: Bash(*), Read, Write, Glob, Grep
 You are interactively setting up a Manifest blockchain agent. Follow these steps
 exactly, asking the user questions where indicated.
 
-**For all user choices in this skill, use the AskUserQuestion tool to present
-the options so the user can select from a list instead of typing.**
+**For all user choices, use the `AskUserQuestion` tool.**
 
 **Do not narrate the skill's internal structure in your chat output.**
 Step numbers (e.g. "Step 3", "Step 5") are scaffolding for skill authors
@@ -86,7 +85,7 @@ warn the user:
 > Proceeding will generate a new key. The old key's password will be lost
 > (the old keyfile stays on disk but becomes unrecoverable without the password).
 
-Ask for confirmation before continuing.
+Confirm via `AskUserQuestion` (Yes / No) before continuing. Stop on No.
 
 If the command fails (no config.json yet), that's fine — skip the warning and
 proceed.

@@ -186,7 +186,12 @@ function fmtCost(readiness, denomMap) {
 
   // Load the chain registry's denom -> symbol map (umfx -> MFX,
   // factory/.../upwr -> PWR). Missing / unreadable file -> no-op map;
-  // the helpers fall back to printing the raw denom + amount.
+  // the helpers fall back to printing the raw denom + amount. Warn on
+  // stderr when the flag is omitted so a future call site that forgets
+  // it doesn't silently render `37 factory/.../upwr` instead of `0.000037 PWR`.
+  if (!args.chainDataFile) {
+    console.error('render-deployment-plan: --chain-data-file omitted; balances + SKU price will render with raw on-chain denoms. Pass --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" for friendly symbols.');
+  }
   const denomMap = loadChainDenomMap(args.chainDataFile);
 
   const manifestLine = `${summary.format || 'single'}, services=${summary.service_count ?? '?'}, ports=${summary.port_count ?? '?'}, env=${summary.env_count ?? '?'}`;

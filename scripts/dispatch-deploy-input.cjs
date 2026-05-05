@@ -48,6 +48,17 @@
 const { existsSync, statSync } = require('node:fs');
 
 const RFC1123_DNS_LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+// Path-shaped heuristic: starts with `/` AND ends with a typical spec-file
+// extension. Errs on the conservative side — bare relative paths without
+// extensions don't trigger this (they're more likely to be misformed image
+// refs than spec files), and absolute paths without an extension don't
+// trigger either. The intent is to catch the specific case where the user
+// typed a spec-file path before creating the file.
+function looksPathShaped(token) {
+  if (!token.startsWith('/')) return false;
+  return /\.(json|yaml|yml)$/i.test(token);
+}
+
 // "image-shaped" heuristic. Errs on inclusion: a string that LOOKS like
 // an image ref always passes; the chain rejects garbage at deploy time.
 function looksLikeImageRef(token) {
@@ -112,6 +123,20 @@ function parseArgs(argv) {
       return;
     }
     // Path exists but is a directory — fall through to error after token scan
+  }
+
+  // Path-shaped intent that doesn't exist on disk → mode:error rather than
+  // falling through to image classification. Without this guard, a typo in
+  // a spec-file path whose basename contains a colon (e.g. "/tmp/spec:v1.json"
+  // typed before the file is created) gets `looksLikeImageRef → true` and
+  // silently misclassifies as single_image with derived_name "spec".
+  if (looksPathShaped(trimmed) && !trimmed.includes(' ')) {
+    console.log(JSON.stringify({
+      mode: 'error',
+      tokens: [trimmed],
+      reason: `argument looks like a file path but no file exists at "${trimmed}". Did you mean a spec file you haven't created yet, or did you mean an image reference (no leading "/") and a tag like "nginx:1.27"?`,
+    }));
+    return;
   }
 
   // Tokenize: split on whitespace, drop bare `+` separators.

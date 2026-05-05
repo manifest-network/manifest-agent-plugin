@@ -79,7 +79,7 @@ function parseArgs(argv) {
     lease_uuid: args.leaseUuid,
     ...(typeof chainState.providerUuid === 'string' && { provider_uuid: chainState.providerUuid }),
     ...(chainState.state !== undefined && { state: chainState.state }),
-    ...(appStatus.connection !== undefined && { connection: appStatus.connection }),
+    ...(appStatus.connection != null && { connection: appStatus.connection }),
     ...(typeof args.customDomain === 'string' && args.customDomain.length > 0 && {
       custom_domain: args.customDomain,
     }),

@@ -47,9 +47,20 @@ function extractRunningEndpoints(connection) {
     }
   }
 
-  if (endpoints.length === 0 && connection.host && connection.ports) {
-    // Legacy: top-level host + ports map. host is typically a raw IP, no
-    // subdomain routing — caller still needs the port to construct a URL.
+  // Legacy fallback: top-level host + ports map. Only fires when the modern
+  // shape (instances[] OR services.<name>.instances[]) is genuinely ABSENT
+  // from the response — not just empty. If `instances` or `services` keys
+  // exist but no instance is `status === "running"` yet (e.g. lease still
+  // pending, wait_for_app_ready hasn't returned), the modern path is the
+  // truth and the empty endpoints array means "not ready yet". Falling back
+  // to legacy host/ports here would surface a stale URL and push
+  // classify-deploy-response.cjs from `needs_wait` to `active` incorrectly.
+  const hasModernShape =
+    Object.prototype.hasOwnProperty.call(connection, 'instances') ||
+    Object.prototype.hasOwnProperty.call(connection, 'services');
+  if (!hasModernShape && connection.host && connection.ports) {
+    // Legacy: host is typically a raw IP, no subdomain routing — caller
+    // still needs the port to construct a URL.
     for (const portKey of Object.keys(connection.ports)) {
       const v = connection.ports[portKey];
       const port = typeof v === 'number' || typeof v === 'string' ? v : (v && v.host_port);

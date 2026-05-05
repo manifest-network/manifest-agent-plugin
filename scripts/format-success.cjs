@@ -5,10 +5,7 @@
  * Render the user-facing "Deployed." block for a successful /deploy-app run.
  *
  * Input (stdin, JSON object):
- *   {
- *     deploy_response: <raw deploy_app response>,
- *     catalog:        <raw browse_catalog response>
- *   }
+ *   { deploy_response: <raw deploy_app response> }
  *
  * Args:
  *   --lease-uuid <uuid>   strict-validated; used to populate the Lease UUID line
@@ -18,7 +15,7 @@
  * surrounding prose. Example:
  *
  *   Deployed.
- *     Provider:      <human name or uuid>
+ *     Provider:      <provider_uuid>
  *     Lease UUID:    <uuid>
  *     Lease Status:  ACTIVE
  *     Ingress:       <fqdn>
@@ -48,12 +45,14 @@
  * stripped (so "LEASE_STATE_ACTIVE" -> "ACTIVE"). Internal scaffolding
  * the user shouldn't have to read.
  *
- * Provider name resolution: the catalog's shape varies by version, so we
- * look for any provider entry whose `uuid` (or `provider_uuid`) matches
- * the deploy_response's provider_uuid; we surface the first `name` we
- * find. On miss, fall back to the raw UUID. The lookup is best-effort —
- * if catalog is absent or shaped unexpectedly, we still produce the
- * success block with the lease UUID + ingress.
+ * Provider name: the script renders `Provider: <provider_uuid>` directly.
+ * An earlier version attempted to resolve a friendly name via
+ * `browse_catalog`, but the upstream `manifest-mcp-fred` catalog shape
+ * (`providers[{uuid, address, apiUrl, active, healthy, providerUuid?,
+ * healthError?}]`) carries no `name` field, so the lookup never resolved.
+ * The catalog input is no longer accepted; if upstream adds a `name`
+ * field later, restore the lookup as a thin helper using the now-shared
+ * `extractRunningEndpoints` pattern.
  */
 
 const { readFileSync } = require('node:fs');
@@ -88,32 +87,6 @@ function decodeStateName(state) {
   return `UNKNOWN(${String(state)})`;
 }
 
-// Documented catalog shape: `{ providers: [{ uuid, name, ... }, ...] }` per
-// the manifest-mcp-fred 0.8.0 contract. Earlier versions of this script
-// silently walked three different shapes and fell back to the raw UUID on
-// any miss — that hid drift in the upstream MCP response. Now we document
-// the expected shape and emit a clear warning to stderr when something
-// else turns up. Caller still gets a fail-soft result (raw UUID), but a
-// shape change leaves a footprint in the user-facing diagnostic.
-function findProviderName(catalog, providerUuid) {
-  if (!providerUuid) return null;
-  if (catalog === null || catalog === undefined) return null;
-  if (typeof catalog !== 'object' || Array.isArray(catalog)) {
-    console.error(`format-success: unexpected catalog shape (got ${Array.isArray(catalog) ? 'array' : typeof catalog}, expected object with providers[]). Provider name will fall back to UUID.`);
-    return null;
-  }
-  if (!Array.isArray(catalog.providers)) {
-    console.error('format-success: catalog.providers is not an array (MCP shape change?). Provider name will fall back to UUID.');
-    return null;
-  }
-  for (const entry of catalog.providers) {
-    if (!entry || typeof entry !== 'object') continue;
-    if (entry.uuid !== providerUuid) continue;
-    if (typeof entry.name === 'string' && entry.name.length > 0) return entry.name;
-  }
-  return null;
-}
-
 (async () => {
   const args = parseArgs(process.argv);
   if (!args.leaseUuid) {
@@ -135,14 +108,13 @@ function findProviderName(catalog, providerUuid) {
   }
 
   const dr = payload && payload.deploy_response;
-  const catalog = payload && payload.catalog;
   if (!dr || typeof dr !== 'object') {
     console.error('stdin.deploy_response is required');
     process.exit(1);
   }
 
   const ingresses = buildIngresses(dr.connection);
-  const providerName = findProviderName(catalog, dr.provider_uuid) || dr.provider_uuid || '(unknown)';
+  const providerName = dr.provider_uuid || '(unknown)';
   const stateName = decodeStateName(dr.state);
 
   const lines = [

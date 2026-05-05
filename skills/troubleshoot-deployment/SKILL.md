@@ -191,7 +191,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
   --fee-json '<ESTIMATE.fee.amount as JSON>'
 ```
 
-Capture the script's stdout as `FEE_HUMAN`. Then ask:
+Capture the script's stdout as `FEE_HUMAN`. Then ask via `AskUserQuestion`:
 
 > Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`)?
 > Estimated tx fee: `<FEE_HUMAN>` (gas `<gasEstimate>`).

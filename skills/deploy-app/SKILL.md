@@ -237,9 +237,9 @@ entry whose `name` matches `SPEC.storage`, take its `uuid`, and append
 Capture the response as `ESTIMATE` — it has `gasEstimate` (string,
 e.g. `"142000"`) and `fee.amount` (an array of `{denom, amount}`).
 
-If `cosmos_estimate_fee` itself errors out, surface the error to the
-user and ask: "estimate failed; proceed without an estimate? (yes / no)".
-Do NOT silently skip. If the user says yes, set `ESTIMATE = null` and
+If `cosmos_estimate_fee` itself errors out, surface the error and confirm
+via `AskUserQuestion` (Yes / No): "estimate failed; proceed without an
+estimate?". Do NOT silently skip. On Yes, set `ESTIMATE = null` and
 continue.
 
 ### 6a-bis — Estimate the set-domain tx fee (custom domain only)
@@ -293,9 +293,10 @@ representative existing lease the signer already owns.
    paraphrases. PreToolUse + textual confirm still fire normally on the
    printed plan.
 
-If the second estimate itself errors out, surface the error and ask
-"proceed without a set-domain estimate? (yes / no)" — do NOT silently
-skip. On yes, set `SET_DOMAIN_ESTIMATE = "skipped"` and continue.
+If the second estimate itself errors out, surface the error and confirm
+via `AskUserQuestion` (Yes / No): "proceed without a set-domain
+estimate?". Do NOT silently skip. On Yes, set
+`SET_DOMAIN_ESTIMATE = "skipped"` and continue.
 
 ### 6b — Render the DeploymentPlan
 
@@ -485,12 +486,10 @@ not `SPEC` (the structured input).
 The script prints the saved file path on stdout. Show it briefly:
 "Saved manifest record: `<path>`".
 
-**Success output**: call `browse_catalog` once more to resolve provider name
-(the deploy may have happened many minutes ago for the `needs_wait` branch),
-then:
+**Success output**: render the success block via `format-success.cjs`:
 
 ```bash
-echo '{"deploy_response": <DEPLOY_RESPONSE>, "catalog": <browse_catalog response>}' \
+echo '{"deploy_response": <DEPLOY_RESPONSE>}' \
   | node "$MANIFEST_PLUGIN_ROOT/scripts/format-success.cjs" --lease-uuid "$LEASE_UUID"
 ```
 

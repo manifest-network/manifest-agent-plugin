@@ -10,8 +10,7 @@ allowed-tools: Bash(*), Read
 
 Change the gas fee settings used by the Manifest agent's MCP servers.
 
-**For all user choices in this skill, use the AskUserQuestion tool to present
-the options so the user can select from a list instead of typing.**
+**For all user choices, use the `AskUserQuestion` tool.**
 
 **Do not narrate the skill's internal structure in your chat output.**
 Step numbers are scaffolding for skill authors only. To the user, just

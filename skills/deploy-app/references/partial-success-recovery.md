@@ -57,14 +57,19 @@ The three recovery paths and what they do:
    different one. On "different", validate the new FQDN via
    `validate-domain.cjs`.
 2. Drive the manage-domain skill's reusable post-broadcast block inline
-   (Steps 4–6 of `/manifest-agent:manage-domain`):
-   `cosmos_estimate_fee` against `billing set-item-custom-domain` (using
-   `LEASE_UUID` directly — the lease exists, so no representative-lease
-   query is needed) → textual confirm with action + fee →
+   (Step 6 of `/manifest-agent:manage-domain` — the estimate → confirm →
+   broadcast → verify spine; Steps 4 and 5 of that skill are
+   pre-broadcast input collection that doesn't apply here since we
+   already have `LEASE_UUID` and the FQDN). Concretely: call
+   `cosmos_estimate_fee` against `billing set-item-custom-domain`
+   (using `LEASE_UUID` directly — the lease exists, so no
+   representative-lease query is needed) → textual confirm via
+   `AskUserQuestion` with action + humanized fee →
    `mcp__manifest-lease__set_item_custom_domain` → verify on-chain via
-   `leases_by_tenant`. The retry MUST re-run `cosmos_estimate_fee` per
-   runtime policy. **Single retry only** — on second failure, surface
-   BOTH failures and re-offer options 2 and 3.
+   `leases_by_tenant` (pipe through `extract-lease-items.cjs`). The
+   retry MUST re-run `cosmos_estimate_fee` per runtime policy.
+   **Single retry only** — on second failure, surface BOTH failures
+   and re-offer options 2 and 3.
 3. After set-domain succeeds, fall through to the upload step below.
 
 ## On Salvage without domain (or after a successful retry)

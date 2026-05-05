@@ -10,6 +10,11 @@ allowed-tools: Bash(*), Read, Write
 
 Re-fetch the latest chain data from the Cosmos chain registry on GitHub.
 
+**Do not narrate the skill's internal structure in your chat output.**
+Step numbers are scaffolding for skill authors only. To the user, just
+describe what you're doing in plain language — e.g. "Fetching the latest
+chain registry data", not "Now in Step 2 the registry fetch".
+
 ## Step 0 — Verify environment
 
 Run:
