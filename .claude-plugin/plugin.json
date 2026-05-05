@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "manifest-agent",
   "version": "0.4.0",
   "description": "Set up Manifest blockchain MCP tooling for an autonomous agent — keypair management, chain configuration, and registry data",
@@ -6,6 +7,7 @@
     "name": "The Lifted Initiative",
     "url": "https://liftedinit.org"
   },
+  "homepage": "https://github.com/liftedinit/manifest-agent-plugin",
   "repository": "https://github.com/liftedinit/manifest-agent-plugin",
   "license": "MIT",
   "keywords": [

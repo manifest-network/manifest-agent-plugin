@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@cosmjs/proto-signing": "0.32.4",
-    "@manifest-network/manifest-mcp-node": "0.8.0"
+    "@manifest-network/manifest-mcp-node": "0.8.0",
+    "request-filtering-agent": "3.2.0"
   }
 }

@@ -55,6 +55,13 @@
 
 const { request } = require('node:https');
 const { URL } = require('node:url');
+const { RequestFilteringHttpsAgent } = require('request-filtering-agent');
+
+// Block requests to private / loopback / link-local addresses at connect time.
+// Hardens redirect-following against a malicious or compromised registry that
+// returns a Location header pointing inside the local network (cloud metadata,
+// RFC 1918, ::1, etc.). Default config blocks all non-unicast ranges in v4 + v6.
+const SSRF_AGENT = new RequestFilteringHttpsAgent();
 
 const ACCEPT_MANIFEST = [
   'application/vnd.oci.image.index.v1+json',
@@ -179,6 +186,7 @@ function httpsJson(host, path, headers = {}) {
       method: 'GET',
       headers: { 'User-Agent': 'manifest-agent-plugin/inspect-image', ...headers },
       timeout: 10_000,
+      agent: SSRF_AGENT,
     }, (res) => {
       const chunks = [];
       let received = 0;
