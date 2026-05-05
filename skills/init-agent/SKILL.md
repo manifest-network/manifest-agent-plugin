@@ -15,6 +15,12 @@ exactly, asking the user questions where indicated.
 **For all user choices in this skill, use the AskUserQuestion tool to present
 the options so the user can select from a list instead of typing.**
 
+**Do not narrate the skill's internal structure in your chat output.**
+Step numbers (e.g. "Step 3", "Step 5") are scaffolding for skill authors
+only. To the user, just describe what you're doing in plain language —
+e.g. "Now I'll generate your wallet keypair", not "Now in Step 5 the key
+generation". Skip phrases like "Now in Step N"; describe the action itself.
+
 ## Step 0 — Verify environment
 
 Run:
@@ -22,11 +28,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If the output is empty, tell the user:
-> `MANIFEST_PLUGIN_ROOT` is not set. Please restart Claude Code so the
-> SessionStart hook can run, then try again.
-
-Stop here if empty.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
 ## Step 1 — Install dependencies
 
@@ -115,34 +117,33 @@ Parse the JSON output from stdout to get `address` and `activeChain`.
 
 ### If importing an existing mnemonic:
 
-The mnemonic must NEVER appear in this conversation. Ask the user to provide
-the **path to a file** containing their mnemonic. They should create this file
-themselves in a separate terminal, e.g.:
+This branch uses the same file-pipe pattern as the standalone
+`/manifest-agent:import-key` skill (which is the entry point for re-imports
+later — once config.json exists, that skill is the canonical way to swap
+keys). For first-time setup we run the pipe inline because config.json
+doesn't exist yet.
+
+Ask the user to provide the **path to a file** containing their mnemonic.
+They create the file themselves in a separate terminal:
 
 ```bash
-cat > /tmp/mnemonic.txt
-# paste mnemonic, press Enter, then Ctrl+D
+cat > /tmp/mnemonic.txt    # paste mnemonic, Enter, Ctrl+D
 chmod 600 /tmp/mnemonic.txt
 ```
 
-**Do NOT use `echo` — it appears in shell history.**
+**Do NOT use `echo`** (shell history). **Do NOT ask the user to paste the
+mnemonic in the conversation. Do NOT `Read` the mnemonic file.** The
+mnemonic must never enter Claude's context.
 
-Wait for the user to provide the file path before proceeding.
-
-**CRITICAL**: Do NOT ask the user to paste the mnemonic in the conversation.
-Do NOT read the mnemonic file.
-
-Then run (replacing `MNEMONIC_FILE` with the user's file path, `CHOSEN_CHAIN`
-with the user's choice from Step 3, and `GAS_TOKEN` with the symbol from
-Step 3b):
+Wait for the user to provide the path. Then run (substitute `MNEMONIC_FILE`,
+`CHOSEN_CHAIN` from Step 3, `GAS_TOKEN` from Step 3b):
 
 ```bash
 cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
 ```
 
-Parse the JSON output from stdout to get `address` and `activeChain`.
-
-Suggest the user delete their mnemonic file after a successful import.
+Parse the JSON output to get `address` and `activeChain`. Suggest the
+user `rm` their mnemonic file after.
 
 ## Step 6 — Report results
 

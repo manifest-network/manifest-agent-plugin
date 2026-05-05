@@ -10,6 +10,13 @@ allowed-tools: Bash(*), Read, Write
 
 You are switching the Manifest agent's active chain between testnet and mainnet.
 
+**For all user choices in this skill, use the `AskUserQuestion` tool.**
+
+**Do not narrate the skill's internal structure in your chat output.**
+Step numbers are scaffolding for skill authors only. To the user, just
+describe what you're doing in plain language — e.g. "Switching to mainnet
+now", not "Now in Step 4 the broadcast confirmation".
+
 ## Step 0 — Verify environment
 
 Run:
@@ -17,7 +24,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If the output is empty, tell the user to restart Claude Code and stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
 ## Step 1 — Read current status
 
@@ -39,28 +46,32 @@ the key password. Always use `update-config.cjs --status` to read safe fields.
 
 ## Step 2 — Choose new chain
 
-Ask the user which chain to switch to:
+Use `AskUserQuestion` (do NOT prompt with free-form prose — the binary
+choice should be a click, not a typed answer):
 
 - **testnet** (`manifest-ledger-testnet`)
 - **mainnet** (`manifest-ledger-mainnet`)
 
-If they choose the same chain that's already active, confirm there's nothing to
-change and stop.
+Store the answer as `CHOSEN_CHAIN`. If `CHOSEN_CHAIN === activeChain`,
+tell the user "Already on `<chain>` — nothing to change" and stop.
 
-## Step 3 — Re-fetch registry data
+## Step 3 — Confirm mainnet switch (if applicable)
+
+If `CHOSEN_CHAIN === "mainnet"`, ask via `AskUserQuestion` BEFORE running
+the registry fetch (warn before any side effect, even harmless ones):
+
+> You are about to switch to mainnet. Transactions will use real funds.
+> Continue?
+
+Options: **Yes** / **No**. Stop on No.
+
+## Step 4 — Re-fetch registry data
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
 ```
 
 This refreshes both chains' data from the Cosmos chain registry.
-
-## Step 4 — Confirm mainnet switch
-
-If the user chose **mainnet**, warn them before proceeding:
-> You are about to switch to mainnet. Transactions will use real funds. Continue?
-
-Wait for confirmation. If the user declines, stop.
 
 ## Step 5 — Update config
 

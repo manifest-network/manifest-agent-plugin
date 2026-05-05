@@ -63,10 +63,11 @@ the fact that the user asked for the action.
       `cosmos_estimate_fee({module: "billing", subcommand: "set-item-custom-domain", args: ["<existing_owned_lease_uuid>", "<fqdn-to-be-claimed>"[, "--service-name", "<svc>"]]})`.
       The fee is essentially fixed for this msg type; using a
       representative existing lease passes the keeper's ownership check.
-      If no representative lease exists, allowed degradation: render
-      `Tx fee (set-domain): (not estimated — no representative lease available)`
-      in the plan and surface the gap explicitly in the recap. Do NOT
-      silently omit it.
+      If no representative lease exists, allowed degradation: pass
+      `--set-domain-tx-fee skipped` to render-deployment-plan.cjs (which
+      owns the canonical "not estimated" marker). The plan renders the
+      script's verbatim message; surface the gap explicitly in the recap.
+      Do NOT silently omit it.
     - `close_lease`: call
       `cosmos_estimate_fee({module: "billing", subcommand: "close-lease", args: ["<lease_uuid>"]})`.
     - `fund_credit`: call

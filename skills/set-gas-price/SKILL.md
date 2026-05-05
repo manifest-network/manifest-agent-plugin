@@ -13,6 +13,11 @@ Change the gas fee settings used by the Manifest agent's MCP servers.
 **For all user choices in this skill, use the AskUserQuestion tool to present
 the options so the user can select from a list instead of typing.**
 
+**Do not narrate the skill's internal structure in your chat output.**
+Step numbers are scaffolding for skill authors only. To the user, just
+describe what you're doing in plain language — e.g. "Updating the gas
+fee token to PWR", not "Now in Step 5 the config write".
+
 ## Step 0 — Verify environment
 
 Run:
@@ -20,7 +25,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If the output is empty, tell the user to restart Claude Code and stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
 ## Step 1 — Read current config
 

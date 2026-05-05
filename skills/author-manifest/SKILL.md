@@ -36,8 +36,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, tell the user to restart Claude Code so the SessionStart hook can
-run, then stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
 ## Step 1 — Read current config
 

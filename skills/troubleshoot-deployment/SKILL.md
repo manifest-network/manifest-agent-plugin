@@ -31,7 +31,18 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, tell the user to restart Claude Code and stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
+
+Run:
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
+```
+
+If it fails, tell the user to run `/manifest-agent:init-agent` first and
+stop. Otherwise parse the JSON; you need `activeChain` for Step 6's fee
+humanization.
+
+**Never** read `~/.manifest-agent/config.json` directly.
 
 ## Step 1 — Determine the lease UUID
 
@@ -39,15 +50,13 @@ Branches in priority order:
 
 1. **From `$ARGUMENTS`**: if `$ARGUMENTS` is a non-empty string that looks
    like a UUID, use it directly. Skip ahead to Step 2.
-2. **From the calling skill**: if `/manifest-agent:deploy-app` invoked this
-   skill on failure, it will have passed `LEASE_UUID` in context. Use it.
-3. **From `manifest://leases/active` MCP resource**: read the resource. If
+2. **From `manifest://leases/active` MCP resource**: read the resource. If
    it returns one or more leases, present them via `AskUserQuestion` (show
    lease UUID, image, size, created-at, and `items[].customDomain` when
    non-empty). Let the user pick one. **Add a "Lookup by custom domain"
    option** to the same `AskUserQuestion` so the user can pivot to FQDN
    lookup if they don't recognize the leases shown.
-4. **Fallback to saved manifests**: if the resource is empty or unavailable,
+3. **Fallback to saved manifests**: if the resource is empty or unavailable,
    list saved post-deploy records:
 
    ```bash
@@ -56,17 +65,17 @@ Branches in priority order:
 
    The script prints a JSON array of `{ lease_uuid, image, size, deployed_at_iso, chain_id, format?, meta_hash_hex?, schema_version?, custom_domain?, custom_domain_service_name? }` —
    never `manifest_json`. Surface the `custom_domain` in the picker labels
-   when present so the user can disambiguate. Same as branch 3, include a
-   "Lookup by custom domain" option in the picker.
-5. **Lookup by custom domain**: when the user picks this option from
-   either branch 3 or 4 (or as a top-level option when no leases exist),
+   when present so the user can disambiguate. Include a "Lookup by custom
+   domain" option in the picker (same as branch 2).
+4. **Lookup by custom domain**: when the user picks this option from
+   either branch 2 or 3 (or as a top-level option when no leases exist),
    ask for the FQDN, then call:
    ```
    mcp__manifest-lease__lease_by_custom_domain({ custom_domain: "<fqdn>" })
    ```
    Use the returned `lease.uuid` as `LEASE_UUID`. If the lookup returns no
-   lease (FQDN not claimed), surface that and fall back to options 4/6.
-6. **Last resort**: tell the user no leases found; ask them to paste a UUID.
+   lease (FQDN not claimed), surface that and fall back to options 3/5.
+5. **Last resort**: tell the user no leases found; ask them to paste a UUID.
    If they don't have one, stop.
 
 Store the chosen UUID as `LEASE_UUID`.

@@ -35,7 +35,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, tell the user to restart Claude Code and stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
 Run:
 ```bash
@@ -288,15 +288,14 @@ representative existing lease the signer already owns.
    lease.
 4. **If no ACTIVE lease exists** (fresh wallet, all prior leases closed):
    set `SET_DOMAIN_ESTIMATE = "skipped"`. Step 6b will pass
-   `--set-domain-tx-fee skipped` to `render-deployment-plan.cjs`,
-   which emits the canonical
-   `Tx fee (set-domain): (not estimated — no representative lease available …)`
-   line in the DeploymentPlan block. **Do NOT add prose around this in
-   the intent recap** — the DeploymentPlan line itself is the single
-   source of truth, and stitching a "Heads-up: …" sentence into the
-   recap creates awkward paraphrases (the same applies to any other
-   `(not estimated)` rendering). PreToolUse + textual confirm still
-   fire normally on the printed plan.
+   `--set-domain-tx-fee skipped` to `render-deployment-plan.cjs`, which
+   emits its canonical "not estimated" marker line in the DeploymentPlan
+   block (the script owns the wording — do not quote it here, it'll
+   drift). **Do NOT add prose around this in the intent recap** — the
+   DeploymentPlan line itself is the single source of truth, and
+   stitching a "Heads-up: …" sentence into the recap creates awkward
+   paraphrases. PreToolUse + textual confirm still fire normally on the
+   printed plan.
 
 If the second estimate itself errors out, surface the error and ask
 "proceed without a set-domain estimate? (yes / no)" — do NOT silently

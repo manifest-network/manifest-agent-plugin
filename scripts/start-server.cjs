@@ -33,12 +33,20 @@ if (!VALID_SERVERS.includes(serverName)) {
 }
 
 // --- Signal handlers registered BEFORE spawn ---
+// Track child state explicitly. The `child` reference stays truthy after
+// the child exits, so a second signal arriving post-exit must NOT try to
+// kill an already-dead process and must fall through to process.exit
+// rather than relying on Node's empty-event-loop heuristic.
 let child;
+let childExited = false;
 function forwardSignal(signal) {
-  child?.kill(signal);
-  if (!child) {
-    process.exit(128 + (signal === 'SIGTERM' ? 15 : signal === 'SIGINT' ? 2 : 1));
+  if (child && !childExited) {
+    child.kill(signal);
+    return;
   }
+  // Either child never spawned, or it has already exited. Translate the
+  // signal to a Unix exit code and terminate.
+  process.exit(128 + (signal === 'SIGTERM' ? 15 : signal === 'SIGINT' ? 2 : signal === 'SIGHUP' ? 1 : 1));
 }
 process.on('SIGTERM', () => forwardSignal('SIGTERM'));
 process.on('SIGINT', () => forwardSignal('SIGINT'));
@@ -110,8 +118,13 @@ if (serverName === 'chain' && activeChain === 'testnet' && !chain.faucetUrl) {
   );
 }
 
-// Log env key names (not values) for diagnostics
-const envKeys = Object.keys(env).filter((k) => k.startsWith('COSMOS_') || k.startsWith('MANIFEST_'));
+// Log env key names (not values) for diagnostics. Filter out KEY_PASSWORD
+// even though only the name appears — a paste of an MCP startup banner
+// in a bug report shouldn't include the literal name "MANIFEST_KEY_PASSWORD"
+// alongside other context that might tip an attacker that the wallet is hot.
+const envKeys = Object.keys(env)
+  .filter((k) => k.startsWith('COSMOS_') || k.startsWith('MANIFEST_'))
+  .filter((k) => k !== 'MANIFEST_KEY_PASSWORD');
 console.error(`Starting manifest-mcp-${serverName} with env: ${envKeys.join(', ')}`);
 
 // --- Spawn ---
@@ -123,9 +136,12 @@ child.on('error', (err) => {
 });
 
 child.on('close', (code, signal) => {
+  childExited = true;
   if (signal) {
-    // Re-raise the signal for proper Unix exit semantics
+    // Re-raise the signal for proper Unix exit semantics. The signal
+    // handler will see childExited=true and fall through to process.exit.
     process.kill(process.pid, signal);
+    return;
   }
   process.exit(code ?? 1);
 });

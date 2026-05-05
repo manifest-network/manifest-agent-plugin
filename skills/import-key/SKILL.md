@@ -12,6 +12,11 @@ allowed-tools: Bash(*)
 You are importing an existing mnemonic phrase into the Manifest agent
 configuration. The mnemonic must NEVER appear in this conversation.
 
+**Do not narrate the skill's internal structure in your chat output.**
+Step numbers are scaffolding for skill authors only. To the user, just
+describe what you're doing in plain language — e.g. "Now I'll import the
+key from the file you provided", not "Now in Step 3 the import pipe runs".
+
 ## Step 0 — Verify environment
 
 Run:
@@ -19,7 +24,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If the output is empty, tell the user to restart Claude Code and stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
 ## Step 1 — Check config exists
 
@@ -34,7 +39,9 @@ If the command fails, tell the user:
 
 Stop here.
 
-Parse the JSON output to get `activeChain` — you will need it in Step 3.
+Parse the JSON output to get `activeChain` AND `gasPrice` — you'll need
+both in Step 3 to preserve the existing chain + gas-price settings when
+re-writing the config.
 
 **IMPORTANT**: Do NOT read `~/.manifest-agent/config.json` directly — it contains
 the key password. Always use `update-config.cjs --status` to read safe fields.
@@ -59,16 +66,17 @@ Do NOT read the mnemonic file. The file content must never enter Claude's contex
 
 ## Step 3 — Import key and update config
 
-Run (replacing `MNEMONIC_FILE` with the user's file path, `ACTIVE_CHAIN` with
-the `activeChain` from Step 1, and `CURRENT_GAS_PRICE` with the `gasPrice` from
-Step 1):
+Run (replacing `MNEMONIC_FILE` with the user's file path, `ACTIVE_CHAIN`
+with the `activeChain` from Step 1, and `CURRENT_GAS_PRICE` with the
+`gasPrice` from Step 1):
 
 ```bash
 cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain ACTIVE_CHAIN --gas-price CURRENT_GAS_PRICE
 ```
 
 The mnemonic flows through the pipe (file → import-key → write-config).
-Claude only sees `write-config.cjs`'s safe stdout JSON.
+Claude sees only the bash invocation (the file path, but not contents)
+and `write-config.cjs`'s safe stdout JSON.
 
 Parse the JSON output to get `address` and `activeChain`.
 

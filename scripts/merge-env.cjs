@@ -61,8 +61,26 @@
  */
 
 const { readFileSync } = require('node:fs');
-const { isAbsolute } = require('node:path');
+const { isAbsolute, resolve, sep } = require('node:path');
+const { homedir, tmpdir } = require('node:os');
 const { atomicWrite } = require('./_io.cjs');
+
+// merge-env.cjs writes the spec back at mode 0o600 because env values
+// flowing through it can be sensitive (DB passwords, API tokens). For
+// files OUTSIDE the agent's drafts dir or the system tmpdir — e.g. a
+// version-controlled spec at ~/code/myapp/manifest.json — silently
+// downgrading the file mode would be a footgun. Refuse the merge instead;
+// the user can copy the spec into the drafts dir or /tmp first if they
+// really want to merge secrets in.
+const ALLOWED_DIRS = [
+  resolve(homedir(), '.manifest-agent', 'manifests-drafts') + sep,
+  resolve(tmpdir()) + sep,
+];
+
+function isAllowedSpecPath(p) {
+  const r = resolve(p);
+  return ALLOWED_DIRS.some((d) => r.startsWith(d));
+}
 
 // POSIX-compliant env-var name. deploy_app's downstream validator uses the
 // same regex; matching it here surfaces invalid keys before broadcast.
@@ -91,6 +109,12 @@ function parseDotenv(text) {
     }
     const key = raw.slice(0, eq).replace(/^\s+|\s+$/g, '');
     let value = raw.slice(eq + 1);
+    // Strip whitespace around the value BEFORE checking for quotes so
+    // `FOO = bar` yields FOO=bar (not FOO=" bar"). For unquoted values
+    // also strip the trailing newline / spaces. Quoted values get any
+    // outer whitespace stripped here, then the quote pair is unwrapped
+    // below; whitespace inside the quotes is preserved.
+    value = value.replace(/^\s+|\s+$/g, '');
     if (value.length >= 2) {
       const first = value[0];
       const last = value[value.length - 1];
@@ -114,6 +138,15 @@ function parseDotenv(text) {
   }
   if (!isAbsolute(args.specFile)) {
     console.error(`--spec-file must be absolute; got "${args.specFile}"`);
+    process.exit(1);
+  }
+  if (!isAllowedSpecPath(args.specFile)) {
+    console.error(
+      `--spec-file must live under ~/.manifest-agent/manifests-drafts/ or the system tmpdir; got "${args.specFile}". ` +
+      `Refusing to merge env values into an external file because the merge writes mode 0o600, ` +
+      `which would silently change a checked-in spec's permissions and bake secrets into a path outside the secret-handling boundary. ` +
+      `Copy the spec into one of the allowed dirs first if you want to merge secrets in.`
+    );
     process.exit(1);
   }
 

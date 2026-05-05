@@ -52,6 +52,19 @@ const ACCEPT_MANIFEST = [
   'application/vnd.docker.distribution.manifest.v2+json',
 ].join(', ');
 
+// OCI Distribution Spec v1.1 grammar for the URL-interpolated fields. We
+// validate these BEFORE building the URL path because the user controls
+// the --image flag — preventing path-traversal-ish inputs (e.g. "%2F..")
+// from reaching the registry. Any non-conforming input fails fast.
+const OCI_NAME_COMPONENT = /^[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*$/;
+const OCI_TAG = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/;
+const OCI_DIGEST = /^sha256:[0-9a-f]{64}$/;
+
+// Cap manifest + config blob sizes. Real-world configs are <100 KB; even
+// JVM-rich images rarely exceed a few MB. Anything over 10 MiB indicates
+// a hostile or buggy registry; abort rather than risk OOM.
+const MAX_BODY_BYTES = 10 * 1024 * 1024;
+
 // Heuristic table: when an image's base name OR resolved Cmd/Entrypoint
 // contains one of these tokens, suggest the corresponding tmpfs paths.
 // Order matters: longer/more-specific tokens first when there's ambiguity.
@@ -113,6 +126,22 @@ function parseRef(ref) {
     name = `library/${name}`;
   }
 
+  // Validate URL-interpolated fields against OCI Distribution Spec grammar
+  // BEFORE the registry round-trip. The chain ref strings reach the user
+  // via $ARGUMENTS, so a malformed input like "foo/bar:..%2F..%2Fconfig"
+  // must be rejected here, not handed to the registry.
+  for (const component of name.split('/')) {
+    if (!OCI_NAME_COMPONENT.test(component)) {
+      throw new Error(`invalid name component "${component}" in image ref`);
+    }
+  }
+  if (tag !== null && !OCI_TAG.test(tag)) {
+    throw new Error(`invalid tag "${tag}" in image ref`);
+  }
+  if (digest !== null && !OCI_DIGEST.test(digest)) {
+    throw new Error(`invalid digest "${digest}" in image ref (expected sha256:<64-hex>)`);
+  }
+
   return { registry, name, tag, digest };
 }
 
@@ -132,8 +161,20 @@ function httpsJson(host, path, headers = {}) {
       timeout: 10_000,
     }, (res) => {
       const chunks = [];
-      res.on('data', (c) => chunks.push(c));
+      let received = 0;
+      let aborted = false;
+      res.on('data', (c) => {
+        if (aborted) return;
+        received += c.length;
+        if (received > MAX_BODY_BYTES) {
+          aborted = true;
+          req.destroy(new Error(`response body exceeded ${MAX_BODY_BYTES} bytes (cap)`));
+          return;
+        }
+        chunks.push(c);
+      });
       res.on('end', () => {
+        if (aborted) return;
         const body = Buffer.concat(chunks).toString('utf8');
         resolve({ status: res.statusCode, headers: res.headers, body });
       });
