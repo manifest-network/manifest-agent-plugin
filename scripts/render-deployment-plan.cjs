@@ -55,6 +55,7 @@
  */
 
 const { readFileSync } = require('node:fs');
+const { loadChainDenomMap, humanizeCoin, humanizeBalances } = require('./humanize-denom.cjs');
 
 function parseArgs(argv) {
   const args = {};
@@ -70,6 +71,7 @@ function parseArgs(argv) {
     else if (flag === '--custom-domain-service' && next) { args.customDomainService = next; i++; }
     else if (flag === '--set-domain-tx-gas' && next) { args.setDomainTxGas = next; i++; }
     else if (flag === '--set-domain-tx-fee' && next) { args.setDomainTxFee = next; i++; }
+    else if (flag === '--chain-data-file' && next) { args.chainDataFile = next; i++; }
   }
   return args;
 }
@@ -104,34 +106,55 @@ function sumHumanFees(a, b) {
   return `${a} + ${b}`;
 }
 
-function fmtBalances(balances) {
-  if (!Array.isArray(balances) || balances.length === 0) return '(empty)';
-  return balances.map((b) => `${b.amount || '0'} ${b.denom || '?'}`).join(', ');
+function fmtBalances(balances, denomMap) {
+  return humanizeBalances(balances, denomMap);
 }
 
-function fmtCredits(readiness) {
+function fmtCredits(readiness, denomMap) {
   const c = readiness && readiness.credits;
   if (!c) return 'none';
-  const balances = readiness.current_balance;
+  // Prefer the per-tenant `current_balance` from the credit estimator
+  // (it's the live "what's left right now") but it's only present when
+  // the user has at least one ACTIVE lease — the upstream getBalance
+  // wraps creditEstimate in catchNotFound and omits the field when no
+  // estimate is available. Fall back to the credit account's
+  // `available_balances` (funded minus reserved) and finally to the
+  // gross funded `balances`. Without these fallbacks a freshly-funded
+  // user with no active leases would see "(unknown balance)" even
+  // though their credits are clearly visible to the chain.
+  let balances = readiness.current_balance;
+  let source = 'current';
+  if (!Array.isArray(balances) || balances.length === 0) {
+    balances = c.available_balances;
+    source = 'available';
+  }
+  if (!Array.isArray(balances) || balances.length === 0) {
+    balances = c.balances;
+    source = 'funded';
+  }
   let head;
   if (Array.isArray(balances) && balances.length > 0) {
-    head = balances.map((b) => `${b.amount || '0'} ${b.denom || '?'}`).join(', ');
+    head = humanizeBalances(balances, denomMap);
   } else {
-    head = '(unknown balance)';
+    head = '(empty)';
   }
-  if (readiness.hours_remaining !== undefined) {
+  // Hours remaining only meaningful when paired with current_balance
+  // (the estimator computes them together). Skip the suffix entirely
+  // when we fell back to the credit-account balances — the chain's
+  // hours_remaining is `0` when there are no active leases, which
+  // would mislead users into thinking their funded credits expire
+  // immediately.
+  if (source === 'current' && readiness.hours_remaining !== undefined) {
     const hrs = Number(readiness.hours_remaining);
     if (Number.isFinite(hrs)) head += ` (~${hrs.toFixed(1)}h remaining)`;
   }
   return head;
 }
 
-function fmtCost(readiness) {
+function fmtCost(readiness, denomMap) {
   const sku = readiness && readiness.sku;
   if (!sku || !sku.price) return '(unknown — SKU has no listed price)';
-  const a = sku.price.amount || '0';
-  const d = sku.price.denom || '?';
-  return `${a} ${d} / hour`;
+  return `${humanizeCoin(sku.price.amount || '0', sku.price.denom, denomMap)} / hour`;
 }
 
 (async () => {
@@ -160,6 +183,11 @@ function fmtCost(readiness) {
     console.error('stdin.readiness is required (from check_deployment_readiness)');
     process.exit(1);
   }
+
+  // Load the chain registry's denom -> symbol map (umfx -> MFX,
+  // factory/.../upwr -> PWR). Missing / unreadable file -> no-op map;
+  // the helpers fall back to printing the raw denom + amount.
+  const denomMap = loadChainDenomMap(args.chainDataFile);
 
   const manifestLine = `${summary.format || 'single'}, services=${summary.service_count ?? '?'}, ports=${summary.port_count ?? '?'}, env=${summary.env_count ?? '?'}`;
 
@@ -195,7 +223,7 @@ function fmtCost(readiness) {
       : '-> single-service lease';
     lines.push(`  Custom domain:             ${args.customDomain} ${target}`);
   }
-  lines.push(`  SKU price:                 ${fmtCost(readiness)}`);
+  lines.push(`  SKU price:                 ${fmtCost(readiness, denomMap)}`);
 
   if (hasDomain) {
     // Two-tx layout: labeled lines + Total fee.
@@ -223,8 +251,8 @@ function fmtCost(readiness) {
     lines.push(`  Tx fee:                    ${createFeeLine}`);
   }
 
-  lines.push(`  Wallet:                    ${fmtBalances(readiness.wallet_balances)}`);
-  lines.push(`  Credits:                   ${fmtCredits(readiness)}`);
+  lines.push(`  Wallet:                    ${fmtBalances(readiness.wallet_balances, denomMap)}`);
+  lines.push(`  Credits:                   ${fmtCredits(readiness, denomMap)}`);
   console.log(lines.join('\n'));
 })().catch((err) => {
   console.error(err.message);

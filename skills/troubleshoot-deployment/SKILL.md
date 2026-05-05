@@ -184,22 +184,27 @@ If the user accepts, call
 will prompt).
 
 **Verify on-chain state after the tx returns** — a successful broadcast
-does not guarantee the lease actually transitioned to `LEASE_STATE_CLOSED`.
+does not guarantee the lease actually transitioned to a terminal state.
 Confirm explicitly:
 
 1. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
-2. Decode `chainState.state`:
+2. Decode `chainState.state` via the JSON mode (which exposes a
+   `terminal` flag — both `LEASE_STATE_CLOSED` and
+   `LEASE_STATE_INSUFFICIENT_FUNDS` count as terminal because the chain
+   may transition through INSUFFICIENT_FUNDS on a successful close-lease
+   before settling on CLOSED):
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int>
+   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int> --json
    ```
-3. Branch:
-   - **`LEASE_STATE_CLOSED`** → confirmed. Run cleanup:
+3. Branch on `terminal`:
+   - **`terminal: true`** → cleanup. Run:
      ```bash
      node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
      ```
      (no-op if the saved manifest record is already gone). Tell the user
-     "Lease confirmed CLOSED on-chain. Removed local saved manifest record."
-   - **Any other state** (still `LEASE_STATE_ACTIVE`, `LEASE_STATE_PENDING`,
+     "Lease is terminal on-chain (`<decoded-name>`). Removed local saved
+     manifest record."
+   - **`terminal: false`** (still `LEASE_STATE_ACTIVE`, `LEASE_STATE_PENDING`,
      etc.) → tell the user: "close_lease tx accepted but lease state is
      still `<decoded-name>`; chain may need a moment to settle. Re-run
      `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` in ~30s to

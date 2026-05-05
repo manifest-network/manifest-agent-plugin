@@ -75,15 +75,36 @@ function buildIngresses(connection) {
   // container mapping, not part of the user-facing hostname. One entry
   // per running instance regardless of how many ports it exposes
   // (routing is by hostname, not port).
+  //
+  // The provider's ConnectionDetails schema (manifest-mcp-fred 0.8.0)
+  // can carry instance lists in two places, both of which we collect:
+  //   - top-level `connection.instances[]` (single-service / legacy
+  //     non-services-map shape)
+  //   - per-service `connection.services.<name>.instances[]` (stack /
+  //     services-map shape — emitted whenever the spec uses the
+  //     services-map form, which author-manifest now always does even
+  //     for single-service deploys to enable per-port `ingress: bool`)
+  //
+  // Without the per-service branch, /deploy-app on a services-map spec
+  // that the chain happily provisioned still reports
+  // "Ingress: (none — service is internal or no FQDN reported)" because
+  // the ingress lives one level deeper.
   if (!connection || typeof connection !== 'object') return [];
   const out = [];
-  if (Array.isArray(connection.instances)) {
-    const seen = new Set();
-    for (const inst of connection.instances) {
+  const seen = new Set();
+  function pushFromInstances(instances) {
+    if (!Array.isArray(instances)) return;
+    for (const inst of instances) {
       if (!inst || inst.status !== 'running' || !inst.fqdn) continue;
       if (seen.has(inst.fqdn)) continue;
       seen.add(inst.fqdn);
       out.push(inst.fqdn);
+    }
+  }
+  pushFromInstances(connection.instances);
+  if (connection.services && typeof connection.services === 'object') {
+    for (const svc of Object.values(connection.services)) {
+      if (svc && typeof svc === 'object') pushFromInstances(svc.instances);
     }
   }
   // Legacy fallback: top-level connection.host + connection.ports. host

@@ -51,20 +51,31 @@ function decodeState(s) {
 }
 
 function buildUrls(connection) {
+  // Mirror the dual-shape walk in scripts/format-success.cjs:buildIngresses
+  // — `connection.instances[]` for legacy/non-services-map shape AND
+  // `connection.services.<name>.instances[]` for the services-map shape
+  // emitted by stack deploys (and by single-service deploys authored
+  // through author-manifest, which also emits the services-map form).
+  // Without the per-service branch this script returns an empty `urls`
+  // array for any services-map deploy and the orchestrator misclassifies
+  // an active lease as `needs_wait`.
   if (!connection || typeof connection !== 'object') return [];
   const out = [];
-  // Preferred: instances[].fqdn. The provider routes via subdomain on
-  // standard port 80; the host_port in instances[].ports[] is an internal
-  // container mapping, not part of the user-facing URL. One URL per
-  // running instance (deduped on the fqdn).
-  if (Array.isArray(connection.instances)) {
-    const seen = new Set();
-    for (const inst of connection.instances) {
+  const seen = new Set();
+  function pushFromInstances(instances) {
+    if (!Array.isArray(instances)) return;
+    for (const inst of instances) {
       if (!inst || inst.status !== 'running' || !inst.fqdn) continue;
       const url = `https://${inst.fqdn}/`;
       if (seen.has(url)) continue;
       seen.add(url);
       out.push(url);
+    }
+  }
+  pushFromInstances(connection.instances);
+  if (connection.services && typeof connection.services === 'object') {
+    for (const svc of Object.values(connection.services)) {
+      if (svc && typeof svc === 'object') pushFromInstances(svc.instances);
     }
   }
   // Fallback: top-level connection.host + connection.ports (older MCP shape).

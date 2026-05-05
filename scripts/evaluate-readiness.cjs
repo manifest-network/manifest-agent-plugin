@@ -54,6 +54,7 @@
  */
 
 const { readFileSync } = require('node:fs');
+const { loadChainDenomMap, humanizeCoin } = require('./humanize-denom.cjs');
 
 // Tunables — edit here, not in SKILL.md.
 const HOURS_REMAINING_WARN_FLOOR = 24;
@@ -74,6 +75,7 @@ function parseArgs(argv) {
     const next = argv[i + 1];
     if (flag === '--gas-price' && next) { args.gasPrice = next; i++; }
     else if (flag === '--gas-warn-floor' && next) { args.gasWarnFloor = next; i++; }
+    else if (flag === '--chain-data-file' && next) { args.chainDataFile = next; i++; }
   }
   return args;
 }
@@ -129,6 +131,9 @@ function asBigInt(s) {
   const reasons = [];
   const actions = new Set();
   let status = 'ok';
+  // Optional denom -> symbol map for humanizing reasons. Missing file
+  // path is fine — humanizeCoin falls back to "<amount> <denom>".
+  const denomMap = loadChainDenomMap(args.chainDataFile);
 
   // SKU availability — hard block.
   if (r.size && Array.isArray(r.available_sku_names) && !r.available_sku_names.includes(r.size)) {
@@ -145,12 +150,12 @@ function asBigInt(s) {
   const gasAmount = gasEntry ? asBigInt(gasEntry.amount) : 0n;
   if (balances.length === 0 || gasAmount === 0n) {
     if (status !== 'block') status = 'block';
-    reasons.push(`Wallet has no ${gasDenom} balance for gas.`);
+    reasons.push(`Wallet has no ${humanizeCoin('0', gasDenom, denomMap).split(' ').slice(1).join(' ')} balance for gas.`);
     actions.add('request_faucet'); // skill chooses faucet vs topup based on chain
     actions.add('topup_wallet');
   } else if (gasAmount < gasWarnFloor) {
     if (status === 'ok') status = 'warn';
-    reasons.push(`Wallet ${gasDenom} balance (${gasAmount.toString()}) is below ${gasWarnFloor.toString()}; broadcast may run out of gas.`);
+    reasons.push(`Wallet balance (${humanizeCoin(gasAmount.toString(), gasDenom, denomMap)}) is below ${humanizeCoin(gasWarnFloor.toString(), gasDenom, denomMap)}; broadcast may run out of gas.`);
     actions.add('topup_wallet');
   }
 
@@ -179,11 +184,16 @@ function asBigInt(s) {
       // diagnostic so the user knows to fund_credit in the right denom
       // rather than seeing a false "0 hours of runtime" warning.
       const fundedDenoms = balances.map((b) => b && b.denom).filter(Boolean);
+      // Humanize the SKU denom for the user-facing message (e.g.
+      // "factory/.../upwr" -> "PWR"); fall back to the raw denom when
+      // the symbol map isn't available.
+      const skuSymbol = (denomMap.lookup(skuPrice.denom) || {}).symbol || skuPrice.denom;
+      const fundedSymbols = fundedDenoms.map((d) => (denomMap.lookup(d) || {}).symbol || d);
       if (status === 'ok') status = 'warn';
       reasons.push(
         fundedDenoms.length > 0
-          ? `Credit account has no ${skuPrice.denom} balance (the ${r.sku.name} SKU charges in ${skuPrice.denom}; account holds ${fundedDenoms.join(', ')}). Fund ${skuPrice.denom} credits before deploying.`
-          : `Credit account is empty for the ${r.sku.name} SKU's ${skuPrice.denom} denom. Fund ${skuPrice.denom} credits before deploying.`,
+          ? `Credit account has no ${skuSymbol} balance (the ${r.sku.name} SKU charges in ${skuSymbol}; account holds ${fundedSymbols.join(', ')}). Fund ${skuSymbol} credits before deploying.`
+          : `Credit account is empty for the ${r.sku.name} SKU's ${skuSymbol} denom. Fund ${skuSymbol} credits before deploying.`,
       );
       actions.add('fund_credit');
     } else if (pricePerHour > 0n) {
@@ -194,7 +204,7 @@ function asBigInt(s) {
       const hrsForThisSku = Number(creditAmount) / Number(pricePerHour);
       if (hrsForThisSku < HOURS_REMAINING_WARN_FLOOR) {
         if (status === 'ok') status = 'warn';
-        reasons.push(`Credits cover ~${hrsForThisSku.toFixed(1)}h of runtime at the ${r.sku.name} SKU (${creditAmount} ${skuPrice.denom} / ${pricePerHour} ${skuPrice.denom} per hour); below the ${HOURS_REMAINING_WARN_FLOOR}h floor.`);
+        reasons.push(`Credits cover ~${hrsForThisSku.toFixed(1)}h of runtime at the ${r.sku.name} SKU (${humanizeCoin(creditAmount.toString(), skuPrice.denom, denomMap)} / ${humanizeCoin(pricePerHour.toString(), skuPrice.denom, denomMap)} per hour); below the ${HOURS_REMAINING_WARN_FLOOR}h floor.`);
         actions.add('fund_credit');
       }
     }

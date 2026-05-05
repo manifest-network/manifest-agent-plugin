@@ -508,10 +508,15 @@ mcp__manifest-fred__check_deployment_readiness({ size: SIZE, image: IMAGE })
 
 Pipe to the evaluator. Pass `--gas-price` from the config you read in Step 0
 (the `gasPrice` field, e.g. `"1umfx"` or `"0.37upwr"`) so the script knows
-which wallet denom to check for gas:
+which wallet denom to check for gas. Also pass `--chain-data-file` pointing
+at the active chain's registry JSON (`~/.manifest-agent/chains/<activeChain>.json`)
+so reasons[] are rendered with friendly token symbols (PWR / MFX) instead
+of raw chain denoms:
 
 ```bash
-echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness.cjs" --gas-price '<gasPrice from config>'
+echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness.cjs" \
+  --gas-price '<gasPrice from config>' \
+  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json"
 ```
 
 Branch on `status` exactly as `author-manifest` Step 5 does:
@@ -644,8 +649,14 @@ echo '{"summary": <summary JSON from above>, "readiness": <READINESS JSON>}' \
       --image "$IMAGE" \
       --size "$SIZE" \
       --tx-gas "<ESTIMATE.gasEstimate>" \
-      --tx-fee "<human-readable fee string>"
+      --tx-fee "<human-readable fee string>" \
+      --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json"
 ```
+
+`--chain-data-file` lets the script humanize the SKU price, wallet, and
+credits lines using the chain registry's denom -> symbol map (`umfx -> MFX`,
+`factory/.../upwr -> PWR`). Without it the script falls back to raw
+denoms which is harder to read.
 
 **When `SPEC.customDomain` is set**, also pass:
 - `--custom-domain "<SPEC.customDomain>"`
@@ -902,10 +913,15 @@ Via `AskUserQuestion`:
    relevant subcommand (`billing cancel-lease` or `billing close-lease`)
    and surface the fee in a textual confirmation before broadcasting.
 3. After the broadcast confirms, verify on-chain via
-   `mcp__manifest-fred__app_status` (state should be
-   `LEASE_STATE_CLOSED` or similar terminal). If verified, run
-   `remove-manifest.cjs --lease-uuid "$LEASE_UUID"` to clean up any
-   saved wrapper.
+   `mcp__manifest-fred__app_status`. Decode the resulting state with
+   `decode-lease-state.cjs --state <int> --json` and check the
+   `terminal` flag (true for both `LEASE_STATE_CLOSED` and
+   `LEASE_STATE_INSUFFICIENT_FUNDS` — see decode-lease-state docstring).
+   On `terminal: true`, run `remove-manifest.cjs --lease-uuid
+   "$LEASE_UUID"` to clean up any saved wrapper. On `terminal: false`,
+   tell the user the tx was sent but the chain hasn't settled yet and
+   they can re-check via `/manifest-agent:troubleshoot-deployment
+   <uuid>` in ~30s.
 
 ### When the broadcast created a lease (`LEASE_UUID` present)
 
@@ -948,23 +964,28 @@ If yes, call `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })`
 (PreToolUse hook will prompt).
 
 **Verify on-chain state after the tx returns** — a successful broadcast
-does not guarantee the lease actually transitioned to `LEASE_STATE_CLOSED`.
+does not guarantee the lease actually transitioned to a terminal state.
 The tx might have been accepted into the mempool but reverted on
 execution, or the lease state might lag a block. Confirm explicitly:
 
 1. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
-2. Decode `chainState.state` (integer) via:
+2. Decode `chainState.state` via the JSON mode (which exposes a
+   `terminal` flag derived from the canonical state — both
+   `LEASE_STATE_CLOSED` and `LEASE_STATE_INSUFFICIENT_FUNDS` count as
+   terminal because the chain may transition through INSUFFICIENT_FUNDS
+   on a successful close-lease before settling on CLOSED):
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int>
+   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int> --json
    ```
-3. Branch on the decoded name:
-   - **`LEASE_STATE_CLOSED`** → confirmed. Run cleanup:
+3. Branch on `terminal`:
+   - **`terminal: true`** → cleanup. Run:
      ```bash
      node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
      ```
      (no-op if the saved manifest record does not exist). Tell the user
-     "Lease confirmed CLOSED on-chain. Removed local saved manifest record."
-   - **Any other state** (typically still `LEASE_STATE_ACTIVE` or
+     "Lease is terminal on-chain (`<decoded-name>`). Removed local saved
+     manifest record."
+   - **`terminal: false`** (typically still `LEASE_STATE_ACTIVE` or
      `LEASE_STATE_PENDING`) → tell the user: "close_lease tx accepted but
      lease state is still `<decoded-name>`; chain may need a moment to
      settle. Re-run `/manifest-agent:troubleshoot-deployment <LEASE_UUID>`

@@ -118,10 +118,15 @@ Call `mcp__manifest-fred__check_deployment_readiness({ size: SIZE, image: IMAGE 
 
 Pipe the response to the evaluator. Pass `--gas-price` from the config you
 read in Step 1 (it's the `gasPrice` field, e.g. `"1umfx"` or `"0.37upwr"`)
-so the script knows which wallet denom to check for gas:
+so the script knows which wallet denom to check for gas. Also pass
+`--chain-data-file` pointing at the active chain's registry JSON so any
+warning reasons render with friendly token symbols (PWR / MFX) instead
+of raw chain denoms:
 
 ```bash
-echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness.cjs" --gas-price '<gasPrice from config>'
+echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness.cjs" \
+  --gas-price '<gasPrice from config>' \
+  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json"
 ```
 
 The script prints `{ status, reasons, suggested_actions }`. Branch on `status`:
