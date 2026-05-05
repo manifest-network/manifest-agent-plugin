@@ -54,7 +54,7 @@
  */
 
 const { readFileSync } = require('node:fs');
-const { loadChainDenomMap, humanizeCoin } = require('./humanize-denom.cjs');
+const { loadChainDenomMap, humanizeCoin, denomToSymbol } = require('./humanize-denom.cjs');
 
 // Tunables — edit here, not in SKILL.md.
 const HOURS_REMAINING_WARN_FLOOR = 24;
@@ -150,7 +150,7 @@ function asBigInt(s) {
   const gasAmount = gasEntry ? asBigInt(gasEntry.amount) : 0n;
   if (balances.length === 0 || gasAmount === 0n) {
     if (status !== 'block') status = 'block';
-    reasons.push(`Wallet has no ${humanizeCoin('0', gasDenom, denomMap).split(' ').slice(1).join(' ')} balance for gas.`);
+    reasons.push(`Wallet has no ${denomToSymbol(gasDenom, denomMap)} balance for gas.`);
     actions.add('request_faucet'); // skill chooses faucet vs topup based on chain
     actions.add('topup_wallet');
   } else if (gasAmount < gasWarnFloor) {

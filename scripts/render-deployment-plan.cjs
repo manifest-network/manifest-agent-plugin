@@ -226,15 +226,14 @@ function fmtCost(readiness, denomMap) {
   lines.push(`  SKU price:                 ${fmtCost(readiness, denomMap)}`);
 
   if (hasDomain) {
-    // Two-tx layout: labeled lines + Total fee.
-    // When the caller omits --set-domain-tx-fee entirely (rather than
-    // passing the explicit "skipped" sentinel), treat it as the
-    // approach-3 fallback — for the set-domain tx, "no representative
-    // lease available" is a legitimate skip path. Reserve the
-    // "policy violation" wording for the create-lease line, which is
-    // never optional under the runtime policy.
-    const effectiveSetDomainFee = args.setDomainTxFee || 'skipped';
-    const setDomainFeeLine = fmtFeeLine(effectiveSetDomainFee, args.setDomainTxGas);
+    // Two-tx layout: labeled lines + Total fee. When --set-domain-tx-fee
+    // is missing entirely we render the policy-violation marker, same as
+    // create-lease — both broadcasts are subject to the runtime fee-
+    // estimate-first policy. The orchestrator must pass `skipped`
+    // explicitly when approach-3 (no representative lease) fires; a
+    // missing flag in the script's input is an orchestrator bug we want
+    // visible, not a silent degradation.
+    const setDomainFeeLine = fmtFeeLine(args.setDomainTxFee, args.setDomainTxGas);
     lines.push(`  Tx fee (create-lease):     ${createFeeLine}`);
     lines.push(`  Tx fee (set-domain):       ${setDomainFeeLine}`);
     // Total only when both fees are real numbers (not "skipped" / "not

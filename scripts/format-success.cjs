@@ -88,21 +88,28 @@ function decodeStateName(state) {
   return `UNKNOWN(${String(state)})`;
 }
 
+// Documented catalog shape: `{ providers: [{ uuid, name, ... }, ...] }` per
+// the manifest-mcp-fred 0.8.0 contract. Earlier versions of this script
+// silently walked three different shapes and fell back to the raw UUID on
+// any miss — that hid drift in the upstream MCP response. Now we document
+// the expected shape and emit a clear warning to stderr when something
+// else turns up. Caller still gets a fail-soft result (raw UUID), but a
+// shape change leaves a footprint in the user-facing diagnostic.
 function findProviderName(catalog, providerUuid) {
-  if (!providerUuid || !catalog || typeof catalog !== 'object') return null;
-  // Catalog shape may be { providers: [...] } or just an array. Walk both.
-  const collections = [];
-  if (Array.isArray(catalog)) collections.push(catalog);
-  if (Array.isArray(catalog.providers)) collections.push(catalog.providers);
-  if (Array.isArray(catalog.entries)) collections.push(catalog.entries);
-  for (const list of collections) {
-    for (const entry of list) {
-      if (!entry || typeof entry !== 'object') continue;
-      const uuid = entry.uuid || entry.provider_uuid || (entry.provider && entry.provider.uuid);
-      if (uuid !== providerUuid) continue;
-      const name = entry.name || (entry.provider && entry.provider.name);
-      if (name) return String(name);
-    }
+  if (!providerUuid) return null;
+  if (catalog === null || catalog === undefined) return null;
+  if (typeof catalog !== 'object' || Array.isArray(catalog)) {
+    console.error(`format-success: unexpected catalog shape (got ${Array.isArray(catalog) ? 'array' : typeof catalog}, expected object with providers[]). Provider name will fall back to UUID.`);
+    return null;
+  }
+  if (!Array.isArray(catalog.providers)) {
+    console.error('format-success: catalog.providers is not an array (MCP shape change?). Provider name will fall back to UUID.');
+    return null;
+  }
+  for (const entry of catalog.providers) {
+    if (!entry || typeof entry !== 'object') continue;
+    if (entry.uuid !== providerUuid) continue;
+    if (typeof entry.name === 'string' && entry.name.length > 0) return entry.name;
   }
   return null;
 }

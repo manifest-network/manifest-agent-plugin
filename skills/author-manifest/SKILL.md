@@ -128,44 +128,11 @@ echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness
   --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json"
 ```
 
-The script prints `{ status, reasons, suggested_actions }`. Branch on `status`:
-
-- **`block`** — print the `reasons` to the user and stop. If
-  `suggested_actions` includes `pick_different_sku`, return to Step 3 (the
-  user may pick a different SKU and retry); otherwise stop entirely.
-- **`warn`** — present `reasons` to the user. Use `AskUserQuestion` to ask
-  what to do, with options derived from `suggested_actions`:
-    - `fund_credit` → "Fund credits and continue". When the user picks
-      this, ask them how much to fund (e.g. `"10000000umfx"`). Then —
-      per the runtime policy — estimate the tx fee BEFORE broadcasting:
-      ```
-      mcp__manifest-chain__cosmos_estimate_fee({
-        module: "billing",
-        subcommand: "fund-credit",
-        args: ["<amount>"]   // same string you'll pass to fund_credit
-      })
-      ```
-      Compute the human-readable fee string with `humanize-fee.cjs` (do
-      NOT inline the math):
-      ```bash
-      node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
-        --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
-        --fee-json '<ESTIMATE.fee.amount as JSON>'
-      ```
-      Capture stdout as `FEE_HUMAN`, then ask the user to confirm: "Fund
-      credits with `<amount>`? Estimated tx fee: `<FEE_HUMAN>` (gas
-      `<gasEstimate>`). (yes / no)". On yes, call
-      `mcp__manifest-lease__fund_credit({ amount: <amount> })` (gated by
-      PreToolUse hook), then re-run Step 5. If the estimate itself fails,
-      surface the error and ask whether to proceed without one — do not
-      silently skip.
-    - `request_faucet` → "Request testnet faucet funds" → call
-      `mcp__manifest-chain__request_faucet`, then re-run Step 5.
-      (No fee estimate — the faucet is a free testnet operation.)
-    - `topup_wallet` → "I'll top up the wallet myself" → stop, ask the user
-      to top up and re-run the skill.
-    - Always include "Proceed anyway" and "Abort" options.
-- **`ok`** — silent pass.
+The script prints `{ status, reasons, suggested_actions }`. `Read`
+`skills/author-manifest/references/readiness-branching.md` and follow it
+to handle the three statuses (`block` / `warn` / `ok`). For this skill,
+the "return to the SKU pick step" recovery means returning to Step 3;
+"re-run the readiness check" means returning to this Step 5.
 
 ## Step 6 — Author the spec
 
@@ -410,9 +377,9 @@ loaded by `/manifest-agent:deploy-app` (which re-runs `build_manifest_preview`
 on the merged file). If a file-sourced env key is invalid (e.g. reserved
 name like `PATH`), the failure surfaces at deploy time, not here.
 
-Save `meta_hash_hex` for Step 10's report. Note: this hash will become stale
-once env vars are merged from files in Step 9; the deploy skill computes a
-fresh hash from the merged file.
+Capture `meta_hash_hex` as `META_HASH`. **If Step 9 merges env files into
+the saved spec, the hash will change** — Step 9 re-validates and refreshes
+`META_HASH` after the merge so Step 10's report is always current.
 
 ## Step 9 — Save the spec to disk
 
@@ -476,13 +443,24 @@ Suggest the user delete each env file once they've confirmed the saved spec
 looks right (e.g. `rm /tmp/wordpress.env`). The values are now in the spec
 at `$SAVED_PATH` (mode 0600) and on the user's responsibility to manage.
 
+**If any env files were merged**, refresh `META_HASH` from the post-merge
+spec — the Step 8 hash is computed against the pre-merge spec and is now
+stale. Re-load the saved spec via `Read` (returns the merged content as a
+structured tool result; the env values enter your context here) and
+re-call `build_manifest_preview` with the splatted spec. Capture the new
+`meta_hash_hex` and overwrite `META_HASH` so Step 10's report shows the
+hash that matches the saved file's bytes.
+
+If no env files were merged, `META_HASH` from Step 8 is already correct;
+skip the re-validation.
+
 ## Step 10 — Report
 
 Tell the user:
 
 ```
 Saved:           <SAVED_PATH>
-meta_hash_hex:   <hex from Step 8>
+meta_hash_hex:   <META_HASH>
 Format:          single | stack
 Custom domain:   <fqdn> -> service <name>      (only when set in Step 7)
 

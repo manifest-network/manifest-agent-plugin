@@ -101,14 +101,25 @@ Store the chosen UUID as `LEASE_UUID`.
 Skip this section if `ACTION === "lookup"`.
 
 Query `mcp__manifest-lease__leases_by_tenant({ tenant: <address from
-Step 0> })` and find the lease matching `LEASE_UUID`. Examine its
-`items[]` array:
+Step 0> })`. Pipe the response through `extract-lease-items.cjs` (do
+NOT decode the typed shape in prose — the script handles
+camelCase/snake_case key tolerance and shape variations):
 
-- **Single item** (no `serviceName`, or one item only): no picker; the
-  domain attaches implicitly. Set `SERVICE_NAME = ""`.
-- **Multiple items** (stack lease): present each item's
-  `serviceName` (and current `customDomain` if any) via
-  `AskUserQuestion`. Let the user pick. Store as `SERVICE_NAME`.
+```bash
+echo '<leases_by_tenant response>' \
+  | node "$MANIFEST_PLUGIN_ROOT/scripts/extract-lease-items.cjs" --lease-uuid "$LEASE_UUID"
+```
+
+Parse the script's stdout (`{ found, items, single_item }`):
+
+- **`found: false`** → the lease UUID isn't in the signer's leases.
+  Surface that and stop (the user may have typed the wrong UUID, or
+  the lease belongs to a different tenant).
+- **`single_item: true`** → no picker; the domain attaches implicitly.
+  Set `SERVICE_NAME = ""`.
+- **Otherwise** (stack lease) → present each entry in `items[]` via
+  `AskUserQuestion` showing `serviceName` and current `customDomain`
+  (when non-empty). Store the chosen `serviceName` as `SERVICE_NAME`.
 
 Brief note when offering set/clear on a service that already has a
 domain: "This service currently holds `<existing-fqdn>`; setting will
@@ -206,15 +217,24 @@ PreToolUse will prompt — that is expected.
 
 **Verify on-chain state after the tx returns** — a successful broadcast
 does not guarantee the chain item now holds (or no longer holds) the
-domain. Re-query `mcp__manifest-lease__leases_by_tenant`, find the
-matching lease's items[], and check the matching item's `customDomain`
-field:
+domain. Re-query `mcp__manifest-lease__leases_by_tenant` and pipe
+through `extract-lease-items.cjs` again (same script as Step 4):
+
+```bash
+echo '<leases_by_tenant response>' \
+  | node "$MANIFEST_PLUGIN_ROOT/scripts/extract-lease-items.cjs" --lease-uuid "$LEASE_UUID"
+```
+
+From the script's `items[]`, find the matching item — for stacks, the
+one whose `serviceName === SERVICE_NAME`; for single-item leases, the
+sole entry. Check its `customDomain` field:
+
 - For **set**: confirm `item.customDomain === FQDN`. If yes, tell the
   user "Custom domain `<FQDN>` confirmed on lease `<LEASE_UUID>`. TLS
   may take a few minutes to provision at the provider; the provider's
   default FQDN keeps working in the meantime."
-- For **clear**: confirm `item.customDomain` is empty / absent. If yes,
-  tell the user "Domain cleared on lease `<LEASE_UUID>`."
+- For **clear**: confirm `item.customDomain === ""`. If yes, tell the
+  user "Domain cleared on lease `<LEASE_UUID>`."
 - If the verification doesn't match (chain may need a moment to
   settle, or the tx was accepted but reverted): tell the user the tx
   was sent but verification failed; suggest re-running this skill in

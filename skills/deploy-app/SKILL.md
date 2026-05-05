@@ -2,14 +2,10 @@
 name: deploy-app
 description: >
   Deploy a containerized app on Manifest end-to-end. Optional argument:
-  either a path to a JSON deployment spec (e.g. /path/to/spec.json), OR an
-  image reference (e.g. nginx:1.27 or ghcr.io/me/app@sha256:...) for a
-  single-service fast-path. Omit the argument for interactive authoring of
-  a single-service or multi-service stack. Runs a pre-flight readiness
-  check, shows the deployment plan, waits for textual confirmation,
-  broadcasts, persists the post-deploy record, and prints the live URL.
-  On failure, runs the troubleshoot flow inline and offers to reclaim the
-  lease.
+  a JSON deployment spec path, an image reference (e.g. nginx:1.27 or
+  ghcr.io/me/app@sha256:...) for a single-service fast-path, or two-or-more
+  image refs separated by spaces (or +) for a multi-service stack
+  fast-path. Omit the argument for interactive authoring.
 allowed-tools: Bash(*), Read, Write
 ---
 
@@ -201,11 +197,11 @@ echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness
   --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json"
 ```
 
-Branch on `status` exactly as `author-manifest` Step 5 does:
-- **`block`** → print `reasons`, stop.
-- **`warn`** → ask the user to proceed / fund_credit / request_faucet /
-  topup_wallet / abort. On fund_credit/request_faucet, re-run Step 5.
-- **`ok`** → silent.
+`Read` `skills/author-manifest/references/readiness-branching.md` and
+follow it to handle the three statuses (`block` / `warn` / `ok`). For
+this skill, "return to the SKU pick step" recovery is N/A (deploy-app
+takes SIZE as input, not via a pick step) — surface the SKU rejection
+and stop. "Re-run the readiness check" means returning to this Step 5.
 
 Save the readiness JSON as `READINESS`.
 

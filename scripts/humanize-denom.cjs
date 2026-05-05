@@ -33,6 +33,13 @@
  *
  *   humanizeBalances(balances, denomMap)
  *     Joins multiple coins with ", ".
+ *
+ *   denomToSymbol(denom, denomMap)
+ *     Returns the friendly symbol ("MFX") for a chain denom ("umfx") via
+ *     the same lookup humanizeCoin uses. Falls back to the raw denom on
+ *     unknown input. Use when you need ONLY the symbol (e.g. "Wallet has
+ *     no MFX balance"); avoids the brittle pattern of formatting "0 MFX"
+ *     and string-splitting to recover "MFX".
  */
 
 const { readFileSync } = require('node:fs');
@@ -106,10 +113,17 @@ function humanizeBalances(balances, denomMap) {
     .join(', ');
 }
 
+function denomToSymbol(denom, denomMap) {
+  if (!denom) return String(denom ?? '');
+  const lookup = denomMap && typeof denomMap.lookup === 'function' ? denomMap.lookup(denom) : null;
+  return lookup && lookup.symbol ? lookup.symbol : denom;
+}
+
 module.exports = {
   loadChainDenomMap,
   humanizeCoin,
   humanizeBalances,
+  denomToSymbol,
   // Exported for unit testing of the scaling logic in isolation.
   _fmtScaledAmount: fmtScaledAmount,
 };
