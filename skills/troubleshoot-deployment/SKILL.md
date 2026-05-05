@@ -98,19 +98,19 @@ Produce a unified Markdown report with these sections:
 
 ### Status
 
-From `app_status`:
-- `lease_uuid`, `chainState.providerUuid`.
-- Decode `chainState.state` (integer) to its canonical name:
+Pipe the `app_status` response through `summarize-app-status.cjs` and
+print its stdout verbatim under this heading. The script handles the
+typed-shape extraction (lease UUID, provider UUID, state decode +
+terminal flag, URL extraction from `connection`, `providerError` /
+`connectionError` surfacing, and any populated `fredStatus` fields):
 
-  ```bash
-  node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int>
-  ```
+```bash
+echo '<app_status response JSON>' \
+  | node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-app-status.cjs"
+```
 
-  Surface the human name (`LEASE_STATE_ACTIVE`, etc.) alongside the integer.
-- If `connection` is present: extract URL(s) and connection details.
-- If `providerError` or `connectionError` is present: surface them
-  prominently.
-- If `fredStatus` is present: include any non-empty fields.
+Do not paraphrase its output; the structural extraction is pinned in
+the script so adjacent runs cannot disagree on field labels.
 
 ### Diagnostics
 

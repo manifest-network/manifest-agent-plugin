@@ -64,26 +64,27 @@ the recap runs, both the spec and the chosen FQDN are in hand.)
 
 ## Step 2 — Get the manifest spec
 
-Three input modes based on `$ARGUMENTS`. Choose deterministically using
-the checks below — do not guess if the input is ambiguous; ask the user.
+Four input modes based on `$ARGUMENTS`. Classify deterministically using
+`dispatch-deploy-input.cjs` — do NOT do this dispatch in prose:
 
-**Input detection:**
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/dispatch-deploy-input.cjs" --arguments "$ARGUMENTS"
+```
 
-Tokenize `$ARGUMENTS` first: split on whitespace, drop empty strings,
-drop bare `+` tokens (so `wordpress:6 + mysql:9` and `wordpress:6 mysql:9`
-both yield `["wordpress:6", "mysql:9"]`). Then:
+The script's stdout JSON has `{ mode, tokens, spec_path?, services?, collisions?, reason? }`.
+Branch on `mode`:
 
-- If the original `$ARGUMENTS` is empty → **Interactive authoring** (below).
-- Else if `test -f "$ARGUMENTS"` succeeds → **Spec file path** (below).
-- Else if **two or more** tokens each match an image reference shape
-  (contains a `:` for tag form or `@sha256:` for digest form) →
-  **Multi-image stack fast-path** (below).
-- Else if exactly **one** token matches an image reference shape →
-  **Image fast-path** (single-service, below).
-- Else → tell the user the argument was neither a readable file nor a
-  recognizable image reference, show what they passed, and stop. (E.g.
-  they typed a relative path that doesn't exist; better to fail loudly
-  than guess.)
+- **`empty`** → **Interactive authoring** (below).
+- **`spec_file`** → **Spec file path** (below). `spec_path` is the file to load.
+- **`multi_image`** → **Multi-image stack fast-path** (below). `services[]`
+  has `{ token, derived_name, valid }` per token, plus `collisions[]` when
+  two tokens derive to the same RFC 1123 DNS label.
+- **`single_image`** → **Image fast-path** (single-service, below).
+  `services[]` has one entry with the derived service name.
+- **`error`** → surface `reason` to the user verbatim and stop. The
+  reason is human-readable and explains exactly why the input wasn't
+  recognized (e.g. "argument is neither a readable file path nor a
+  recognizable image reference"). Do not guess — fail loudly.
 
 ### When `$ARGUMENTS` is a spec file path
 
@@ -120,28 +121,19 @@ delete both `customDomain` and `serviceName` from `SPEC`.
 on Yes, follow the FQDN-collection + (for stacks) service-picker flow
 described under the image fast-path below.
 
-### When `$ARGUMENTS` is multiple image references (multi-service stack fast-path)
+### When `mode == "multi_image"` (multi-service stack fast-path)
 
 The user typed something like `/manifest-agent:deploy-app wordpress:6 mysql:9`
-or `/manifest-agent:deploy-app wordpress:6 + mysql:9`. The `+` is a
-visual separator only — drop it. Each remaining token is a service.
-
-**Derive a service name** from each image reference:
-1. Strip any `@sha256:...` suffix.
-2. Strip any `:tag` suffix.
-3. Take the basename (everything after the last `/`).
-4. Lowercase. RFC 1123 DNS label: alphanumeric + hyphens only, no
-   leading/trailing hyphens, max 63 chars. If the derived name doesn't
-   conform, ask the user for a service name.
-
-Examples:
-- `docker.io/lifted/wordpress:6` → `wordpress`
-- `docker.io/library/mysql:9` → `mysql`
-- `ghcr.io/me/web-api@sha256:abc` → `web-api`
-- `nginx:1.27` → `nginx`
+or `/manifest-agent:deploy-app wordpress:6 + mysql:9`. The dispatcher has
+already tokenized the input, derived a service name per token, and
+detected collisions. You consume `services[]` and `collisions?[]` from
+its output.
 
 **Confirm the parse before doing anything else** so the user can catch
-mistakes. Use `AskUserQuestion`:
+mistakes. Use `AskUserQuestion`. For each entry in `services[]` show
+`{derived_name} ({token})`; if any entry has `valid: false`, surface
+that the auto-derived name didn't conform to RFC 1123 and you'll need
+the user to provide a name.
 
 > Parsed your input as a stack of N services:
 >   - `wordpress` (`docker.io/lifted/wordpress:6`)
@@ -150,10 +142,12 @@ mistakes. Use `AskUserQuestion`:
 
 On "customize names" let the user rename each service. On "abort" stop.
 
-**Service name collisions**: if two tokens derive to the same name (e.g.
-`redis:7 redis:8` both → `redis`), the parse confirmation must show the
-collision and ask the user to disambiguate (suggest `redis-7` / `redis-8`
-or let them type names). Do not silently auto-suffix.
+**Service name collisions**: if `collisions[]` is non-empty, the parse
+confirmation must show the collision (e.g. `redis:7 redis:8` both
+derive to `redis`) and ask the user to disambiguate (suggest
+`redis-7` / `redis-8` or let them type names). Do NOT silently
+auto-suffix — the dispatcher reports the collision deliberately so the
+user makes the call.
 
 **SKU size**: after the parse is confirmed, ask for the SKU size once
 for the whole stack via `AskUserQuestion`, populated from
@@ -849,26 +843,29 @@ primitive applies AND whether a salvage path is available.
 
 **Step 11.b — show the user the situation and offer recovery.**
 
-Via `AskUserQuestion`:
-> Deploy partially succeeded:
->   - Lease `<lease_uuid>` was created on-chain (state: `<decoded-state>`).
->   - <If a custom domain was requested:> set-domain step did NOT
->     complete: `<reason>`. The manifest was therefore NEVER uploaded
->     to the provider — no app is running on this lease.
->   - <If no custom domain:> the manifest upload or readiness poll
->     failed: `<reason>`. The provider may or may not have started the
->     app.
->
-> What do you want to do?
->
->   1. **Retry set-domain + upload** — re-attach the domain (same or
->      different FQDN), then trigger a manifest upload via `update_app`.
->   2. **Salvage without domain** — skip the domain entirely; just
->      upload the manifest now via `update_app` so the lease starts
->      serving the app on the provider FQDN.
->   3. **Cancel / Close the lease** — release credits and abandon.
+Render the prompt body + option list deterministically (do NOT hand-build
+the conditional template — the script handles the with-domain / no-domain
+branches and the option-1 omission):
 
-(Omit option 1 when no custom domain was set in the first place.)
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/render-partial-success-prompt.cjs" \
+  --lease-uuid "$LEASE_UUID" \
+  --decoded-state "$DECODED_STATE" \
+  --reason "<reason from classify-deploy-error.cjs output>" \
+  <when-domain-was-requested: --requested-custom-domain "$REQUESTED_FQDN">
+```
+
+Parse the script's stdout JSON ({ `prompt`, `options` }). Pass `prompt`
+as the AskUserQuestion body and `options` as the option list verbatim.
+
+The three recovery paths and what they do:
+  1. **Retry set-domain + upload** — re-attach the domain (same or
+     different FQDN), then trigger a manifest upload via `update_app`.
+     (Only present when a domain was requested.)
+  2. **Salvage without domain** — skip the domain entirely; just upload
+     the manifest now via `update_app` so the lease starts serving the
+     app on the provider FQDN.
+  3. **Cancel or close the lease** — release credits and abandon.
 
 **On Retry set-domain + upload**:
 1. Ask via `AskUserQuestion` whether to retry with the same FQDN or a

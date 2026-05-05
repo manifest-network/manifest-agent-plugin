@@ -35,46 +35,14 @@
 
 const { readFileSync } = require('node:fs');
 const { decode: decodeState } = require('./_lease-state.cjs');
+const { extractRunningEndpoints, formatEndpointAsUrl } = require('./_connection.cjs');
 
 function buildUrls(connection) {
-  // Mirror the dual-shape walk in scripts/format-success.cjs:buildIngresses
-  // — `connection.instances[]` for legacy/non-services-map shape AND
-  // `connection.services.<name>.instances[]` for the services-map shape
-  // emitted by stack deploys (and by single-service deploys authored
-  // through author-manifest, which also emits the services-map form).
-  // Without the per-service branch this script returns an empty `urls`
-  // array for any services-map deploy and the orchestrator misclassifies
-  // an active lease as `needs_wait`.
-  if (!connection || typeof connection !== 'object') return [];
-  const out = [];
-  const seen = new Set();
-  function pushFromInstances(instances) {
-    if (!Array.isArray(instances)) return;
-    for (const inst of instances) {
-      if (!inst || inst.status !== 'running' || !inst.fqdn) continue;
-      const url = `https://${inst.fqdn}/`;
-      if (seen.has(url)) continue;
-      seen.add(url);
-      out.push(url);
-    }
-  }
-  pushFromInstances(connection.instances);
-  if (connection.services && typeof connection.services === 'object') {
-    for (const svc of Object.values(connection.services)) {
-      if (svc && typeof svc === 'object') pushFromInstances(svc.instances);
-    }
-  }
-  // Fallback: top-level connection.host + connection.ports (older MCP shape).
-  // host here is typically a raw IP and needs a port for direct container
-  // access — no subdomain routing available.
-  if (out.length === 0 && connection.host && connection.ports) {
-    for (const portKey of Object.keys(connection.ports)) {
-      const v = connection.ports[portKey];
-      const port = typeof v === 'number' || typeof v === 'string' ? v : (v && v.host_port);
-      if (port !== undefined) out.push(`https://${connection.host}:${port}/`);
-    }
-  }
-  return out;
+  // Returns full https:// URLs for every running instance. See
+  // _connection.cjs for the typed-payload walk.
+  return extractRunningEndpoints(connection)
+    .map(formatEndpointAsUrl)
+    .filter((u) => u !== null);
 }
 
 (async () => {
