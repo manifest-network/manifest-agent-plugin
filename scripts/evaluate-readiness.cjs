@@ -170,9 +170,24 @@ function asBigInt(s) {
     const skuPrice = r.sku.price;
     const balances = Array.isArray(r.current_balance) ? r.current_balance : [];
     const creditEntry = balances.find((b) => b && b.denom === skuPrice.denom);
-    const creditAmount = creditEntry ? asBigInt(creditEntry.amount) : 0n;
     const pricePerHour = asBigInt(skuPrice.amount);
-    if (pricePerHour > 0n) {
+    if (creditEntry === undefined) {
+      // The credit account has no entry in the SKU's price denom. This is
+      // distinct from "credits ran out" — it usually means credits are in
+      // a different denom than the SKU charges in (e.g. credits funded in
+      // upwr but the SKU prices in umfx, or vice-versa). Emit a specific
+      // diagnostic so the user knows to fund_credit in the right denom
+      // rather than seeing a false "0 hours of runtime" warning.
+      const fundedDenoms = balances.map((b) => b && b.denom).filter(Boolean);
+      if (status === 'ok') status = 'warn';
+      reasons.push(
+        fundedDenoms.length > 0
+          ? `Credit account has no ${skuPrice.denom} balance (the ${r.sku.name} SKU charges in ${skuPrice.denom}; account holds ${fundedDenoms.join(', ')}). Fund ${skuPrice.denom} credits before deploying.`
+          : `Credit account is empty for the ${r.sku.name} SKU's ${skuPrice.denom} denom. Fund ${skuPrice.denom} credits before deploying.`,
+      );
+      actions.add('fund_credit');
+    } else if (pricePerHour > 0n) {
+      const creditAmount = asBigInt(creditEntry.amount);
       // Convert via Number for the human-readable hours figure. Credit
       // amounts are in the chain's smallest unit and bounded well below
       // Number.MAX_SAFE_INTEGER for any realistic balance.

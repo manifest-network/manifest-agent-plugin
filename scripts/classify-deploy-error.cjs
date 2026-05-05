@@ -123,9 +123,10 @@ function pickEnvelope(raw) {
   if (args.expectedCustomDomain) out.requested_custom_domain = args.expectedCustomDomain;
   console.log(JSON.stringify(out));
 })().catch((err) => {
-  // Belt-and-suspenders structured fallback.
-  console.log(JSON.stringify({
-    outcome: 'failed',
-    reason: `unexpected classifier error: ${err.message || String(err)}`,
-  }));
+  // Per CLAUDE.md ("All scripts use CJS — async IIFE with
+  // .catch(() => process.exit(1))"), an unexpected throw is a process
+  // error, not a data result. Print the diagnostic to stderr and exit
+  // non-zero so the orchestrator can branch on it.
+  console.error(`unexpected classifier error: ${err.message || String(err)}`);
+  process.exit(1);
 });

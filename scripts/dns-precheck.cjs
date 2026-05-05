@@ -102,12 +102,11 @@ function withTimeout(promise, ms, label) {
 
   console.log(JSON.stringify(out));
 })().catch((err) => {
-  // Belt-and-suspenders: any unexpected throw still produces a structured
-  // result so callers can branch deterministically.
-  console.log(JSON.stringify({
-    resolved: false,
-    a: [],
-    aaaa: [],
-    reason: `unexpected error: ${err.message || String(err)}`,
-  }));
+  // Per CLAUDE.md ("All scripts use CJS — async IIFE with
+  // .catch(() => process.exit(1))"), an unexpected throw is a process
+  // error, not a data result. The lookup-failure paths inside the IIFE
+  // already emit structured `resolved: false` JSON; reaching here means
+  // an actual implementation bug.
+  console.error(`unexpected dns-precheck error: ${err.message || String(err)}`);
+  process.exit(1);
 });

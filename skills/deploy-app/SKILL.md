@@ -416,10 +416,14 @@ Capture from the response:
 - The `format` (`single` or `stack`) — surfaces in the DeploymentPlan
   summary.
 
-For `IMAGE`: the SKU pre-flight in Step 4 wants a single image. For single-
-service, that's `SPEC.image`. For multi-service stacks, pick the first
-service's image as the representative. (The provider validates all of them
-at deploy-time.)
+For `IMAGE`: the SKU pre-flight in Step 4 wants a single image. Note that
+specs always use the services-map shape (every authoring path emits it),
+so derive the image from the first entry of `SPEC.services`:
+`IMAGE = Object.values(SPEC.services)[0].image`. For multi-service stacks
+this picks the first service's image as the representative — the provider
+validates all of them at deploy time. Legacy specs that still use the flat
+`SPEC.image` shape work as a fallback: `IMAGE = SPEC.image ||
+Object.values(SPEC.services || {})[0]?.image`.
 
 For `SIZE`: spec files don't carry the SKU choice — when the user
 provided a spec file path, use `AskUserQuestion` populated from
@@ -483,29 +487,6 @@ Then ask via `AskUserQuestion`:
 
 On Amend: re-enter spec authoring. On Abort: stop. Only on Yes do you
 proceed to readiness.
-
-## Step 3.5 — DNS pre-check (custom domain only)
-
-Skip this section if `SPEC.customDomain` is unset.
-
-When set, run a warn-only DNS lookup so the user can catch a forgotten
-CNAME / A record before broadcasting:
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/dns-precheck.cjs" --domain "<SPEC.customDomain>"
-```
-
-The script returns within ~5s either way. Parse the JSON output:
-- `resolved: true` → tell the user briefly what was found (a / aaaa /
-  cname). Continue silently.
-- `resolved: false` → surface `reason` and ask via `AskUserQuestion`:
-  > DNS doesn't resolve `<fqdn>` yet (`<reason>`). The chain claim will
-  > succeed regardless, but the domain won't route until DNS catches up.
-  > Continue anyway?
-  Options: **Continue** (proceed to readiness) / **Abort**.
-
-Never block. The chain is the authoritative arbiter; DNS pre-check is
-purely a heads-up for the operator.
 
 ## Step 4 — Pre-flight readiness
 
@@ -601,11 +582,16 @@ representative existing lease the signer already owns.
    this msg type, so it transfers cleanly to the about-to-be-created
    lease.
 4. **If no ACTIVE lease exists** (fresh wallet, all prior leases closed):
-   set `SET_DOMAIN_ESTIMATE = "skipped"` (a sentinel — Step 5b's
-   `--set-domain-tx-fee skipped` flag renders the
-   "(not estimated — no representative lease available)" line per the
-   approved approach-3 fallback). The recap MUST surface this gap; the
-   PreToolUse + textual confirm steps still fire normally.
+   set `SET_DOMAIN_ESTIMATE = "skipped"`. Step 5b will pass
+   `--set-domain-tx-fee skipped` to `render-deployment-plan.cjs`,
+   which emits the canonical
+   `Tx fee (set-domain): (not estimated — no representative lease available …)`
+   line in the DeploymentPlan block. **Do NOT add prose around this in
+   the intent recap** — the DeploymentPlan line itself is the single
+   source of truth, and stitching a "Heads-up: …" sentence into the
+   recap creates awkward paraphrases (the same applies to any other
+   `(not estimated)` rendering). PreToolUse + textual confirm still
+   fire normally on the printed plan.
 
 If the second estimate itself errors out, surface the error and ask
 "proceed without a set-domain estimate? (yes / no)" — do NOT silently
@@ -816,60 +802,101 @@ service is; do not narrate around it.
 
 Three sub-cases.
 
-### When `classify-deploy-error.cjs` returned `partially_succeeded` (custom-domain only)
+### When `classify-deploy-error.cjs` returned `partially_succeeded`
 
-The `create-lease` tx confirmed (lease exists at the UUID returned by the
-script) but the downstream step (`set-item-custom-domain` or manifest
-upload / readiness poll) fell over. The lease is live and billing
-credits even though no custom domain attached.
+The `create-lease` tx confirmed (lease exists at the UUID returned by
+the script) but a downstream step in `deploy_app` fell over. Per the
+upstream pipeline order (`create-lease` → `set-item-custom-domain` →
+manifest upload to provider → readiness poll), this can happen at any
+step after the lease landed on-chain. **The most common case with a
+custom domain set is that set-domain failed, which means the manifest
+was NEVER uploaded to the provider** — the lease is on-chain, draining
+credits, but the provider has no app to run. State will likely be
+`LEASE_STATE_PENDING` with `payload_received: false`.
 
-Show the user via `AskUserQuestion`:
+**Step 11.a — diagnose state first.**
+
+Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })` to
+read the on-chain lease state and the provider's `payload_received` /
+`provisioning_started` flags. Decode the state via
+`decode-lease-state.cjs --state <int>`. This determines which cleanup
+primitive applies AND whether a salvage path is available.
+
+**Step 11.b — show the user the situation and offer recovery.**
+
+Via `AskUserQuestion`:
 > Deploy partially succeeded:
->   - Lease `<lease_uuid>` was created on-chain and is consuming credits.
->   - Set-domain step did NOT complete: `<reason>`.
+>   - Lease `<lease_uuid>` was created on-chain (state: `<decoded-state>`).
+>   - <If a custom domain was requested:> set-domain step did NOT
+>     complete: `<reason>`. The manifest was therefore NEVER uploaded
+>     to the provider — no app is running on this lease.
+>   - <If no custom domain:> the manifest upload or readiness poll
+>     failed: `<reason>`. The provider may or may not have started the
+>     app.
+>
 > What do you want to do?
 >
-> Options:
->   1. **Retry set-domain** — try again (same FQDN or a different one).
->   2. **Close lease** — release the lease and stop credit burn.
->   3. **Leave as-is** — keep the lease; no custom domain. The provider
->      FQDN will still serve the app once it's ready.
+>   1. **Retry set-domain + upload** — re-attach the domain (same or
+>      different FQDN), then trigger a manifest upload via `update_app`.
+>   2. **Salvage without domain** — skip the domain entirely; just
+>      upload the manifest now via `update_app` so the lease starts
+>      serving the app on the provider FQDN.
+>   3. **Cancel / Close the lease** — release credits and abandon.
 
-**On Retry set-domain**:
-1. Ask the user via `AskUserQuestion` whether to retry with the same
-   FQDN or a different one. On "different", ask for the new FQDN and
-   validate via `validate-domain.cjs`.
+(Omit option 1 when no custom domain was set in the first place.)
+
+**On Retry set-domain + upload**:
+1. Ask via `AskUserQuestion` whether to retry with the same FQDN or a
+   different one. On "different", validate the new FQDN via
+   `validate-domain.cjs`.
 2. Drive the manage-domain skill's reusable post-broadcast block inline
    (Steps 4–6 of `/manifest-agent:manage-domain`):
-   `validate-domain.cjs` → `dns-precheck.cjs` (warn-only) →
-   `cosmos_estimate_fee` against `billing set-item-custom-domain` →
-   textual confirm with action + fee → `set_item_custom_domain` →
-   verify on-chain via `leases_by_tenant`. The retry MUST re-run
-   `cosmos_estimate_fee` (runtime policy demands it for every
-   broadcast).
-3. **Single retry only.** If it fails:
-   - Surface BOTH failures verbatim (the original partial-success
-     reason + the retry error).
-   - Re-offer options 2 (close) and 3 (leave-as-is); do NOT auto-loop.
-4. On success: persist the manifest wrapper via `save-manifest.cjs`
-   with `--custom-domain` populated. Print the `format-success.cjs`
-   block.
+   `cosmos_estimate_fee` against `billing set-item-custom-domain`
+   (using `LEASE_UUID` directly — the lease exists, so no
+   representative-lease query is needed) → textual confirm with action
+   + fee → `mcp__manifest-lease__set_item_custom_domain` → verify
+   on-chain via `leases_by_tenant`. The retry MUST re-run
+   `cosmos_estimate_fee` per runtime policy. **Single retry only** — on
+   second failure, surface BOTH failures and re-offer options 2 and 3.
+3. After set-domain succeeds, fall through to the upload step below.
 
-**On Close lease**: follow the existing close-lease path below (skip to
-the `cosmos_estimate_fee` for `close-lease`, confirm, broadcast, verify
-on-chain, `remove-manifest.cjs`).
+**On Salvage without domain** (or after a successful retry):
+1. Call `mcp__manifest-fred__update_app({ lease_uuid: LEASE_UUID,
+   manifest: MANIFEST_JSON })` to upload the manifest the deploy was
+   supposed to send. PreToolUse will prompt — `update_app` is a
+   provider HTTPS call, no chain tx, no `cosmos_estimate_fee` needed
+   per the runtime policy bucket for provider tools.
+2. Wait for the lease to come up:
+   `mcp__manifest-fred__wait_for_app_ready({ lease_uuid: LEASE_UUID,
+   timeout_seconds: 300 })`. On thrown error: surface and stop;
+   troubleshoot-deployment can take it from here.
+3. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })` to
+   get the connection details (the provider FQDN, etc.). Synthesize a
+   `DEPLOY_RESPONSE`-shaped object: `{ lease_uuid: LEASE_UUID,
+   provider_uuid: <from app_status.chainState.providerUuid>,
+   state: <from app_status.chainState.state>, connection: <from
+   app_status.connection>, custom_domain?: <FQDN if retry succeeded> }`.
+4. Persist via `save-manifest.cjs` (with `--custom-domain` only when
+   the retry succeeded) and print `format-success.cjs` output.
 
-**On Leave as-is**: persist the manifest wrapper via `save-manifest.cjs`
-WITHOUT the `--custom-domain` flag (the chain has no domain attached;
-don't store one). Then run `format-success.cjs` so the user gets the
-provider-FQDN ingress URL — they can use the lease normally without a
-custom domain.
-
-(After "Switching the domain on a live lease may cause a brief routing
-gap while the provider reconciles" — note this in the prompt when
-offering retry on a lease that already has a different domain attached;
-typically not the case in this partial-success path since the original
-attempt failed.)
+**On Cancel / Close**:
+1. **PENDING leases must be cancelled**, NOT closed (different chain
+   primitives — `MsgCancelLease` vs `MsgCloseLease`). Branch on the
+   decoded state from Step 11.a:
+   - `LEASE_STATE_PENDING` → use `mcp__manifest-chain__cosmos_tx`
+     against `billing cancel-lease <LEASE_UUID>` (no MCP wrapper exists
+     for cancel-lease today; cosmos_tx is the route).
+   - `LEASE_STATE_ACTIVE` → use `mcp__manifest-lease__close_lease`.
+   - Other states (closed, insufficient funds): nothing to do; the
+     lease is already terminal.
+2. Per runtime policy, call `cosmos_estimate_fee` first against the
+   relevant subcommand (`billing cancel-lease` or `billing close-lease`)
+   and surface the fee in a textual confirmation before broadcasting.
+3. After the broadcast confirms, verify on-chain via
+   `mcp__manifest-fred__app_status` (state should be
+   `LEASE_STATE_CLOSED` or similar terminal). If verified, run
+   `remove-manifest.cjs --lease-uuid "$LEASE_UUID"` to clean up any
+   saved wrapper.
 
 ### When the broadcast created a lease (`LEASE_UUID` present)
 

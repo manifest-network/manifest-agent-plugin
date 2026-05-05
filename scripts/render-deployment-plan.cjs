@@ -199,7 +199,14 @@ function fmtCost(readiness) {
 
   if (hasDomain) {
     // Two-tx layout: labeled lines + Total fee.
-    const setDomainFeeLine = fmtFeeLine(args.setDomainTxFee, args.setDomainTxGas);
+    // When the caller omits --set-domain-tx-fee entirely (rather than
+    // passing the explicit "skipped" sentinel), treat it as the
+    // approach-3 fallback — for the set-domain tx, "no representative
+    // lease available" is a legitimate skip path. Reserve the
+    // "policy violation" wording for the create-lease line, which is
+    // never optional under the runtime policy.
+    const effectiveSetDomainFee = args.setDomainTxFee || 'skipped';
+    const setDomainFeeLine = fmtFeeLine(effectiveSetDomainFee, args.setDomainTxGas);
     lines.push(`  Tx fee (create-lease):     ${createFeeLine}`);
     lines.push(`  Tx fee (set-domain):       ${setDomainFeeLine}`);
     // Total only when both fees are real numbers (not "skipped" / "not
