@@ -67,9 +67,8 @@ Use AskUserQuestion to ask which token to use for gas fees, showing the
 - **MFX** (min gas price: 1)
 - **PWR** (min gas price: 0.37)
 
-After the user selects, compose the gas price string from the selected token's
-`fixedMinGasPrice` and `denom` (the raw on-chain denom, NOT the symbol) as
-`<fixedMinGasPrice><denom>` (e.g., `1umfx`). Store this as `GAS_PRICE`.
+Store the user's choice as `GAS_TOKEN` (the symbol). The script handles the
+denom resolution and gas-price string composition; do NOT compose it inline.
 
 ## Step 4 — Check for existing agent
 
@@ -106,11 +105,11 @@ The key script pipes directly into write-config so the password never enters the
 conversation:
 
 ```bash
-NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-price GAS_PRICE
+NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
 ```
 
-Replace `CHOSEN_CHAIN` with the user's choice from Step 3 and `GAS_PRICE` with
-the composed gas price string from Step 3b (e.g., `1umfx`).
+Replace `CHOSEN_CHAIN` with the user's choice from Step 3 and `GAS_TOKEN`
+with the symbol they chose in Step 3b (e.g., `MFX`).
 
 Parse the JSON output from stdout to get `address` and `activeChain`.
 
@@ -134,11 +133,11 @@ Wait for the user to provide the file path before proceeding.
 Do NOT read the mnemonic file.
 
 Then run (replacing `MNEMONIC_FILE` with the user's file path, `CHOSEN_CHAIN`
-with the user's choice from Step 3, and `GAS_PRICE` with the gas price from
+with the user's choice from Step 3, and `GAS_TOKEN` with the symbol from
 Step 3b):
 
 ```bash
-cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-price GAS_PRICE
+cat MNEMONIC_FILE | NODE_PATH=$HOME/.manifest-agent/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
 ```
 
 Parse the JSON output from stdout to get `address` and `activeChain`.

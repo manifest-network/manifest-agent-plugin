@@ -173,10 +173,19 @@ mcp__manifest-chain__cosmos_estimate_fee({
 If the estimate fails, surface the error and ask whether to proceed
 without one — do not silently skip.
 
-Then ask:
+Compute the human-readable fee string with `humanize-fee.cjs` (do NOT
+inline the math):
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
+  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
+  --fee-json '<ESTIMATE.fee.amount as JSON>'
+```
+
+Capture the script's stdout as `FEE_HUMAN`. Then ask:
 
 > Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`)?
-> Estimated tx fee: `<human-readable fee>` (gas `<gasEstimate>`).
+> Estimated tx fee: `<FEE_HUMAN>` (gas `<gasEstimate>`).
 > Closing frees the credits this lease was reserving. (yes / no)
 
 If the user accepts, call

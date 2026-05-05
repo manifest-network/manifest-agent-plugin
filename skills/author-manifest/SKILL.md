@@ -146,13 +146,20 @@ The script prints `{ status, reasons, suggested_actions }`. Branch on `status`:
         args: ["<amount>"]   // same string you'll pass to fund_credit
       })
       ```
-      Surface the estimated `gasEstimate` + `fee.amount` and ask the user
-      to confirm: "Fund credits with `<amount>`? Estimated tx fee:
-      `<human-readable fee>` (gas `<gasEstimate>`). (yes / no)". On yes,
-      call `mcp__manifest-lease__fund_credit({ amount: <amount> })`
-      (gated by PreToolUse hook), then re-run Step 5. If the estimate
-      itself fails, surface the error and ask whether to proceed without
-      one — do not silently skip.
+      Compute the human-readable fee string with `humanize-fee.cjs` (do
+      NOT inline the math):
+      ```bash
+      node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
+        --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
+        --fee-json '<ESTIMATE.fee.amount as JSON>'
+      ```
+      Capture stdout as `FEE_HUMAN`, then ask the user to confirm: "Fund
+      credits with `<amount>`? Estimated tx fee: `<FEE_HUMAN>` (gas
+      `<gasEstimate>`). (yes / no)". On yes, call
+      `mcp__manifest-lease__fund_credit({ amount: <amount> })` (gated by
+      PreToolUse hook), then re-run Step 5. If the estimate itself fails,
+      surface the error and ask whether to proceed without one — do not
+      silently skip.
     - `request_faucet` → "Request testnet faucet funds" → call
       `mcp__manifest-chain__request_faucet`, then re-run Step 5.
       (No fee estimate — the faucet is a free testnet operation.)

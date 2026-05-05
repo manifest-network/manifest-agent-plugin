@@ -52,16 +52,11 @@ Use AskUserQuestion to ask what the user wants to change:
 
 ## Step 3 — Change gas fee token (if selected)
 
-Read the chain data file for the active chain:
-
-```bash
-cat ~/.manifest-agent/chains/ACTIVE_CHAIN.json
-```
-
-Replace `ACTIVE_CHAIN` with the `activeChain` value from Step 1.
-
-Parse the `feeTokens` array. Each token has `symbol`, `denom`, and
-`fixedMinGasPrice`.
+The Step 1 status output already includes the chain registry data under
+`chains.<activeChain>.feeTokens`. Read the `feeTokens` array from that
+field — each entry has `symbol`, `denom`, and `fixedMinGasPrice`. Do NOT
+`cat` the chain file directly; the status output is the single safe-fields
+source.
 
 Use AskUserQuestion to ask which token to use, showing the **symbol** and
 **min gas price** for each:
@@ -69,8 +64,9 @@ Use AskUserQuestion to ask which token to use, showing the **symbol** and
 - **MFX** (min gas price: 1)
 - **PWR** (min gas price: 0.37)
 
-Compose the gas price string from the selected token's `fixedMinGasPrice` and
-`denom` (the raw on-chain denom, NOT the symbol) as `<fixedMinGasPrice><denom>`.
+Store the user's choice as `GAS_TOKEN` (the symbol). The script handles
+denom resolution and gas-price string composition; do NOT compose it
+inline.
 
 ## Step 4 — Change gas multiplier (if selected)
 
@@ -83,21 +79,23 @@ Ask the user for the new gas multiplier value. Explain:
 
 ## Step 5 — Apply changes
 
-Build the update command with the appropriate flags:
-
+Pass whichever flags changed. If only the token changed:
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-price GAS_PRICE --gas-multiplier GAS_MULTIPLIER
-```
-
-Include only the flags that changed. For example, if only the token changed:
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-price 1umfx
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token GAS_TOKEN
 ```
 
 If only the multiplier changed:
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-multiplier 1.8
 ```
+
+Both at once:
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token GAS_TOKEN --gas-multiplier 1.8
+```
+
+Replace `GAS_TOKEN` with the symbol the user chose in Step 3 (e.g., `MFX`).
+Passing no flags is a usage error.
 
 Parse the JSON output to confirm the update.
 

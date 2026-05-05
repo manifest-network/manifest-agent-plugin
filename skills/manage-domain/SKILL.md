@@ -144,29 +144,44 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/dns-precheck.cjs" --domain "$FQDN"
 
 Skip this section if `ACTION === "lookup"`; jump to Step 7.
 
-Estimate the chain tx fee per the runtime policy:
+Build the `cosmos_estimate_fee` args[] array via
+`build-set-domain-args.cjs` (do NOT hand-construct the array — the script
+pins the shape across all set/clear/single/stack permutations):
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/build-set-domain-args.cjs" \
+  --lease-uuid "$LEASE_UUID" \
+  <set-mode: --fqdn "$FQDN" | clear-mode: --clear> \
+  <stacks-only: --service-name "$SERVICE_NAME">
+```
+
+The script's stdout is a JSON array. Pass it as the `args` field:
 
 ```
 mcp__manifest-chain__cosmos_estimate_fee({
   module: "billing",
   subcommand: "set-item-custom-domain",
-  args: [
-    "<LEASE_UUID>",
-    // For set: include the FQDN positional + optional --service-name:
-    "<FQDN>",                                    // omit for clear
-    // For stacks: append "--service-name", "<SERVICE_NAME>"
-    // For clear: append "--clear" (and omit FQDN positional)
-  ]
+  args: <stdout of build-set-domain-args.cjs>
 })
 ```
 
 If the estimate fails, surface the error and ask whether to proceed
 without one — do NOT silently skip.
 
-Then ask via `AskUserQuestion` (set):
+Compute the human-readable fee string with `humanize-fee.cjs` (do NOT
+inline the math):
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
+  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
+  --fee-json '<ESTIMATE.fee.amount as JSON>'
+```
+
+Capture the script's stdout as `FEE_HUMAN`. Then ask via
+`AskUserQuestion` (set):
 > Set custom domain `<FQDN>` on lease `<LEASE_UUID>` (service
 > `<SERVICE_NAME>` if set; "single-item lease" otherwise)?
-> Estimated tx fee: `<human-readable fee>` (gas `<gasEstimate>`).
+> Estimated tx fee: `<FEE_HUMAN>` (gas `<gasEstimate>`).
 > The chain validates format / reserved-suffix rules at broadcast time;
 > if it rejects, no funds beyond gas are spent.
 > (yes / no)
@@ -174,7 +189,7 @@ Then ask via `AskUserQuestion` (set):
 Or (clear):
 > Clear the custom domain currently on lease `<LEASE_UUID>` (service
 > `<SERVICE_NAME>` if applicable)?
-> Estimated tx fee: `<human-readable fee>` (gas `<gasEstimate>`).
+> Estimated tx fee: `<FEE_HUMAN>` (gas `<gasEstimate>`).
 > Clearing frees the reverse-lookup entry so the FQDN can be re-claimed.
 > (yes / no)
 

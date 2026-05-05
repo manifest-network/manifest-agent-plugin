@@ -432,58 +432,46 @@ reuse it.
 
 ## Confirm intent (between spec validation and readiness)
 
-Before you make any chain round-trips (readiness, fee estimate), write a
-plain-English **Intent recap** in 4–6 short paragraphs and ask the user to
-confirm. This is distinct from the structural `DeploymentPlan` rendered
-later: that one captures technical truth (gas, balances); this one
-captures *what you understood the user is trying to do*, so misinterpretations
-get caught before any chain calls.
+Before any chain round-trips (readiness, fee estimate), show the user a
+plain-English **Intent recap** so misinterpretations get caught before any
+broadcast. This is distinct from the structural `DeploymentPlan` rendered
+later: that one captures technical truth (gas, balances); this one captures
+*what you understood the user is trying to do*.
 
-Cover, in order:
+The recap has two parts:
 
-1. **What's being deployed** — service count, names, images. State both
-   what the user typed/passed and what you derived (e.g. "I parsed your
-   input as 2 services: `wordpress` (`docker.io/lifted/wordpress:6`) and
-   `mysql` (`docker.io/lifted/mysql:9`)").
-2. **Connectivity** — which ports are publicly reachable via the
-   provider's HTTPS subdomain (`ingress: true`) and which are internal
-   only. Use plain English ("publicly reachable" / "internal only"), not
-   the literal `ingress` boolean.
-3. **What you provided vs what was auto-detected** — distinguish
-   user-supplied env keys, labels, command overrides, etc. from defaults
-   you pulled from the image (cmd / entrypoint / user / workingDir /
-   tmpfs hints). The user should know what the agent inferred.
-4. **Sensitive values always redacted** — env vars: show **keys only**,
-   never values. Labels: show **keys only**, never values. The Fred
-   manifest schema doesn't constrain label values beyond `type: string`,
-   so they can in principle carry secrets — redact unconditionally, do
-   not try to guess which ones "look sensitive."
-5. **Heads-up: obvious gaps** — apply your knowledge of common app
-   patterns to flag things the user probably forgot. For example: a
-   wordpress service without `WORDPRESS_DB_HOST` / `WORDPRESS_DB_PASSWORD`
-   set won't connect to its DB; a postgres without `POSTGRES_PASSWORD`
-   won't start; a mysql without `MYSQL_ROOT_PASSWORD` won't start. Be
-   conservative — only flag cases you're confident about. If you're
-   unsure, say so or skip the heads-up.
-6. **Custom domain** (only when `SPEC.customDomain` is set) — show the
-   line `Custom domain: <fqdn> -> service <name>` (or
-   `-> single-service lease` when `SPEC.serviceName` is omitted). Then
-   add a **dual-tx clarification**:
-   > Note: when a custom domain is set, `deploy_app` broadcasts TWO
-   > billing transactions atomically: `create-lease` AND
-   > `set-item-custom-domain`. The single permission prompt that fires
-   > later covers BOTH; this textual recap is your per-tx review.
+**Part A — structural (rendered by script).** Materialize the SPEC to a
+tmpfile (use the `Write` tool, not heredoc — the spec can carry user-supplied
+env values), then run:
 
-   **And — only when `activeChain == "mainnet"` — append a second
-   sentence to the recap so the user explicitly approves the
-   irreversible FQDN reservation:**
-   > Mainnet warning: this transaction permanently associates `<fqdn>`
-   > with this lease on-chain until you `--clear` it via
-   > `/manifest-agent:manage-domain` or close the lease. FQDN squatting
-   > is irreversible.
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/render-intent-recap.cjs" \
+  --active-chain "<activeChain from Step 0>" \
+  < /tmp/.spec-XXX.json
+rm -f /tmp/.spec-XXX.json
+```
 
-   This appears in the recap (not Step 1's mainnet prompt) because
-   `SPEC.customDomain` doesn't exist until Step 2 finishes.
+The script's stdout IS the structural recap. Print it to the user verbatim.
+It covers: deploy surface (service count + images), connectivity (per-port
+publicly-reachable / internal-only), redacted-keys inventory (env keys and
+label keys per service, never values), and the custom-domain block (with
+dual-tx clarification + mainnet warning when applicable). Do NOT paraphrase
+it; the script pins the wording so adjacent runs cannot disagree.
+
+**Part B — LLM-judgment (you append in plain prose, after the script's
+output).** Two short sections:
+
+1. **What you provided vs auto-detected** — call out which fields the agent
+   pulled from the image inspector (cmd / entrypoint / user / workingDir /
+   tmpfs hints) versus what the user supplied. The user should know what
+   the agent inferred.
+2. **Heads-up: obvious gaps** — apply your knowledge of common app patterns
+   to flag things the user probably forgot. For example: a wordpress
+   service without `WORDPRESS_DB_HOST` / `WORDPRESS_DB_PASSWORD` set won't
+   connect to its DB; a postgres without `POSTGRES_PASSWORD` won't start;
+   a mysql without `MYSQL_ROOT_PASSWORD` won't start. Be conservative —
+   only flag cases you're confident about. If you're unsure, say so or
+   skip the heads-up.
 
 Then ask via `AskUserQuestion`:
 
@@ -582,14 +570,23 @@ representative existing lease the signer already owns.
    node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <int>
    ```
    Capture as `REP_UUID`.
-3. **If a representative lease exists**: call
+3. **If a representative lease exists**: build the args[] array via
+   `build-set-domain-args.cjs` (do NOT hand-construct the array — the
+   script pins the shape):
+
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/build-set-domain-args.cjs" \
+     --lease-uuid "$REP_UUID" \
+     --fqdn "$SPEC_CUSTOM_DOMAIN" \
+     <stacks-only: --service-name "$SPEC_SERVICE_NAME">
+   ```
+
+   Then estimate against the representative lease:
    ```
    mcp__manifest-chain__cosmos_estimate_fee({
      module: "billing",
      subcommand: "set-item-custom-domain",
-     args: ["<REP_UUID>", "<SPEC.customDomain>"
-            // for stacks add: , "--service-name", "<SPEC.serviceName>"
-           ]
+     args: <stdout of build-set-domain-args.cjs>
    })
    ```
    Capture as `SET_DOMAIN_ESTIMATE`. The fee is essentially fixed for
@@ -631,13 +628,21 @@ contains only env *keys*, never values — safe to keep inline for the next
 step.
 
 Convert `ESTIMATE.fee.amount` to a single human-readable string for the
-`--tx-fee` flag (e.g. for `[{"denom":"umfx","amount":"2300"}]` →
-`"0.0023 MFX"` — divide by 1e6 for `umfx` and label with the friendly
-denom name from the chain registry; for any denom you can't friendlify,
-fall back to `"<amount> <denom>"` like `"2300 umfx"`). For `--tx-gas`,
-pass `ESTIMATE.gasEstimate` verbatim. If `ESTIMATE` is null (the user
-proceeded without an estimate), omit both flags — the script will print
-a "(not estimated)" marker so the omission is visible.
+`--tx-fee` flag using the `humanize-fee.cjs` script (do NOT compute it
+inline — the script pins the format so adjacent fee prompts in the same
+flow can't disagree on rounding):
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
+  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
+  --fee-json '<ESTIMATE.fee.amount as JSON, e.g. [{"denom":"umfx","amount":"2300"}]>'
+```
+
+The script's stdout (e.g. `0.0023 MFX`) IS the value for `--tx-fee`.
+For `--tx-gas`, pass `ESTIMATE.gasEstimate` verbatim. If `ESTIMATE` is
+null (the user proceeded without an estimate), omit both flags — the
+plan renderer prints a "(not estimated)" marker so the omission is
+visible.
 
 Then render the canonical block. The summary + readiness JSON together
 contain no env values, so inline echo is acceptable here:
@@ -649,7 +654,7 @@ echo '{"summary": <summary JSON from above>, "readiness": <READINESS JSON>}' \
       --image "$IMAGE" \
       --size "$SIZE" \
       --tx-gas "<ESTIMATE.gasEstimate>" \
-      --tx-fee "<human-readable fee string>" \
+      --tx-fee "<output of humanize-fee.cjs above>" \
       --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json"
 ```
 
@@ -664,8 +669,8 @@ denoms which is harder to read.
   single-service)
 - `--set-domain-tx-gas "<SET_DOMAIN_ESTIMATE.gasEstimate>"` (when the
   second estimate succeeded)
-- `--set-domain-tx-fee "<human-readable set-domain fee>"` OR
-  `--set-domain-tx-fee skipped` (when approach-3 fallback fired)
+- `--set-domain-tx-fee "<output of humanize-fee.cjs on SET_DOMAIN_ESTIMATE.fee.amount>"`
+  OR `--set-domain-tx-fee skipped` (when approach-3 fallback fired)
 
 The script's stdout IS the plan. Print it to the user verbatim. Do not
 restate, reformat, or splice in additional fields — the script owns the
@@ -891,11 +896,19 @@ Via `AskUserQuestion`:
    timeout_seconds: 300 })`. On thrown error: surface and stop;
    troubleshoot-deployment can take it from here.
 3. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })` to
-   get the connection details (the provider FQDN, etc.). Synthesize a
-   `DEPLOY_RESPONSE`-shaped object: `{ lease_uuid: LEASE_UUID,
-   provider_uuid: <from app_status.chainState.providerUuid>,
-   state: <from app_status.chainState.state>, connection: <from
-   app_status.connection>, custom_domain?: <FQDN if retry succeeded> }`.
+   get the connection details (the provider FQDN, etc.). Synthesize the
+   `DEPLOY_RESPONSE`-shaped object that downstream classifiers consume,
+   via `synthesize-deploy-response.cjs` (do NOT hand-build it — the
+   shape is load-bearing for `format-success.cjs` and `save-manifest.cjs`):
+
+   ```bash
+   echo '<app_status JSON>' \
+     | node "$MANIFEST_PLUGIN_ROOT/scripts/synthesize-deploy-response.cjs" \
+         --lease-uuid "$LEASE_UUID" \
+         <FQDN-only-if-retry-succeeded: --custom-domain "<FQDN>">
+   ```
+
+   The script's stdout IS the `DEPLOY_RESPONSE`. Capture as `DEPLOY_RESPONSE`.
 4. Persist via `save-manifest.cjs` (with `--custom-domain` only when
    the retry succeeded) and print `format-success.cjs` output.
 
@@ -953,11 +966,21 @@ mcp__manifest-chain__cosmos_estimate_fee({
 If the estimate fails, surface the error and ask the user whether to
 proceed without one — do not silently skip.
 
-Then offer cleanup via `AskUserQuestion`. Include the image AND the
-estimated fee in the prompt so the user knows what they're paying:
+Compute the human-readable fee string with `humanize-fee.cjs` (do NOT
+inline the math):
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/humanize-fee.cjs" \
+  --chain-data-file "$HOME/.manifest-agent/chains/<activeChain>.json" \
+  --fee-json '<ESTIMATE.fee.amount as JSON>'
+```
+
+Capture the script's stdout as `FEE_HUMAN`. Then offer cleanup via
+`AskUserQuestion`. Include the image AND the estimated fee in the prompt
+so the user knows what they're paying:
 
 > Close the lease for image `<IMAGE>` (uuid `<LEASE_UUID>`)?
-> Estimated tx fee: `<human-readable fee>` (gas `<gasEstimate>`).
+> Estimated tx fee: `<FEE_HUMAN>` (gas `<gasEstimate>`).
 > Closing frees the credits this lease was reserving. (yes / no)
 
 If yes, call `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })`
