@@ -75,6 +75,7 @@ jobs:
               "mcp__manifest-fred__update_app",
               "mcp__manifest-lease__fund_credit",
               "mcp__manifest-lease__close_lease",
+              "mcp__manifest-lease__set_item_custom_domain",
             ]);
             const h = require("./hooks/hooks.json");
             const pre = (h.hooks && h.hooks.PreToolUse) || [];
@@ -93,7 +94,7 @@ jobs:
               console.error("PreToolUse matcher drift. missing:", missing, "extra:", extra);
               process.exit(1);
             }
-            console.log("PreToolUse matcher gates the 7 expected tools, all anchored");
+            console.log(`PreToolUse matcher gates the ${expected.size} expected tools, all anchored`);
           '
 
       - name: Verify session-start policy is emitted and references fee estimation

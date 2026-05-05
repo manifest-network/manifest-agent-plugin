@@ -57,12 +57,10 @@ If `activeChain == "mainnet"`, ask via `AskUserQuestion`:
 
 Options: **Yes** (proceed) / **No** (stop). If No, stop immediately.
 
-If the spec being deployed (or the inline collection in Step 2) sets a
-`customDomain` AND chain is mainnet, append a second sentence to the
-warning:
-> This transaction also permanently associates the FQDN with this lease
-> on-chain until you `--clear` it or close the lease. FQDN squatting is
-> irreversible.
+(The custom-domain mainnet warning — about FQDN reservations being
+permanent — fires later, in the **Confirm intent** step, because at this
+point in the flow the spec hasn't been loaded or built yet. By the time
+the recap runs, both the spec and the chosen FQDN are in hand.)
 
 ## Step 2 — Get the manifest spec
 
@@ -475,6 +473,17 @@ Cover, in order:
    > billing transactions atomically: `create-lease` AND
    > `set-item-custom-domain`. The single permission prompt that fires
    > later covers BOTH; this textual recap is your per-tx review.
+
+   **And — only when `activeChain == "mainnet"` — append a second
+   sentence to the recap so the user explicitly approves the
+   irreversible FQDN reservation:**
+   > Mainnet warning: this transaction permanently associates `<fqdn>`
+   > with this lease on-chain until you `--clear` it via
+   > `/manifest-agent:manage-domain` or close the lease. FQDN squatting
+   > is irreversible.
+
+   This appears in the recap (not Step 1's mainnet prompt) because
+   `SPEC.customDomain` doesn't exist until Step 2 finishes.
 
 Then ask via `AskUserQuestion`:
 

@@ -206,15 +206,20 @@ field:
   was sent but verification failed; suggest re-running this skill in
   ~30s to re-check.
 
-If the saved manifest wrapper at
-`~/.manifest-agent/manifests/<LEASE_UUID>.json` exists, refresh it via
-`scripts/save-manifest.cjs` so future `/manifest-agent:troubleshoot-deployment`
-runs surface the new state. Use `--custom-domain` for set (or omit it
-for clear). The wrapper write requires the original `--manifest-file`
-content; for that, fall back to leaving the wrapper untouched if it
-predates v3 (it'll get refreshed next deploy). It is acceptable for
-the wrapper's `custom_domain` field to be stale until the next
-re-deploy — the chain is the canonical source.
+**The saved manifest wrapper at
+`~/.manifest-agent/manifests/<LEASE_UUID>.json` is intentionally NOT
+refreshed here.** `save-manifest.cjs` requires `--manifest-file` with
+the canonical `manifest_json` bytes (so it can SHA-256-verify against
+`meta_hash_hex`), and this skill never has that payload — re-reading
+the existing wrapper would defeat the secrets-handling discipline that
+forbids surfacing `manifest_json` content. The wrapper's stored
+`custom_domain` may therefore be stale after a set/clear; that's a
+known limitation. Consumers needing the live value should query
+`mcp__manifest-lease__leases_by_tenant` (or
+`mcp__manifest-lease__lease_by_custom_domain`) — the chain is the
+canonical source for which FQDN currently belongs to which lease. The
+wrapper's `custom_domain` will refresh naturally on the next
+`/manifest-agent:deploy-app` run for that lease.
 
 ## Step 7 — Lookup (read-only)
 
