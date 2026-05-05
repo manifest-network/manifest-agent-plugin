@@ -60,8 +60,9 @@
  *       service not present in spec
  */
 
-const { readFileSync, writeFileSync, chmodSync, renameSync, unlinkSync } = require('node:fs');
-const { dirname, basename, isAbsolute } = require('node:path');
+const { readFileSync } = require('node:fs');
+const { isAbsolute } = require('node:path');
+const { atomicWrite } = require('./_io.cjs');
 
 // POSIX-compliant env-var name. deploy_app's downstream validator uses the
 // same regex; matching it here surfaces invalid keys before broadcast.
@@ -103,19 +104,6 @@ function parseDotenv(text) {
     out.set(key, value);
   }
   return out;
-}
-
-function atomicWrite(targetPath, contents) {
-  const dir = dirname(targetPath);
-  const tmp = `${dir}/.${basename(targetPath)}.${process.pid}.${Date.now()}.tmp`;
-  try {
-    writeFileSync(tmp, contents, { mode: 0o600 });
-    chmodSync(tmp, 0o600);
-    renameSync(tmp, targetPath);
-  } catch (err) {
-    try { unlinkSync(tmp); } catch { /* ignore */ }
-    throw err;
-  }
 }
 
 (async () => {

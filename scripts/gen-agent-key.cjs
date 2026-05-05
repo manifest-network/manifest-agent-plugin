@@ -10,11 +10,12 @@
  * All logs go to stderr so stdout stays machine-readable.
  */
 
-const { existsSync, mkdirSync, writeFileSync, chmodSync } = require('node:fs');
+const { mkdirSync, chmodSync } = require('node:fs');
 const { dirname, resolve, join } = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { homedir } = require('node:os');
 const { DirectSecp256k1HdWallet } = require('@cosmjs/proto-signing');
+const { atomicWrite } = require('./_io.cjs');
 
 function parseArgs(argv) {
   const args = { prefix: 'manifest', output: null };
@@ -45,8 +46,7 @@ function parseArgs(argv) {
   mkdirSync(keyDir, { recursive: true });
   chmodSync(keyDir, 0o700);
 
-  writeFileSync(keyfilePath, serialized);
-  chmodSync(keyfilePath, 0o600);
+  atomicWrite(keyfilePath, serialized);
 
   console.error(`Keyfile written to ${keyfilePath}`);
 

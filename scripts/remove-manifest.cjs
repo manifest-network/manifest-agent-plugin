@@ -17,12 +17,9 @@
 const { unlinkSync } = require('node:fs');
 const { join } = require('node:path');
 const { homedir } = require('node:os');
+const { UUID_RE } = require('./_uuid.cjs');
 
 const MANIFESTS_DIR = join(homedir(), '.manifest-agent', 'manifests');
-// Strict UUID pattern. Rejecting anything else prevents a `lease_uuid`
-// containing `..` or path separators from unlinking arbitrary files outside
-// MANIFESTS_DIR (e.g. ~/.manifest-agent/config.json).
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parseArgs(argv) {
   const args = {};

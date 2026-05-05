@@ -57,8 +57,8 @@
  */
 
 const { readFileSync } = require('node:fs');
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const { decode: decodeLeaseState } = require('./_lease-state.cjs');
+const { UUID_RE } = require('./_uuid.cjs');
 
 function parseArgs(argv) {
   const args = {};
@@ -121,23 +121,13 @@ function buildIngresses(connection) {
 }
 
 function decodeStateName(state) {
-  // Accept integer or "LEASE_STATE_*" string. Return the friendly form
-  // ("ACTIVE", "PENDING", etc.) — the LEASE_STATE_ prefix is stripped
-  // for the user-facing display. Unknown states render as
-  // "UNKNOWN(<raw>)" so the raw value remains visible.
-  const STATE_NAMES = {
-    0: 'UNSPECIFIED',
-    1: 'PENDING',
-    2: 'ACTIVE',
-    3: 'INSUFFICIENT_FUNDS',
-    4: 'CLOSED',
-  };
-  if (typeof state === 'string' && state.startsWith('LEASE_STATE_')) {
-    return state.slice('LEASE_STATE_'.length);
-  }
-  const n = Number(state);
-  if (Number.isInteger(n) && n in STATE_NAMES) return STATE_NAMES[n];
-  return state === undefined ? '(unknown)' : `UNKNOWN(${String(state)})`;
+  // Return the user-facing form ("ACTIVE", "PENDING", etc.) — the
+  // LEASE_STATE_ prefix is stripped for display. Unknown states render
+  // as "UNKNOWN(<raw>)" so the raw value remains visible.
+  if (state === undefined) return '(unknown)';
+  const canonical = decodeLeaseState(state);
+  if (canonical) return canonical.slice('LEASE_STATE_'.length);
+  return `UNKNOWN(${String(state)})`;
 }
 
 function findProviderName(catalog, providerUuid) {

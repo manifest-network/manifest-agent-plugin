@@ -61,10 +61,12 @@
  * a domain to attach it to).
  */
 
-const { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, renameSync, unlinkSync } = require('node:fs');
+const { existsSync, readFileSync, mkdirSync, chmodSync } = require('node:fs');
 const { createHash } = require('node:crypto');
-const { join, dirname, basename } = require('node:path');
+const { join } = require('node:path');
 const { homedir } = require('node:os');
+const { atomicWrite } = require('./_io.cjs');
+const { UUID_RE } = require('./_uuid.cjs');
 
 const AGENT_DIR = join(homedir(), '.manifest-agent');
 const MANIFESTS_DIR = join(AGENT_DIR, 'manifests');
@@ -72,11 +74,6 @@ const MANIFESTS_DIR = join(AGENT_DIR, 'manifests');
 // raw bytes; build_manifest_preview returns the hex form. Validating the
 // shape catches typos and the wrong field accidentally being passed.
 const META_HASH_RE = /^[0-9a-f]{64}$/i;
-// Strict UUID v1–v5 / unspecified-version pattern. Reject anything else so a
-// `lease_uuid` containing path separators or `..` cannot escape MANIFESTS_DIR
-// (which would let a malicious caller overwrite ~/.manifest-agent/config.json
-// or other agent state). Chain-issued UUIDs always match this pattern.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parseArgs(argv) {
   const args = {};
@@ -93,19 +90,6 @@ function parseArgs(argv) {
     else if (flag === '--custom-domain-service-name' && next) { args.customDomainServiceName = next; i++; }
   }
   return args;
-}
-
-function atomicWrite(targetPath, contents) {
-  const dir = dirname(targetPath);
-  const tmp = join(dir, `.${basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
-  try {
-    writeFileSync(tmp, contents, { mode: 0o600 });
-    chmodSync(tmp, 0o600);
-    renameSync(tmp, targetPath);
-  } catch (err) {
-    try { unlinkSync(tmp); } catch { /* ignore */ }
-    throw err;
-  }
 }
 
 (async () => {

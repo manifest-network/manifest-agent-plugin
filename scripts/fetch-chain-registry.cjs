@@ -16,9 +16,10 @@ if (major < 18) {
   process.exit(1);
 }
 
-const { mkdirSync, writeFileSync, chmodSync } = require('node:fs');
+const { mkdirSync, chmodSync } = require('node:fs');
 const { join } = require('node:path');
 const { homedir } = require('node:os');
+const { atomicWrite } = require('./_io.cjs');
 
 const REGISTRY_BASE = 'https://raw.githubusercontent.com/cosmos/chain-registry/master';
 const CHAINS = {
@@ -105,7 +106,7 @@ function extractChainData(chainRaw, assetList) {
       result[network] = data;
 
       const outPath = join(chainsDir, `${network}.json`);
-      writeFileSync(outPath, JSON.stringify(data, null, 2) + '\n');
+      atomicWrite(outPath, JSON.stringify(data, null, 2) + '\n');
       console.error(`  Wrote ${outPath}`);
     } catch (err) {
       console.error(`  Error fetching ${network}: ${err.message}`);
@@ -113,7 +114,7 @@ function extractChainData(chainRaw, assetList) {
   }
 
   const tsPath = join(dataDir, '.last-registry-fetch');
-  writeFileSync(tsPath, String(Math.floor(Date.now() / 1000)));
+  atomicWrite(tsPath, String(Math.floor(Date.now() / 1000)));
 
   console.log(JSON.stringify(result, null, 2));
 })().catch((err) => {

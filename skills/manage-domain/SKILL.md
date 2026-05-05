@@ -79,9 +79,8 @@ Branches in priority order, mirroring `troubleshoot-deployment` Step 1:
 
 1. **From `$ARGUMENTS`**: if `$ARGUMENTS` is a non-empty UUID-shaped
    string, use it directly. Validate against the strict UUID pattern
-   (8-4-4-4-12 lowercase hex with dashes — same regex used in
-   `scripts/save-manifest.cjs:60`); reject anything else with a clear
-   error.
+   (8-4-4-4-12 lowercase hex with dashes — the canonical regex lives in
+   `scripts/_uuid.cjs`); reject anything else with a clear error.
 2. **From `manifest://leases/active` MCP resource**: read the resource.
    If it returns one or more leases, present them via `AskUserQuestion`
    (lease UUID, image, current `customDomain` per item if known). Let

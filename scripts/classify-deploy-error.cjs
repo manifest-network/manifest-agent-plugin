@@ -45,11 +45,9 @@
  */
 
 const { readFileSync } = require('node:fs');
+const { UUID_PATTERN } = require('./_uuid.cjs');
 
 const PARTIAL_PREFIX = 'Deploy partially succeeded:';
-// Embedded UUID inside the partial-success message — fallback when the
-// envelope's structured `details.lease_uuid` is missing.
-const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 function parseArgs(argv) {
   const args = {};
@@ -101,7 +99,7 @@ function pickEnvelope(raw) {
   if (message.startsWith(PARTIAL_PREFIX)) {
     let leaseUuid = typeof details.lease_uuid === 'string' ? details.lease_uuid : null;
     if (!leaseUuid) {
-      const m = message.match(UUID_RE);
+      const m = message.match(UUID_PATTERN);
       if (m) leaseUuid = m[0];
     }
     const out = {

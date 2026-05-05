@@ -16,9 +16,10 @@
  * The password is NOT included in stdout.
  */
 
-const { existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync } = require('node:fs');
+const { existsSync, mkdirSync, chmodSync } = require('node:fs');
 const { join } = require('node:path');
 const { homedir } = require('node:os');
+const { atomicWrite, readJsonFile } = require('./_io.cjs');
 
 const AGENT_DIR = join(homedir(), '.manifest-agent');
 const CONFIG_PATH = join(AGENT_DIR, 'config.json');
@@ -46,7 +47,7 @@ function readStdin() {
 function readChainFile(network) {
   const p = join(CHAINS_DIR, `${network}.json`);
   if (!existsSync(p)) return null;
-  return JSON.parse(readFileSync(p, 'utf8'));
+  return readJsonFile(p);
 }
 
 (async () => {
@@ -112,8 +113,7 @@ function readChainFile(network) {
   // Write config.json
   mkdirSync(AGENT_DIR, { recursive: true });
   chmodSync(AGENT_DIR, 0o700);
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
-  chmodSync(CONFIG_PATH, 0o600);
+  atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
 
   console.error(`Config written to ${CONFIG_PATH}`);
   console.error(`Agent address: ${address}`);

@@ -34,21 +34,7 @@
  */
 
 const { readFileSync } = require('node:fs');
-
-const STATE_NAMES = {
-  0: 'LEASE_STATE_UNSPECIFIED',
-  1: 'LEASE_STATE_PENDING',
-  2: 'LEASE_STATE_ACTIVE',
-  3: 'LEASE_STATE_INSUFFICIENT_FUNDS',
-  4: 'LEASE_STATE_CLOSED',
-};
-
-function decodeState(s) {
-  if (typeof s === 'string' && s.startsWith('LEASE_STATE_')) return s;
-  const n = Number(s);
-  if (Number.isInteger(n) && n in STATE_NAMES) return STATE_NAMES[n];
-  return undefined;
-}
+const { decode: decodeState } = require('./_lease-state.cjs');
 
 function buildUrls(connection) {
   // Mirror the dual-shape walk in scripts/format-success.cjs:buildIngresses

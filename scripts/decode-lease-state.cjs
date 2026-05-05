@@ -32,17 +32,7 @@
  *   --json:   `{"name":"LEASE_STATE_…","terminal":bool}` on a single line.
  */
 
-const STATES = {
-  0: 'LEASE_STATE_UNSPECIFIED',
-  1: 'LEASE_STATE_PENDING',
-  2: 'LEASE_STATE_ACTIVE',
-  3: 'LEASE_STATE_INSUFFICIENT_FUNDS',
-  4: 'LEASE_STATE_CLOSED',
-};
-const TERMINAL_STATES = new Set([
-  'LEASE_STATE_INSUFFICIENT_FUNDS',
-  'LEASE_STATE_CLOSED',
-]);
+const { decode, isTerminal } = require('./_lease-state.cjs');
 
 function parseArgs(argv) {
   const args = {};
@@ -53,13 +43,6 @@ function parseArgs(argv) {
   return args;
 }
 
-function decode(state) {
-  if (typeof state === 'string' && state.startsWith('LEASE_STATE_')) return state;
-  const n = Number(state);
-  if (Number.isInteger(n) && n in STATES) return STATES[n];
-  return 'UNKNOWN';
-}
-
 (async () => {
   const args = parseArgs(process.argv);
   if (args.state === undefined) {
@@ -67,9 +50,9 @@ function decode(state) {
     process.exit(1);
   }
 
-  const name = decode(args.state);
+  const name = decode(args.state) || 'UNKNOWN';
   if (args.json) {
-    console.log(JSON.stringify({ name, terminal: TERMINAL_STATES.has(name) }));
+    console.log(JSON.stringify({ name, terminal: isTerminal(name) }));
   } else {
     console.log(name);
   }

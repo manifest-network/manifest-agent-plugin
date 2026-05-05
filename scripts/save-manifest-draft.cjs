@@ -34,9 +34,10 @@
  * a user-edited spec. Use a different --path or remove the existing file.
  */
 
-const { existsSync, mkdirSync, chmodSync, writeFileSync, renameSync, unlinkSync } = require('node:fs');
-const { join, dirname, basename, isAbsolute } = require('node:path');
+const { existsSync, mkdirSync, chmodSync } = require('node:fs');
+const { join, isAbsolute } = require('node:path');
 const { homedir } = require('node:os');
+const { atomicWrite } = require('./_io.cjs');
 
 const AGENT_DIR = join(homedir(), '.manifest-agent');
 const DRAFTS_DIR = join(AGENT_DIR, 'manifests-drafts');
@@ -78,19 +79,6 @@ function autoName(spec) {
   }
   const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '').replace(/Z$/, '');
   return `${stem}-${ts}.json`;
-}
-
-function atomicWrite(targetPath, contents) {
-  const dir = dirname(targetPath);
-  const tmp = join(dir, `.${basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
-  try {
-    writeFileSync(tmp, contents, { mode: 0o600 });
-    chmodSync(tmp, 0o600); // belt-and-suspenders for runtimes that ignore the mode option
-    renameSync(tmp, targetPath);
-  } catch (err) {
-    try { unlinkSync(tmp); } catch { /* ignore */ }
-    throw err;
-  }
 }
 
 (async () => {

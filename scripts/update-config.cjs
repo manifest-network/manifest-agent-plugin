@@ -18,9 +18,10 @@
  * The key password is NEVER output.
  */
 
-const { existsSync, readFileSync, writeFileSync, chmodSync } = require('node:fs');
+const { existsSync } = require('node:fs');
 const { join } = require('node:path');
 const { homedir } = require('node:os');
+const { atomicWrite, readJsonFile } = require('./_io.cjs');
 
 const AGENT_DIR = join(homedir(), '.manifest-agent');
 const CONFIG_PATH = join(AGENT_DIR, 'config.json');
@@ -41,7 +42,7 @@ function parseArgs(argv) {
 function readChainFile(network) {
   const p = join(CHAINS_DIR, `${network}.json`);
   if (!existsSync(p)) return null;
-  return JSON.parse(readFileSync(p, 'utf8'));
+  return readJsonFile(p);
 }
 
 (async () => {
@@ -65,9 +66,9 @@ function readChainFile(network) {
 
   let config;
   try {
-    config = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+    config = readJsonFile(CONFIG_PATH);
   } catch (err) {
-    console.error(`Failed to parse ${CONFIG_PATH}: ${err.message}`);
+    console.error(err.message);
     process.exit(1);
   }
 
@@ -120,8 +121,7 @@ function readChainFile(network) {
   }
 
   // Write config back (preserves agent section with password untouched)
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
-  chmodSync(CONFIG_PATH, 0o600);
+  atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
 
   console.error(`Config updated at ${CONFIG_PATH}`);
 

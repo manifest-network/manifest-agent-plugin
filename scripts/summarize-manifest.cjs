@@ -24,9 +24,9 @@
 const { existsSync, readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { homedir } = require('node:os');
+const { UUID_RE } = require('./_uuid.cjs');
 
 const MANIFESTS_DIR = join(homedir(), '.manifest-agent', 'manifests');
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parseArgs(argv) {
   const args = {};
