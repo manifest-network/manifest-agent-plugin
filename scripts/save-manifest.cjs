@@ -154,6 +154,11 @@ function parseArgs(argv) {
     && !Array.isArray(manifestObj.services);
   const format = isStack ? 'stack' : 'single';
 
+  // chmod AGENT_DIR explicitly so a pre-existing parent (e.g. an older
+  // ${CLAUDE_PLUGIN_DATA} mode set by a previous tool) gets tightened to
+  // 0700. recursive mkdir won't chmod existing dirs.
+  mkdirSync(AGENT_DIR, { recursive: true, mode: 0o700 });
+  chmodSync(AGENT_DIR, 0o700);
   mkdirSync(MANIFESTS_DIR, { recursive: true, mode: 0o700 });
   chmodSync(MANIFESTS_DIR, 0o700);
 

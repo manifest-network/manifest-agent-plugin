@@ -21,8 +21,10 @@ The orchestrator must have these in scope before loading this file:
 - `IMAGE`, `IMAGE_INFO`, `SVC_INFO`, `SIZE`, `SPEC` — collected during
   the authoring loop. `IMAGE_INFO` / `SVC_INFO` are the JSON payload
   from `inspect-image.cjs` (or `{}` on inspection failure).
-- `process_pid` — `$$` from bash; used in the `/tmp/.spec-env-${pid}.json`
-  staging path during the env-merge phase.
+- `PROCESS_PID` — `$$` from bash, captured into a shell variable; used
+  to disambiguate the `/tmp/.spec-env-PROCESS_PID.json` staging path
+  during the env-merge phase. Treat this as an agent placeholder, not a
+  literal bash interpolation.
 - Per-service env-file paths — collected interactively during per-service
   authoring (the `From a file` option of the env-input flow); consumed by
   the `Merge any file-sourced env` section.
@@ -264,33 +266,103 @@ the user wants a reusable saved spec; here we just author + deploy in one
 shot.
 
 1. Use `AskUserQuestion` for shape: **Single-service** or **Multi-service stack**.
+   Store as `SHAPE`.
 2. Use `AskUserQuestion` for SKU size, populated from
-   `mcp__manifest-fred__browse_catalog`.
-3. Ask for the image reference. Then immediately inspect it to verify
+   `mcp__manifest-fred__browse_catalog`. Store as `SIZE`.
+
+### 3a. Single-service authoring (`SHAPE === "single"`)
+
+Skip to section 3b for stacks.
+
+1. Ask for the image reference. Then immediately inspect it to verify
    reachability and to auto-detect ports / cmd / suggested tmpfs:
    ```bash
    node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
    ```
-   Same fail-soft handling as the image fast-path above.
-4. Collect remaining fields per the same rules as `author-manifest`
-   Step 6a (single-service) or 6b (stack):
-   - Ports + ingress per port (with web-port default for single-service).
-   - Skip cmd / args / user (image defaults).
-   - tmpfs from `suggestedTmpfs`.
-   - **env** — three-option flow (file / chat / skip), same as the
-     multi-image fast-path env step above. Sensitive values via file is
-     the recommended path for secrets.
-   - labels, health_check (only if image has none), storage, init — ask
-     normally.
-5. **Custom domain (optional)** — after all collection and before the
-   final SPEC is built: `AskUserQuestion` "Attach a custom domain (FQDN)
-   to this lease? (Yes / Skip)". On Yes: ask FQDN → validate via
-   `validate-domain.cjs` → for stacks pick service via `AskUserQuestion`
-   over `Object.keys(SPEC.services)`; for single, no picker. Add
-   `customDomain` (and `serviceName` for stacks) at the top level of the
-   spec.
-6. Build the `SPEC` object using the **services-map shape** with explicit
-   `ports: { "<p>/<proto>": { ingress: <bool> } }` entries.
+   Capture as `IMAGE_INFO`. Same fail-soft handling as the
+   `single_image` fast-path above (empty `{}` → ask user about
+   everything; non-empty → drive prompts from the inspection output).
+2. **Ports + ingress** — driven by `IMAGE_INFO.ports`:
+   - 1 port detected: use it (don't ask).
+   - >1 detected: multi-select.
+   - 0 / no inspection: ask user to type each port-protocol pair.
+   For each chosen port: if it's the only port AND number is one of
+   `{80, 443, 8080, 8443}`, confirm with `["Yes (Recommended)",
+   "No (internal only)"]`. Otherwise ask explicitly per port; no
+   default.
+3. **Skip cmd / args / user / workingDir** — image defaults apply.
+4. **tmpfs**: `IMAGE_INFO.suggestedTmpfs` non-empty → `AskUserQuestion`
+   `["Yes (Recommended)", "No", "Customize"]`; otherwise ask "Need any
+   tmpfs mounts? (Yes / Skip)".
+5. **env**: three-option flow (file / chat / skip), same as the
+   single_image fast-path env step above. Sensitive values via file is
+   recommended. The single-service shape uses service name `app` —
+   pass `--service-name app` to `merge-env.cjs` later.
+6. **labels**, **health_check** (only if image declares none),
+   **storage** (top-level), **init** — ask normally.
+
+Build the in-memory `SPEC` using the services-map shape with
+`services: { "app": { image, ports, env?, ... } }`.
+
+### 3b. Multi-service stack authoring (`SHAPE === "stack"`)
+
+Skip this section if `SHAPE === "single"` (you ran 3a above).
+
+1. Ask via `AskUserQuestion` for **service count** (typical: 2-5).
+   Loop the per-service collection below `count` times.
+2. **Per service** (do not auto-suffix; ask the user for everything):
+   - **Service name** — must be RFC 1123 DNS label (1-63 chars, lowercase
+     alphanumeric + hyphens, no leading/trailing hyphens). The MCP server
+     validates on `build_manifest_preview`; if rejected, surface and re-ask.
+   - **Image reference** — ask, then immediately inspect:
+     ```bash
+     node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
+     ```
+     Capture as `SVC_INFO`. Empty `{}` → ask user about everything;
+     non-empty → drive prompts from `SVC_INFO`.
+   - **Ports**: from `SVC_INFO.ports` with the same 1 / >1 / 0 rules as
+     3a step 2. **Ingress per port**: in stacks, always ask explicitly
+     per port — no port-number heuristic (the agent doesn't know which
+     service is the public tier).
+   - **env**: three-option flow (file / chat / skip). For files, store
+     the path with the service name; merging happens in the "Merge any
+     file-sourced env" section below.
+   - **labels**, **tmpfs** (from `SVC_INFO.suggestedTmpfs`),
+     **health_check** (only if image declares none), **stop_grace_period**,
+     **expose**, **depends_on** (per-service) — ask as needed.
+   - **Skip cmd / args / user** — image defaults apply.
+3. After all services collected, ask top-level **storage** and
+   **depends_on** (cross-service order, e.g. `web depends_on db`).
+
+Build the in-memory `SPEC` using the services-map shape with one entry
+per service in the same order the user collected them.
+
+### 4. Custom domain (optional, both shapes)
+
+After services have been collected and their names are in memory (single:
+`["app"]`; stack: the names you asked for in 3b), ask via
+`AskUserQuestion`:
+> Attach a custom domain (FQDN) to this lease? (Yes / Skip)
+
+On **Yes**:
+1. Ask for the FQDN. Validate client-side:
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/validate-domain.cjs" --domain "<fqdn>"
+   ```
+   Re-ask on `valid: false`.
+2. **For stacks**: pick the service via `AskUserQuestion` populated from
+   the service names you collected in 3b (NOT from `SPEC.services` — the
+   final SPEC may not be assembled yet at this point).
+   **For single-service**: no picker; the implicit target is `app`.
+3. Add `customDomain: <fqdn>` (and `serviceName: <picked>` for stacks) at
+   the top level of the SPEC.
+
+### 5. Final SPEC assembly
+
+Build the SPEC object using the services-map shape with explicit
+`ports: { "<p>/<proto>": { ingress: <bool> } }` entries, plus any
+top-level `customDomain` / `serviceName` / `storage` / `depends_on`
+collected above.
 
 Do NOT call `save-manifest-draft.cjs` in the image fast-path or
 interactive modes — the spec lives only in memory; the post-deploy
@@ -307,7 +379,7 @@ Otherwise, materialize the in-memory SPEC, merge each env file via the
 script (no values in chat), then re-load the merged spec:
 
 1. Use the `Write` tool to materialize SPEC at
-   `/tmp/.spec-env-${process_pid}.json`. The Write tool input shows the
+   `/tmp/.spec-env-PROCESS_PID.json`. The Write tool input shows the
    spec content (image, ports, chat-typed env if any, etc.); file-sourced
    values are NOT in this Write yet.
 2. For each `(service-name, env-file-path)` pair the user provided
@@ -315,16 +387,16 @@ script (no values in chat), then re-load the merged spec:
    empty modes each ask for env via the file / chat / skip flow), run:
    ```bash
    cat "<env-file-path>" | node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" \
-     --spec-file "/tmp/.spec-env-${process_pid}.json" \
+     --spec-file "/tmp/.spec-env-PROCESS_PID.json" \
      --service-name "<service-name>"
    ```
    Report the script's `keys_merged` to the user (keys only — no values
    appear). On any error: surface verbatim, `rm -f` the tempfile, stop.
-3. Use the `Read` tool to load `/tmp/.spec-env-${process_pid}.json` back
+3. Use the `Read` tool to load `/tmp/.spec-env-PROCESS_PID.json` back
    into your context as the new SPEC. The Read result will contain the
    merged env values — they enter your context here, but they have not
    transited the chat input or any agent prose.
-4. `rm -f /tmp/.spec-env-${process_pid}.json` once the spec is loaded.
+4. `rm -f /tmp/.spec-env-PROCESS_PID.json` once the spec is loaded.
 5. Suggest the user delete each env file after a successful deploy (e.g.
    `rm /tmp/wordpress.env`); they have served their purpose.
 

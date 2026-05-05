@@ -24,11 +24,16 @@
  *     error_summary?: string           // present only when outcome=failed
  *   }
  *
- * "active": state is LEASE_STATE_ACTIVE AND at least one running instance
- *           with an FQDN (modern subdomain-routing shape). The
- *           orchestrator can skip wait_for_app_ready.
- * "needs_wait": lease created but not yet active OR connection details missing.
- *               Orchestrator should call wait_for_app_ready as a fallback.
+ * "active": state is LEASE_STATE_ACTIVE AND at least one running instance.
+ *           Internal-only deploys (every port has ingress=false) have running
+ *           instances but no FQDN, so the URL count alone can't gate this —
+ *           we additionally check `connection` for any `status: "running"`
+ *           instance regardless of FQDN. The orchestrator can skip
+ *           wait_for_app_ready in either case.
+ * "needs_wait": lease created but not yet active OR no running instances yet
+ *               (provider hasn't started the container, or connection details
+ *               missing). Orchestrator should call wait_for_app_ready as a
+ *               fallback.
  * "failed": no lease_uuid present, OR state is a terminal failure state
  *           (LEASE_STATE_CLOSED or LEASE_STATE_INSUFFICIENT_FUNDS).
  *           Orchestrator routes to the troubleshoot/cleanup branch.
@@ -36,7 +41,7 @@
 
 const { readFileSync } = require('node:fs');
 const { decode: decodeState } = require('./_lease-state.cjs');
-const { extractRunningEndpoints, formatEndpointAsUrl } = require('./_connection.cjs');
+const { extractRunningEndpoints, formatEndpointAsUrl, hasRunningInstances } = require('./_connection.cjs');
 
 function buildUrls(connection) {
   // Returns full https:// URLs for every running instance. See
@@ -74,12 +79,12 @@ function buildUrls(connection) {
   let outcome;
   if (!lease_uuid) {
     outcome = 'failed';
-  } else if (stateName === 'LEASE_STATE_ACTIVE' && urls.length > 0) {
+  } else if (stateName === 'LEASE_STATE_ACTIVE' && (urls.length > 0 || hasRunningInstances(r.connection))) {
     outcome = 'active';
   } else if (stateName === 'LEASE_STATE_CLOSED' || stateName === 'LEASE_STATE_INSUFFICIENT_FUNDS') {
     outcome = 'failed';
   } else {
-    // Pending, unspecified, active-without-running-instance, etc.
+    // Pending, unspecified, active-without-any-running-instance, etc.
     outcome = 'needs_wait';
   }
 

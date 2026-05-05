@@ -116,6 +116,13 @@ function asBigInt(s) {
       console.error(`--gas-warn-floor must be a non-negative integer, got "${args.gasWarnFloor}"`);
       process.exit(1);
     }
+    // BigInt("-1") parses successfully as -1n, so the catch above doesn't
+    // reject negatives. A negative floor would silently suppress the
+    // low-gas warning logic; reject explicitly.
+    if (gasWarnFloor < 0n) {
+      console.error(`--gas-warn-floor must be a non-negative integer, got "${args.gasWarnFloor}"`);
+      process.exit(1);
+    }
   } else {
     gasWarnFloor = GAS_BALANCE_WARN_FLOOR_DEFAULTS[gasDenom] ?? GAS_BALANCE_WARN_FLOOR_FALLBACK;
   }

@@ -2,13 +2,18 @@
 'use strict';
 
 /**
- * Remove a saved manifest at $MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json.
+ * Remove the saved manifest wrapper for an explicitly closed lease
+ * ($MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json).
  *
- * Called after a successful close_lease (by /deploy-app failure branch and
- * troubleshoot-deployment) so the manifests dir tracks active leases.
+ * Called after a successful close_lease by deploy-app's failure branch
+ * and by troubleshoot-deployment. NOT called for naturally-expired
+ * leases — those keep their wrapper as a historical record. The
+ * manifests dir is therefore "leases the agent has explicit reason to
+ * track", not "currently active leases".
  *
- * No-op + zero-exit if the file does not exist (close_lease may be called for
- * a lease the agent never deployed itself, or the file may already be gone).
+ * No-op + zero-exit if the file does not exist (close_lease may target a
+ * lease the agent never deployed itself, or a previous removal already
+ * cleared the file).
  *
  * Usage:
  *   node remove-manifest.cjs --lease-uuid <uuid>

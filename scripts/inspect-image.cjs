@@ -244,7 +244,14 @@ async function fetchManifest(registry, name, ref, authHeader) {
   if (authHeader) headers.Authorization = authHeader;
   const res = await httpsJson(host, path, headers);
   if (res.status === 401 || res.status === 403) throw new Error(`registry returned ${res.status} on manifest fetch (auth required? private registry?)`);
-  if (res.status === 404) throw new Error(`image not found: ${registry}/${name}:${ref}`);
+  if (res.status === 404) {
+    // Digest-pinned references use `@sha256:...` rather than `:tag`. ref
+    // already starts with "sha256:" in that case, so naive concatenation
+    // produces a misleading `registry/name:sha256:...` instead of
+    // `registry/name@sha256:...`. Pick the right separator.
+    const sep = ref.startsWith('sha256:') ? '@' : ':';
+    throw new Error(`image not found: ${registry}/${name}${sep}${ref}`);
+  }
   if (res.status !== 200) throw new Error(`registry returned ${res.status} on manifest fetch`);
   let parsed;
   try { parsed = JSON.parse(res.body); } catch { throw new Error('manifest is not valid JSON'); }

@@ -82,4 +82,22 @@ function formatEndpointAsUrl(ep) {
   return null;
 }
 
-module.exports = { extractRunningEndpoints, formatEndpointAsIngress, formatEndpointAsUrl };
+// Walk the connection payload and return true if any instance has
+// `status: "running"`, regardless of whether it has an FQDN. Used by
+// classify-deploy-response.cjs to recognize internal-only deploys
+// (services whose ports are all `ingress: false`) as `active` rather
+// than misclassifying them as `needs_wait` because they have no public
+// URLs to surface.
+function hasRunningInstances(connection) {
+  if (!connection || typeof connection !== 'object') return false;
+  const runs = (instances) => Array.isArray(instances) && instances.some((i) => i && i.status === 'running');
+  if (runs(connection.instances)) return true;
+  if (connection.services && typeof connection.services === 'object') {
+    for (const svc of Object.values(connection.services)) {
+      if (svc && typeof svc === 'object' && runs(svc.instances)) return true;
+    }
+  }
+  return false;
+}
+
+module.exports = { extractRunningEndpoints, formatEndpointAsIngress, formatEndpointAsUrl, hasRunningInstances };

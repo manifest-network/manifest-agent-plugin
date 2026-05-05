@@ -398,7 +398,9 @@ Pipe the spec through stdin via a file (NOT a bash `echo` of the inline JSON
 into the chat transcript as a literal command):
 
 1. Use the `Write` tool to materialize the SPEC JSON at a tempfile path,
-   e.g. `/tmp/.spec-${process_pid}-${timestamp}.json`. The Write tool
+   e.g. `/tmp/.spec-PROCESS_PID-TIMESTAMP.json` (uppercase placeholders —
+   substitute the agent's bash `$$` and `$(date +%s)` respectively, do not
+   leave them as literals). The Write tool
    renders the content as a structured tool call (one render, no shell
    echo).
 2. Pipe the file to the helper via stdin redirection. For the default
@@ -463,12 +465,22 @@ Custom domain:   <fqdn> -> service <name>      (only when set in Step 6)
 
 To deploy:       /manifest-agent:deploy-app <SAVED_PATH>
 
-The file is plain JSON — feel free to edit it by hand or check it into your
-repo. Re-running this skill (or `build_manifest_preview` directly) on a
-hand-edited spec is the safest way to validate changes before deploying.
+The file is plain JSON — feel free to edit it by hand. Re-running this
+skill (or `build_manifest_preview` directly) on a hand-edited spec is the
+safest way to validate changes before deploying.
 ```
 
 Omit the `Custom domain:` line if no domain was set in Step 6.
+
+**Version control caveat — only safe when no env files were merged.** If
+the user picked "From a file" for env in Step 5 (single-service or
+per-service in stacks), the saved spec at `<SAVED_PATH>` now contains
+those merged env *values* (DB passwords, API tokens, etc.) verbatim.
+Tell the user explicitly: "this spec contains the env values you merged
+from `<file paths>` — do NOT commit it to a public repository or share
+it without redacting those values first." When no env files were merged
+(everything was typed in chat or skipped), the spec is safe to
+version-control as-is.
 
 The image registry will be checked by the provider at deploy-time. If it's
 rejected, `deploy_app` will fail with a clear error.

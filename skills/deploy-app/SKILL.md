@@ -270,7 +270,8 @@ file (NOT inline `echo` — the spec can carry user-supplied env values that
 would be re-rendered into chat as a literal bash command):
 
 1. Use the `Write` tool to materialize the SPEC JSON at
-   `/tmp/.spec-${process_pid}.json`.
+   `/tmp/.spec-PROCESS_PID.json` (uppercase placeholder — substitute the
+   agent's bash `$$` here, do not leave it as a literal).
 2. Run:
 
    ```bash
@@ -400,7 +401,15 @@ Branch on `outcome`:
   On thrown error → Step 11. On success, call
   `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })` and merge its
   `connection` into the response. Re-run `classify-deploy-response.cjs` on
-  the merged response. Then continue to Step 10.
+  the merged response and **re-branch on the new outcome** (do not assume
+  the wait succeeded — the lease may have transitioned to a terminal
+  failure state during the poll, or never picked up a running instance):
+  - new outcome `active` → proceed to Step 10.
+  - new outcome `failed` → Step 11.
+  - new outcome `needs_wait` again (rare — provider still pending after
+    300s) → treat as failure: route to Step 11 with a clear "ready timeout"
+    message in `error_summary` so the user can decide whether to retry or
+    cleanup.
 - **`failed`** → Step 11.
 
 ## Step 10 — Persist + success output
@@ -419,22 +428,25 @@ a third on-screen rendering of the secret-bearing payload.
    is unique per broadcast — no collision with concurrent sessions).
 2. Use `Write` with `file_path` set to that path and `content` set to
    `MANIFEST_JSON`.
-3. Run the persistence + cleanup:
+3. Run the persistence with a `trap` so the tmpfile (which carries
+   `MANIFEST_JSON`'s possibly-sensitive env values) is removed even if
+   `save-manifest.cjs` fails:
 
 ```bash
+TMPFILE="/tmp/.manifest-${LEASE_UUID}.json"
+trap 'rm -f "$TMPFILE"' EXIT
 node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest.cjs" \
   --lease-uuid "$LEASE_UUID" \
   --image "$IMAGE" \
   --size "$SIZE" \
   --meta-hash "$META_HASH" \
   --chain-id "$CHAIN_ID" \
-  --manifest-file "/tmp/.manifest-${LEASE_UUID}.json"
+  --manifest-file "$TMPFILE"
 # When the deploy_app response carried a custom_domain (set-domain tx
 # confirmed), pass it through to the wrapper so troubleshoot-deployment
 # can surface it later. Add --custom-domain-service-name only for stacks.
 #   --custom-domain "<DEPLOY_RESPONSE.custom_domain>" \
 #   --custom-domain-service-name "<DEPLOY_RESPONSE.service_name>"   # stacks only
-rm -f "/tmp/.manifest-${LEASE_UUID}.json"
 ```
 
 (`CHAIN_ID` comes from `chains.<activeChain>.chainId` in the config status

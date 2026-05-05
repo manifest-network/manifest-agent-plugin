@@ -152,7 +152,7 @@ judgment is appropriate here — these signals don't map deterministically):
 | Repeated container restarts, OOM-like errors in logs | The SKU is too small. Use `mcp__manifest-fred__update_app` with a larger SKU manifest, or close the lease and redeploy with a bigger SKU. |
 | `chainState.state` decodes to `LEASE_STATE_CLOSED` or `LEASE_STATE_INSUFFICIENT_FUNDS` | The lease is already gone. No action needed; the saved manifest record can be removed manually if you want a clean slate. |
 | `connectionError` / `providerError` populated but lease is `LEASE_STATE_ACTIVE` | Provider transient issue. Try `app_status` again in 30s. Persistent errors → consider `restart_app`. |
-| Persistent failure with no recovery path | Offer `mcp__manifest-lease__close_lease` (see Step 6 — gated by PreToolUse hook). |
+| Persistent failure with no recovery path | Offer `mcp__manifest-lease__close_lease({ lease_uuid: LEASE_UUID })` (see Step 6 — gated by PreToolUse hook). |
 
 ## Step 6 — Offer close_lease cleanup
 
