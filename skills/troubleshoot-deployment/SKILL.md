@@ -43,8 +43,10 @@ Branches in priority order:
    skill on failure, it will have passed `LEASE_UUID` in context. Use it.
 3. **From `manifest://leases/active` MCP resource**: read the resource. If
    it returns one or more leases, present them via `AskUserQuestion` (show
-   lease UUID, image, size, created-at when available). Let the user pick
-   one.
+   lease UUID, image, size, created-at, and `items[].customDomain` when
+   non-empty). Let the user pick one. **Add a "Lookup by custom domain"
+   option** to the same `AskUserQuestion` so the user can pivot to FQDN
+   lookup if they don't recognize the leases shown.
 4. **Fallback to saved manifests**: if the resource is empty or unavailable,
    list saved post-deploy records:
 
@@ -52,10 +54,19 @@ Branches in priority order:
    node "$MANIFEST_PLUGIN_ROOT/scripts/list-saved-manifests.cjs"
    ```
 
-   The script prints a JSON array of `{ lease_uuid, image, size, deployed_at_iso, chain_id, format?, meta_hash_hex? }`
-   (the last two only on schema-v2 wrappers) — never `manifest_json`. Present
-   via `AskUserQuestion`.
-5. **Last resort**: tell the user no leases found; ask them to paste a UUID.
+   The script prints a JSON array of `{ lease_uuid, image, size, deployed_at_iso, chain_id, format?, meta_hash_hex?, schema_version?, custom_domain?, custom_domain_service_name? }` —
+   never `manifest_json`. Surface the `custom_domain` in the picker labels
+   when present so the user can disambiguate. Same as branch 3, include a
+   "Lookup by custom domain" option in the picker.
+5. **Lookup by custom domain**: when the user picks this option from
+   either branch 3 or 4 (or as a top-level option when no leases exist),
+   ask for the FQDN, then call:
+   ```
+   mcp__manifest-lease__lease_by_custom_domain({ custom_domain: "<fqdn>" })
+   ```
+   Use the returned `lease.uuid` as `LEASE_UUID`. If the lookup returns no
+   lease (FQDN not claimed), surface that and fall back to options 4/6.
+6. **Last resort**: tell the user no leases found; ask them to paste a UUID.
    If they don't have one, stop.
 
 Store the chosen UUID as `LEASE_UUID`.
