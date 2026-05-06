@@ -84,7 +84,7 @@ known-needed tmpfs paths so we don't ask the user about things the image
 already declares:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<IMAGE>"
+NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<IMAGE>"
 ```
 
 The script prints a JSON object on stdout. Capture it as `IMAGE_INFO`.
@@ -262,7 +262,7 @@ Required per service:
 - **`image`** — same format hint as Step 4. Then immediately inspect the
   image:
   ```bash
-  node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
+  NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
   ```
   Capture the result as `SVC_INFO`. Same fail-soft semantics as Step 3
   (empty `{}` → ask user about everything; non-empty → use to drive the

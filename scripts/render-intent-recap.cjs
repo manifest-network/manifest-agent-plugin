@@ -132,8 +132,10 @@ function renderRedactedInventory(services) {
     }
   }
   if (!anything) {
-    // Single-line variant when nothing is set across any service.
-    return 'No env values or labels supplied (no redaction needed).';
+    // Empty case: keep the section header so the redaction discipline is
+    // visible to the user (and to any reader of the chat transcript).
+    // The trailing line documents that nothing needed redacting on this run.
+    lines.push('  - (no env or labels supplied across any service — nothing to redact)');
   }
   return lines.join('\n');
 }

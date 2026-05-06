@@ -174,9 +174,16 @@ fi
 if [ -n "${CLAUDE_PLUGIN_DATA:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/package.json" ]; then
   if ! diff -q "${CLAUDE_PLUGIN_ROOT}/package.json" "${CLAUDE_PLUGIN_DATA}/package.json" >/dev/null 2>&1; then
     cp "${CLAUDE_PLUGIN_ROOT}/package.json" "${CLAUDE_PLUGIN_DATA}/package.json"
-    if ! (cd "${CLAUDE_PLUGIN_DATA}" && npm install --omit=dev --silent >/dev/null 2>&1); then
+    INSTALL_LOG="${CLAUDE_PLUGIN_DATA}/.last-install.log"
+    # Capture stderr+stdout to a log file so failures are diagnosable
+    # ("EACCES on cache dir", "ECONNRESET fetching tarball", etc.) instead
+    # of just a generic "failed". --silent still suppresses progress noise
+    # in the captured log; only errors and warnings show up.
+    if (cd "${CLAUDE_PLUGIN_DATA}" && npm install --omit=dev --silent) >"${INSTALL_LOG}" 2>&1; then
+      rm -f "${INSTALL_LOG}"
+    else
       rm -f "${CLAUDE_PLUGIN_DATA}/package.json"
-      printf 'manifest-agent: npm install failed; will retry next session\n' >&2
+      printf 'manifest-agent: npm install failed; see %s for details. Will retry next session.\n' "${INSTALL_LOG}" >&2
     fi
   fi
 fi

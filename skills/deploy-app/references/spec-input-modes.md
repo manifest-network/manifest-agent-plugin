@@ -102,7 +102,7 @@ exposed at the deploy_app surface.)
 
 1. Set `IMAGE = <token>` and call:
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
+   NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
    ```
    Capture as `SVC_INFO`. Same fail-soft semantics as the single-service
    fast-path.
@@ -186,7 +186,7 @@ image first** to verify it's reachable and to auto-detect ports / cmd /
 tmpfs hints:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
+NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
 ```
 
 Capture the JSON result as `IMAGE_INFO`. If empty `{}` (inspection
@@ -277,7 +277,7 @@ Skip to section 3b for stacks.
 1. Ask for the image reference. Then immediately inspect it to verify
    reachability and to auto-detect ports / cmd / suggested tmpfs:
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
+   NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
    ```
    Capture as `IMAGE_INFO`. Same fail-soft handling as the
    `single_image` fast-path above (empty `{}` → ask user about
@@ -316,7 +316,7 @@ Skip this section if `SHAPE === "single"` (you ran 3a above).
      validates on `build_manifest_preview`; if rejected, surface and re-ask.
    - **Image reference** — ask, then immediately inspect:
      ```bash
-     node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
+     NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
      ```
      Capture as `SVC_INFO`. Empty `{}` → ask user about everything;
      non-empty → drive prompts from `SVC_INFO`.
