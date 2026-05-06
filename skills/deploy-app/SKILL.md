@@ -157,19 +157,28 @@ dual-tx clarification + mainnet warning when applicable). Do NOT paraphrase
 it; the script pins the wording so adjacent runs cannot disagree.
 
 **Part B — LLM-judgment (you append in plain prose, after the script's
-output).** Two short sections:
+output).** Up to two short sections, each with hard "skip when empty"
+rules. **Never print a header you can't immediately follow with at least
+one concrete bullet** — an empty header before the AskUserQuestion is a
+UI bug.
 
-1. **What you provided vs auto-detected** — call out which fields the agent
-   pulled from the image inspector (cmd / entrypoint / user / workingDir /
-   tmpfs hints) versus what the user supplied. The user should know what
-   the agent inferred.
-2. **Heads-up: obvious gaps** — apply your knowledge of common app patterns
-   to flag things the user probably forgot. For example: a wordpress
-   service without `WORDPRESS_DB_HOST` / `WORDPRESS_DB_PASSWORD` set won't
-   connect to its DB; a postgres without `POSTGRES_PASSWORD` won't start;
-   a mysql without `MYSQL_ROOT_PASSWORD` won't start. Be conservative —
-   only flag cases you're confident about. If you're unsure, say so or
-   skip the heads-up.
+1. **What you provided vs auto-detected** — call out which fields the
+   agent pulled from the image inspector (cmd / entrypoint / user /
+   workingDir / tmpfs hints) versus what the user supplied. The user
+   should know what the agent inferred. Always print this section when
+   `IMAGE_INFO` was non-empty (i.e. inspect-image returned data); skip
+   it entirely (no header) when `IMAGE_INFO` is `{}` from a failed
+   inspection — there's nothing to call out.
+2. **Heads-up: obvious gaps** — apply your knowledge of common app
+   patterns to flag things the user probably forgot. For example: a
+   wordpress service without `WORDPRESS_DB_HOST` /
+   `WORDPRESS_DB_PASSWORD` set won't connect to its DB; a postgres
+   without `POSTGRES_PASSWORD` won't start; a mysql without
+   `MYSQL_ROOT_PASSWORD` won't start. Be conservative — only flag cases
+   you're confident about. **If you have zero concrete gaps to flag,
+   OMIT the entire section — do not print the "Heads-up: obvious gaps"
+   header.** A bare header followed immediately by the AskUserQuestion
+   confuses the user into thinking content was truncated.
 
 Then ask via `AskUserQuestion`:
 
