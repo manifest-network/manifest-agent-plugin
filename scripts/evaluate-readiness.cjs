@@ -179,13 +179,26 @@ function asBigInt(s) {
   // active leases — which would falsely flag a well-funded user about to
   // deploy their first app. Compute the per-SKU answer ourselves from the
   // credit balance + sku.price.
-  if (!r.credits) {
+  //
+  // Source-of-truth for credit balances: `r.credits.available_balances` (net
+  // of pending-lease reservations). `r.current_balance` is OPTIONAL on the
+  // readiness response — only populated when the tenant has an active burn
+  // rate. For a fresh deployer with credits but no active leases the field
+  // is absent, so reading it as the credit source produces a false
+  // "Credit account is empty" warning. Fall back to `current_balance` only
+  // when `available_balances` is missing (defensive against schema drift).
+  const creditObj = r.credits;
+  if (!creditObj) {
     if (status === 'ok') status = 'warn';
     reasons.push('No credit account funded for compute leases.');
     actions.add('fund_credit');
   } else if (r.sku && r.sku.price && r.sku.price.amount && r.sku.price.denom) {
     const skuPrice = r.sku.price;
-    const creditBalances = Array.isArray(r.current_balance) ? r.current_balance : [];
+    const creditBalances = Array.isArray(creditObj.available_balances)
+      ? creditObj.available_balances
+      : (Array.isArray(creditObj.balances)
+        ? creditObj.balances
+        : (Array.isArray(r.current_balance) ? r.current_balance : []));
     const creditEntry = creditBalances.find((b) => b && b.denom === skuPrice.denom);
     const pricePerHour = asBigInt(skuPrice.amount);
     if (creditEntry === undefined) {
