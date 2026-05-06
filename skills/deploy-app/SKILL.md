@@ -157,28 +157,35 @@ dual-tx clarification + mainnet warning when applicable). Do NOT paraphrase
 it; the script pins the wording so adjacent runs cannot disagree.
 
 **Part B — LLM-judgment (you append in plain prose, after the script's
-output).** Up to two short sections, each with hard "skip when empty"
-rules. **Never print a header you can't immediately follow with at least
-one concrete bullet** — an empty header before the AskUserQuestion is a
-UI bug.
+output).** Up to two short sections.
+
+**Output discipline — read this BEFORE writing Part B:**
+- **Each bullet must be a single, complete sentence ending in a period.**
+  Do not start a bullet you can't finish in one sentence.
+- **Hard cap: 3 bullets per section, each ≤ 25 words.** Long explanations
+  belong in chat *after* the user responds to the AskUserQuestion, not
+  before it. Brevity here matters because the AskUserQuestion fires
+  immediately after Part B, and a half-written bullet looks truncated.
+- **Never print a header you can't immediately follow with at least one
+  complete bullet.** Empty headers look like the output got cut off.
+- **Verify every bullet ends with `.` before you call AskUserQuestion.**
+  If the model's draft ends mid-sentence ("…the MCP server has"), rewrite
+  to end mid-thought-but-complete ("…the MCP server uses stdio.") or drop
+  that bullet entirely.
 
 1. **What you provided vs auto-detected** — call out which fields the
    agent pulled from the image inspector (cmd / entrypoint / user /
-   workingDir / tmpfs hints) versus what the user supplied. The user
-   should know what the agent inferred. Always print this section when
-   `IMAGE_INFO` was non-empty (i.e. inspect-image returned data); skip
-   it entirely (no header) when `IMAGE_INFO` is `{}` from a failed
-   inspection — there's nothing to call out.
+   workingDir / tmpfs hints) versus what the user supplied. Always print
+   this section when `IMAGE_INFO` was non-empty (i.e. inspect-image
+   returned data); skip it entirely (no header) when `IMAGE_INFO` is
+   `{}` from a failed inspection.
 2. **Heads-up: obvious gaps** — apply your knowledge of common app
-   patterns to flag things the user probably forgot. For example: a
-   wordpress service without `WORDPRESS_DB_HOST` /
-   `WORDPRESS_DB_PASSWORD` set won't connect to its DB; a postgres
-   without `POSTGRES_PASSWORD` won't start; a mysql without
-   `MYSQL_ROOT_PASSWORD` won't start. Be conservative — only flag cases
-   you're confident about. **If you have zero concrete gaps to flag,
-   OMIT the entire section — do not print the "Heads-up: obvious gaps"
-   header.** A bare header followed immediately by the AskUserQuestion
-   confuses the user into thinking content was truncated.
+   patterns to flag things the user probably forgot. Examples:
+   `WORDPRESS_DB_HOST` missing on a wordpress service; `POSTGRES_PASSWORD`
+   missing on postgres; an MCP server image whose default `CB_MCP_TRANSPORT`
+   is `stdio` won't serve over HTTP without an override. Be conservative
+   — only flag cases you're confident about. **If you have zero concrete
+   gaps to flag, OMIT the entire section — do not print the header.**
 
 Then ask via `AskUserQuestion`:
 
