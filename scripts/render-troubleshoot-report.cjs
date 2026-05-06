@@ -60,10 +60,13 @@ function renderDiagnosticsSection(d) {
 
   const le = d.last_error;
   if (typeof le === 'string' && le.length > 0) {
+    // Code fence at column 0 per CommonMark; an indented fence (>=4 spaces)
+    // is rendered as an indented-code-block, and the >3 spaces that the
+    // previous "  ``` " form used was unreliable across renderers.
     lines.push('- last_error:');
-    lines.push('  ```');
-    for (const lineText of le.split(/\r?\n/)) lines.push(`  ${lineText}`);
-    lines.push('  ```');
+    lines.push('```');
+    for (const lineText of le.split(/\r?\n/)) lines.push(lineText);
+    lines.push('```');
   } else {
     lines.push('- last_error: (none reported)');
   }

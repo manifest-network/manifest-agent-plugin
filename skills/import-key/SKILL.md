@@ -1,5 +1,4 @@
 ---
-name: import-key
 description: >
   Import an existing mnemonic phrase into the Manifest agent config.
   The mnemonic flows through scripts via stdin and never enters the
@@ -61,7 +60,7 @@ with the `activeChain` from Step 0, and `CURRENT_GAS_PRICE` with the
 `gasPrice` from Step 0):
 
 ```bash
-cat MNEMONIC_FILE | NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain ACTIVE_CHAIN --gas-price CURRENT_GAS_PRICE
+cat MNEMONIC_FILE | node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain ACTIVE_CHAIN --gas-price CURRENT_GAS_PRICE
 ```
 
 The mnemonic flows through the pipe (file → import-key → write-config).

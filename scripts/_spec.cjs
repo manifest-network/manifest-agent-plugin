@@ -9,10 +9,14 @@
  *   - **legacy single-service** (still accepted by build_manifest_preview):
  *     `{ image, port, env?, ... }`
  *
- * The shape branch lives here so render-intent-recap, summarize-spec,
- * and the deploy-app orchestrator (via extract-primary-image.cjs) all
- * agree on how to detect and walk the two forms. Without this module the
- * isStack check used to be inlined four times — easy place for drift.
+ * The shape branch lives here so all consumers agree on how to detect
+ * and walk the two forms. Current consumers:
+ *   - render-intent-recap.cjs (normalizeServices)
+ *   - summarize-spec.cjs (isStack, normalizeServices)
+ *   - extract-primary-image.cjs (firstImage) — used by deploy-app orchestrator
+ *   - save-manifest-draft.cjs (firstImage)
+ *   - merge-env.cjs (isStack)
+ * Without this module the isStack check was inlined 5 places.
  *
  * Underscore prefix marks this as a sibling-only helper. Skills MUST NOT
  * shell out to it; consume `extract-primary-image.cjs` instead.

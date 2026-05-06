@@ -1,5 +1,4 @@
 ---
-name: manage-domain
 description: >
   Set, clear, or look up the custom domain (FQDN) attached to a Manifest
   lease item. Use after a lease exists when the user wants to attach a
@@ -197,7 +196,9 @@ Then `Read` `references/billing-tx-confirm.md` (plugin-root shared
 reference; same file is loaded by troubleshoot-deployment Step 6 and
 deploy-app's post-failure cleanup) and follow Steps 1–4 (estimate,
 humanize, textual confirm, broadcast). The PreToolUse hook will prompt
-— that's expected.
+— that's expected. Step 5a (close-lease verify) doesn't apply here;
+the custom-domain verify (Step 5b in the reference) is handled inline
+below.
 
 **Verify on-chain state after the tx returns** — a successful broadcast
 does not guarantee the chain item now holds (or no longer holds) the

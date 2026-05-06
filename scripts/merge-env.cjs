@@ -64,22 +64,25 @@ const { readFileSync } = require('node:fs');
 const { isAbsolute, resolve, sep } = require('node:path');
 const { tmpdir } = require('node:os');
 const { atomicWrite, getDataDir } = require('./_io.cjs');
+const { isStack } = require('./_spec.cjs');
 
-// merge-env.cjs writes the spec back at mode 0o600 because env values
-// flowing through it can be sensitive (DB passwords, API tokens). For
-// files OUTSIDE the agent's drafts dir or the system tmpdir — e.g. a
-// version-controlled spec at ~/code/myapp/manifest.json — silently
-// downgrading the file mode would be a footgun. Refuse the merge instead;
-// the user can copy the spec into the drafts dir or /tmp first if they
-// really want to merge secrets in.
-const ALLOWED_DIRS = [
-  resolve(getDataDir(), 'manifests-drafts') + sep,
-  resolve(tmpdir()) + sep,
-];
+function buildAllowedDirs() {
+  // merge-env.cjs writes the spec back at mode 0o600 because env values
+  // flowing through it can be sensitive (DB passwords, API tokens). For
+  // files OUTSIDE the agent's drafts dir or the system tmpdir — e.g. a
+  // version-controlled spec at ~/code/myapp/manifest.json — silently
+  // downgrading the file mode would be a footgun. Refuse the merge instead;
+  // the user can copy the spec into the drafts dir or /tmp first if they
+  // really want to merge secrets in.
+  return [
+    resolve(getDataDir(), 'manifests-drafts') + sep,
+    resolve(tmpdir()) + sep,
+  ];
+}
 
-function isAllowedSpecPath(p) {
+function isAllowedSpecPath(p, allowedDirs) {
   const r = resolve(p);
-  return ALLOWED_DIRS.some((d) => r.startsWith(d));
+  return allowedDirs.some((d) => r.startsWith(d));
 }
 
 // POSIX-compliant env-var name. deploy_app's downstream validator uses the
@@ -140,7 +143,11 @@ function parseDotenv(text) {
     console.error(`--spec-file must be absolute; got "${args.specFile}"`);
     process.exit(1);
   }
-  if (!isAllowedSpecPath(args.specFile)) {
+  // buildAllowedDirs() calls getDataDir() which throws when MANIFEST_PLUGIN_DATA
+  // is unset; calling it here (inside the IIFE) routes through the .catch
+  // handler so the user sees the helper's friendly error.
+  const allowedDirs = buildAllowedDirs();
+  if (!isAllowedSpecPath(args.specFile, allowedDirs)) {
     console.error(
       `--spec-file must live under $MANIFEST_PLUGIN_DATA/manifests-drafts/ or the system tmpdir; got "${args.specFile}". ` +
       `Refusing to merge env values into an external file because the merge writes mode 0o600, ` +
@@ -178,12 +185,12 @@ function parseDotenv(text) {
     process.exit(1);
   }
 
-  // Two spec shapes:
-  //   - services-map: { services: { <name>: { env, ... } }, ... }
-  //   - legacy flat:  { image, env, ... }   (single-service, no services map)
+  // Two spec shapes (services-map vs legacy flat) — branch via _spec.isStack
+  // so this script and render-intent-recap / summarize-spec / extract-primary-image
+  // all agree on the detection.
   let target;
   let serviceLabel;
-  if (spec.services && typeof spec.services === 'object' && !Array.isArray(spec.services)) {
+  if (isStack(spec)) {
     if (!args.serviceName) {
       console.error('spec is services-map shape; --service-name is required');
       process.exit(1);

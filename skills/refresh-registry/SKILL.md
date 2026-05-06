@@ -1,5 +1,4 @@
 ---
-name: refresh-registry
 description: >
   Re-fetch chain registry data (RPC endpoints, gas prices, chain
   parameters) from the Cosmos chain registry. User-invoked only — not

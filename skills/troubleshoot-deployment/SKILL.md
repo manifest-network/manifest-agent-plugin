@@ -1,5 +1,4 @@
 ---
-name: troubleshoot-deployment
 description: >
   Diagnose a deployed Manifest lease that isn't behaving. Use when a
   /manifest-agent:deploy-app run shows the app unhealthy, when an
@@ -176,32 +175,5 @@ post-failure cleanup) and follow Steps 1–4 (the estimate, fee
 humanization, textual confirm, and broadcast). The PreToolUse hook will
 prompt — that's expected.
 
-**Verify on-chain state after the tx returns** — a successful broadcast
-does not guarantee the lease actually transitioned to a terminal state.
-Confirm explicitly:
-
-1. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
-2. Decode `chainState.state` via the JSON mode (which exposes a
-   `terminal` flag — both `LEASE_STATE_CLOSED` and
-   `LEASE_STATE_INSUFFICIENT_FUNDS` count as terminal because the chain
-   may transition through INSUFFICIENT_FUNDS on a successful close-lease
-   before settling on CLOSED):
-   ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int> --json
-   ```
-3. Branch on `terminal`:
-   - **`terminal: true`** → cleanup. Run:
-     ```bash
-     node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
-     ```
-     (no-op if the saved manifest record is already gone). Tell the user
-     "Lease is terminal on-chain (`<decoded-name>`). Removed local saved
-     manifest record."
-   - **`terminal: false`** (still `LEASE_STATE_ACTIVE`, `LEASE_STATE_PENDING`,
-     etc.) → tell the user: "close_lease tx accepted but lease state is
-     still `<decoded-name>`; chain may need a moment to settle. Re-run
-     `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` in ~30s to
-     recheck. Local saved manifest record NOT removed yet."
-   - If `app_status` itself errors out: surface the error and tell the
-     user the tx was sent but verification failed. Do NOT remove the
-     local manifest record.
+After the broadcast returns, follow Step 5a (close-lease verify) of the
+same reference for the on-chain confirmation + saved-manifest cleanup.

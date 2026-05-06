@@ -31,11 +31,13 @@ const { readdirSync, readFileSync, statSync } = require('node:fs');
 const { join, basename } = require('node:path');
 const { getDataDir } = require('./_io.cjs');
 
-const MANIFESTS_DIR = join(getDataDir(), 'manifests');
-
 const SAFE_FIELDS = ['lease_uuid', 'image', 'size', 'deployed_at_iso', 'chain_id', 'format', 'meta_hash_hex', 'schema_version', 'custom_domain', 'custom_domain_service_name'];
 
 (async () => {
+  // getDataDir() lookup belongs inside the IIFE so a missing
+  // MANIFEST_PLUGIN_DATA produces the helper's friendly error via the
+  // .catch handler below, not a raw uncaught-exception trace.
+  const MANIFESTS_DIR = join(getDataDir(), 'manifests');
   let entries;
   try {
     entries = readdirSync(MANIFESTS_DIR);

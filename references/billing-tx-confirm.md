@@ -107,18 +107,52 @@ fire — that is expected. The textual confirmation in step 3 is the
 primary gate per runtime policy; the permission prompt is a safety net,
 not a substitute.
 
-### 5. Verify on-chain (call-site-specific — NOT covered here)
+### 5. Verify on-chain
 
 A successful broadcast doesn't guarantee state actually transitioned.
-The call site MUST verify:
+The call site MUST verify before any downstream cleanup. Two shapes
+follow.
 
-- close-lease consumers: re-query `app_status`, decode `chainState.state`
-  via `decode-lease-state.cjs --json`, branch on `terminal`.
-- set/clear custom domain: re-query `leases_by_tenant`, run
-  `extract-lease-items.cjs`, check the matching item's `customDomain`
-  against the expected value.
+#### 5a — Close-lease verify (close-lease consumers)
 
-If verification doesn't match, tell the user the tx was sent but
-verification failed, and suggest re-running the skill in ~30s. Do NOT
-proceed with downstream cleanup (`remove-manifest.cjs`, etc.) until
-verification confirms.
+Used by both close-lease call sites
+(troubleshoot-deployment Step 6, deploy-app's
+troubleshoot-after-deploy-failure.md cleanup). Both walk the same
+sequence — pinning it here keeps them in sync.
+
+1. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
+2. Decode `chainState.state` via the JSON mode (which exposes a
+   `terminal` flag — both `LEASE_STATE_CLOSED` and
+   `LEASE_STATE_INSUFFICIENT_FUNDS` count as terminal because the chain
+   may transition through INSUFFICIENT_FUNDS on a successful close-lease
+   before settling on CLOSED):
+   ```bash
+   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int> --json
+   ```
+3. Branch on `terminal`:
+   - **`terminal: true`** → cleanup. Run:
+     ```bash
+     node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
+     ```
+     (no-op if the saved manifest record is already gone). Tell the user
+     "Lease is terminal on-chain (`<decoded-name>`). Removed local saved
+     manifest record."
+   - **`terminal: false`** (still `LEASE_STATE_ACTIVE`, `LEASE_STATE_PENDING`,
+     etc.) → tell the user: "close_lease tx accepted but lease state is
+     still `<decoded-name>`; chain may need a moment to settle. Re-run
+     `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` in ~30s to
+     recheck. Local saved manifest record NOT removed yet."
+   - If `app_status` itself errors out: surface the error and tell the
+     user the tx was sent but verification failed. Do NOT remove the
+     local manifest record.
+
+#### 5b — Custom-domain verify (set/clear consumers)
+
+Used by manage-domain Step 6. Goes through `verify-domain-state.cjs`
+which wraps `extract-lease-items.cjs` and the equality check; the
+call site supplies `--expected` (`"$FQDN"` for set, `""` for clear)
+and branches on `outcome` (`match` / `mismatch` / `not_found`).
+This step is call-site-specific because the verify primitive
+(`leases_by_tenant` + customDomain compare) differs from the
+close-lease primitive above. See manage-domain Step 6 for the
+canonical caller.

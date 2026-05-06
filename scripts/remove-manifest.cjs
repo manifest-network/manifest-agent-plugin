@@ -24,8 +24,6 @@ const { join } = require('node:path');
 const { getDataDir } = require('./_io.cjs');
 const { UUID_RE } = require('./_uuid.cjs');
 
-const MANIFESTS_DIR = join(getDataDir(), 'manifests');
-
 function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
@@ -46,7 +44,10 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
-  const manifestPath = join(MANIFESTS_DIR, `${args.leaseUuid}.json`);
+  // getDataDir() inside the IIFE so a missing MANIFEST_PLUGIN_DATA produces
+  // the helper's friendly error via the .catch handler, not a raw stack.
+  const manifestsDir = join(getDataDir(), 'manifests');
+  const manifestPath = join(manifestsDir, `${args.leaseUuid}.json`);
   // unlinkSync directly rather than existsSync + unlinkSync — eliminates the
   // TOCTOU window where the file could disappear between the two calls.
   // ENOENT is the documented "file already gone" case and maps to no-op.

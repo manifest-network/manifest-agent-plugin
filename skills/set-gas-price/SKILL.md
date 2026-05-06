@@ -1,5 +1,4 @@
 ---
-name: set-gas-price
 description: >
   Change the default gas fee token, price, and/or gas multiplier used by
   the Manifest MCP servers. Shows available fee tokens from the chain

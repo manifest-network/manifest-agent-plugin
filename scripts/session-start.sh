@@ -165,6 +165,12 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   # metacharacters round-trip correctly when CLAUDE_ENV_FILE is sourced.
   printf 'export MANIFEST_PLUGIN_ROOT=%q\n' "${CLAUDE_PLUGIN_ROOT}" >> "$CLAUDE_ENV_FILE"
   printf 'export MANIFEST_PLUGIN_DATA=%q\n' "${CLAUDE_PLUGIN_DATA}" >> "$CLAUDE_ENV_FILE"
+  # NODE_PATH is purely additive (Node consults it as a fallback after the
+  # node_modules walk-up), so exporting it session-wide is safe — the only
+  # `node` invocations in this plugin's bash scope are the plugin's own
+  # scripts, which need exactly this resolution path. Hoisting kills the
+  # 9-site duplication that was previously prefixed onto each invocation.
+  printf 'export NODE_PATH=%q\n' "${CLAUDE_PLUGIN_DATA}/node_modules" >> "$CLAUDE_ENV_FILE"
 fi
 
 # Bootstrap deps when package.json differs (or on first run). Pattern from

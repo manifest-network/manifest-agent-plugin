@@ -1,5 +1,4 @@
 ---
-name: deploy-app
 description: >
   Deploy a containerized app to the Manifest blockchain end-to-end.
   Use when the user wants to ship a container image to a Fred provider
@@ -115,7 +114,7 @@ the intent recap, and the manifest summary all agree on which image is
 that mustn't echo through chat), then:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/extract-primary-image.cjs" < /tmp/.spec-XXX.json
+node "$MANIFEST_PLUGIN_ROOT/scripts/extract-primary-image.cjs" < /tmp/.spec-PROCESS_PID.json
 ```
 
 The script's stdout IS `IMAGE`. For multi-service stacks the provider
@@ -146,8 +145,8 @@ env values), then run:
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/render-intent-recap.cjs" \
   --active-chain "<activeChain from Step 0>" \
-  < /tmp/.spec-XXX.json
-rm -f /tmp/.spec-XXX.json
+  < /tmp/.spec-PROCESS_PID.json
+rm -f /tmp/.spec-PROCESS_PID.json
 ```
 
 The script's stdout IS the structural recap. Print it to the user verbatim.
@@ -275,8 +274,8 @@ would be re-rendered into chat as a literal bash command):
 2. Run:
 
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-spec.cjs" < /tmp/.spec-XXX.json
-   rm -f /tmp/.spec-XXX.json
+   node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-spec.cjs" < /tmp/.spec-PROCESS_PID.json
+   rm -f /tmp/.spec-PROCESS_PID.json
    ```
 
 The summary output (`{ format, service_count, port_count, env_count, env_keys, images }`)

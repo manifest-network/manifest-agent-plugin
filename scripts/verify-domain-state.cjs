@@ -84,6 +84,13 @@ function parseArgs(argv) {
     input: stdinRaw,
     encoding: 'utf8',
   });
+  // Distinguish launch failure (status: null, error populated) from script
+  // exit failure (status: non-zero, stderr populated). Conflating them hides
+  // the real cause when the path resolution or process spawn itself broke.
+  if (proc.error) {
+    console.error(`failed to launch extract-lease-items.cjs: ${proc.error.message}`);
+    process.exit(1);
+  }
   if (proc.status !== 0) {
     console.error(proc.stderr || 'extract-lease-items.cjs failed');
     process.exit(1);

@@ -1,5 +1,4 @@
 ---
-name: init-agent
 description: >
   Set up the Manifest agent's chain configuration and keypair. Run this once
   after installing the plugin (or to re-key); it picks a chain, generates or
@@ -99,7 +98,7 @@ The key script pipes directly into write-config so the password never enters the
 conversation:
 
 ```bash
-NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
 ```
 
 Replace `CHOSEN_CHAIN` with the user's choice from Step 2 and `GAS_TOKEN`
@@ -131,7 +130,7 @@ Wait for the user to provide the path. Then run (substitute `MNEMONIC_FILE`,
 `CHOSEN_CHAIN` from Step 2, `GAS_TOKEN` from Step 3):
 
 ```bash
-cat MNEMONIC_FILE | NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+cat MNEMONIC_FILE | node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
 ```
 
 Parse the JSON output to get `address` and `activeChain`. Suggest the

@@ -1,5 +1,4 @@
 ---
-name: author-manifest
 description: >
   Build and validate a Fred container deployment spec interactively
   (single-service or multi-service stack), saving a JSON spec file the
@@ -84,7 +83,7 @@ known-needed tmpfs paths so we don't ask the user about things the image
 already declares:
 
 ```bash
-NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<IMAGE>"
+node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<IMAGE>"
 ```
 
 The script prints a JSON object on stdout. Capture it as `IMAGE_INFO`.
@@ -125,7 +124,8 @@ echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness
   --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json"
 ```
 
-The script prints `{ status, reasons, suggested_actions }`. `Read`
+Capture the script's stdout as `READINESS` (the
+`{ status, reasons, suggested_actions }` JSON). Then `Read`
 `references/readiness-branching.md` (plugin-root shared reference; same
 file is loaded by deploy-app) and follow it to handle the three statuses
 (`block` / `warn` / `ok`). For this skill, the "return to the SKU pick
@@ -233,8 +233,8 @@ Suggest the user delete the env file after a successful save.
 **labels** — same loop as `env`. Image's `labels` are author-provided
 metadata, separate purpose from Fred labels.
 
-**init** — ask "Run an init process inside the container? (yes / skip,
-default skip)".
+**init** — ask "Run an init process inside the container? (Yes / Skip,
+default Skip)".
 
 **Final spec object** (always services-map shape, even for one service):
 ```js
@@ -262,7 +262,7 @@ Required per service:
 - **`image`** — same format hint as Step 4. Then immediately inspect the
   image:
   ```bash
-  NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
+  node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
   ```
   Capture the result as `SVC_INFO`. Same fail-soft semantics as Step 3
   (empty `{}` → ask user about everything; non-empty → use to drive the
@@ -407,15 +407,15 @@ into the chat transcript as a literal command):
    path, omit `--path`:
 
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" < /tmp/.spec-XXX.json
-   rm -f /tmp/.spec-XXX.json
+   node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" < /tmp/.spec-PROCESS_PID-TIMESTAMP.json
+   rm -f /tmp/.spec-PROCESS_PID-TIMESTAMP.json
    ```
 
    For a user-chosen path:
 
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" --path /absolute/path/to/spec.json < /tmp/.spec-XXX.json
-   rm -f /tmp/.spec-XXX.json
+   node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" --path /absolute/path/to/spec.json < /tmp/.spec-PROCESS_PID-TIMESTAMP.json
+   rm -f /tmp/.spec-PROCESS_PID-TIMESTAMP.json
    ```
 
 The script prints the saved file path on stdout. Capture it as `SAVED_PATH`.

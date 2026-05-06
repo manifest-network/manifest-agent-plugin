@@ -63,36 +63,11 @@ expected.
 
 ## Verify on-chain post-broadcast
 
-A successful broadcast does not guarantee the lease actually transitioned
-to a terminal state. The tx might have been accepted into the mempool but
-reverted on execution, or the lease state might lag a block. Confirm
-explicitly:
-
-1. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
-2. Decode `chainState.state` via the JSON mode (which exposes a `terminal`
-   flag derived from the canonical state — both `LEASE_STATE_CLOSED` and
-   `LEASE_STATE_INSUFFICIENT_FUNDS` count as terminal because the chain may
-   transition through INSUFFICIENT_FUNDS on a successful close-lease before
-   settling on CLOSED):
-   ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int> --json
-   ```
-3. Branch on `terminal`:
-   - **`terminal: true`** → cleanup. Run:
-     ```bash
-     node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
-     ```
-     (no-op if the saved manifest record does not exist). Tell the user
-     "Lease is terminal on-chain (`<decoded-name>`). Removed local saved
-     manifest record."
-   - **`terminal: false`** (typically still `LEASE_STATE_ACTIVE` or
-     `LEASE_STATE_PENDING`) → tell the user: "close_lease tx accepted but
-     lease state is still `<decoded-name>`; chain may need a moment to
-     settle. Re-run `/manifest-agent:troubleshoot-deployment <LEASE_UUID>`
-     in ~30s to recheck. Local saved manifest record NOT removed yet."
-   - If `app_status` itself errors out: surface the error and tell the
-     user the tx was sent but verification failed. Do NOT remove the local
-     manifest record.
+After the broadcast returns, follow Step 5a (close-lease verify) of
+`references/billing-tx-confirm.md` for the on-chain confirmation +
+saved-manifest cleanup. Same prose as troubleshoot-deployment Step 6 —
+sourced from the shared reference so the two close-lease consumers can't
+drift.
 
 If the user wants a deeper investigation, suggest
 `/manifest-agent:troubleshoot-deployment`.

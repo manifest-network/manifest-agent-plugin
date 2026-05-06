@@ -33,27 +33,15 @@
  * a user-edited spec. Use a different --path or remove the existing file.
  */
 
-const { existsSync, mkdirSync, chmodSync } = require('node:fs');
+const { existsSync, readFileSync, mkdirSync, chmodSync } = require('node:fs');
 const { join, isAbsolute, resolve, sep } = require('node:path');
 const { tmpdir } = require('node:os');
 const { atomicWrite, getDataDir } = require('./_io.cjs');
+const { firstImage } = require('./_spec.cjs');
 
-const AGENT_DIR = getDataDir();
-const DRAFTS_DIR = join(AGENT_DIR, 'manifests-drafts');
-
-// User-supplied --path is restricted to the drafts dir or the system tmpdir
-// (the latter so author-manifest can stage a spec for env-merge before the
-// user picks a final location). An unbounded --path would let a compromised
-// or buggy agent overwrite $MANIFEST_PLUGIN_DATA/config.json or any other
-// plugin state. Mirrors merge-env.cjs's ALLOWED_DIRS pattern.
-const ALLOWED_DIRS = [
-  resolve(DRAFTS_DIR) + sep,
-  resolve(tmpdir()) + sep,
-];
-
-function isAllowedPath(p) {
+function isAllowedPath(p, allowedDirs) {
   const r = resolve(p);
-  return ALLOWED_DIRS.some((d) => r.startsWith(d));
+  return allowedDirs.some((d) => r.startsWith(d));
 }
 
 function parseArgs(argv) {
@@ -64,22 +52,12 @@ function parseArgs(argv) {
   return args;
 }
 
-function deriveFirstImage(spec) {
-  if (typeof spec.image === 'string') return spec.image;
-  if (spec.services && typeof spec.services === 'object') {
-    for (const svc of Object.values(spec.services)) {
-      if (svc && typeof svc.image === 'string') return svc.image;
-    }
-  }
-  return null;
-}
-
 function sanitize(s) {
   return s.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 function autoName(spec) {
-  const image = deriveFirstImage(spec);
+  const image = firstImage(spec);
   // Trim digest / tag punctuation for a cleaner filename.
   let stem;
   if (image) {
@@ -98,7 +76,22 @@ function autoName(spec) {
 (async () => {
   const args = parseArgs(process.argv);
 
-  const raw = require('node:fs').readFileSync(0, 'utf8');
+  // getDataDir() throws when MANIFEST_PLUGIN_DATA is unset; calling it here
+  // (inside the IIFE) routes through the .catch handler so the user sees the
+  // helper's friendly error message instead of a raw Node exception trace.
+  const AGENT_DIR = getDataDir();
+  const DRAFTS_DIR = join(AGENT_DIR, 'manifests-drafts');
+  // User-supplied --path is restricted to the drafts dir or the system tmpdir
+  // (the latter so author-manifest can stage a spec for env-merge before the
+  // user picks a final location). An unbounded --path would let a compromised
+  // or buggy agent overwrite $MANIFEST_PLUGIN_DATA/config.json or any other
+  // plugin state. Mirrors merge-env.cjs's ALLOWED_DIRS pattern.
+  const ALLOWED_DIRS = [
+    resolve(DRAFTS_DIR) + sep,
+    resolve(tmpdir()) + sep,
+  ];
+
+  const raw = readFileSync(0, 'utf8');
   let spec;
   try {
     spec = JSON.parse(raw);
@@ -117,7 +110,7 @@ function autoName(spec) {
       console.error(`--path must be absolute; got "${args.path}"`);
       process.exit(1);
     }
-    if (!isAllowedPath(args.path)) {
+    if (!isAllowedPath(args.path, ALLOWED_DIRS)) {
       console.error(`--path must resolve inside ${DRAFTS_DIR} or the system tmpdir; got "${args.path}"`);
       process.exit(1);
     }

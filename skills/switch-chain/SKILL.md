@@ -1,5 +1,4 @@
 ---
-name: switch-chain
 description: >
   Switch the Manifest agent's active chain between testnet and mainnet.
   Re-fetches the Cosmos chain registry data and updates config.json.

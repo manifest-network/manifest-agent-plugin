@@ -82,9 +82,9 @@ to provide a name.
 > Parsed your input as a stack of N services:
 >   - `wordpress` (`docker.io/lifted/wordpress:6`)
 >   - `mysql` (`docker.io/library/mysql:9`)
-> Proceed with these names? Options: yes / customize names / abort.
+> Proceed with these names? Options: Yes / Customize names / Abort.
 
-On "customize names" let the user rename each service. On "abort" stop.
+On "Customize names" let the user rename each service. On "Abort" stop.
 
 **Service name collisions**: if `collisions[]` is non-empty, the parse
 confirmation must show the collision (e.g. `redis:7 redis:8` both derive
@@ -102,7 +102,7 @@ exposed at the deploy_app surface.)
 
 1. Set `IMAGE = <token>` and call:
    ```bash
-   NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
+   node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
    ```
    Capture as `SVC_INFO`. Same fail-soft semantics as the single-service
    fast-path.
@@ -186,7 +186,7 @@ image first** to verify it's reachable and to auto-detect ports / cmd /
 tmpfs hints:
 
 ```bash
-NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
+node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "$IMAGE"
 ```
 
 Capture the JSON result as `IMAGE_INFO`. If empty `{}` (inspection
@@ -270,14 +270,14 @@ shot.
 2. Use `AskUserQuestion` for SKU size, populated from
    `mcp__manifest-fred__browse_catalog`. Store as `SIZE`.
 
-### 3a. Single-service authoring (`SHAPE === "single"`)
+### 3a — Single-service authoring (`SHAPE === "single"`)
 
 Skip to section 3b for stacks.
 
 1. Ask for the image reference. Then immediately inspect it to verify
    reachability and to auto-detect ports / cmd / suggested tmpfs:
    ```bash
-   NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
+   node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
    ```
    Capture as `IMAGE_INFO`. Same fail-soft handling as the
    `single_image` fast-path above (empty `{}` → ask user about
@@ -304,7 +304,7 @@ Skip to section 3b for stacks.
 Build the in-memory `SPEC` using the services-map shape with
 `services: { "app": { image, ports, env?, ... } }`.
 
-### 3b. Multi-service stack authoring (`SHAPE === "stack"`)
+### 3b — Multi-service stack authoring (`SHAPE === "stack"`)
 
 Skip this section if `SHAPE === "single"` (you ran 3a above).
 
@@ -316,7 +316,7 @@ Skip this section if `SHAPE === "single"` (you ran 3a above).
      validates on `build_manifest_preview`; if rejected, surface and re-ask.
    - **Image reference** — ask, then immediately inspect:
      ```bash
-     NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
+     node "$MANIFEST_PLUGIN_ROOT/scripts/inspect-image.cjs" --image "<image>"
      ```
      Capture as `SVC_INFO`. Empty `{}` → ask user about everything;
      non-empty → drive prompts from `SVC_INFO`.
@@ -337,7 +337,7 @@ Skip this section if `SHAPE === "single"` (you ran 3a above).
 Build the in-memory `SPEC` using the services-map shape with one entry
 per service in the same order the user collected them.
 
-### 4. Custom domain (optional, both shapes)
+### 4 — Custom domain (optional, both shapes)
 
 After services have been collected and their names are in memory (single:
 `["app"]`; stack: the names you asked for in 3b), ask via
@@ -357,7 +357,7 @@ On **Yes**:
 3. Add `customDomain: <fqdn>` (and `serviceName: <picked>` for stacks) at
    the top level of the SPEC.
 
-### 5. Final SPEC assembly
+### 5 — Final SPEC assembly
 
 Build the SPEC object using the services-map shape with explicit
 `ports: { "<p>/<proto>": { ingress: <bool> } }` entries, plus any
