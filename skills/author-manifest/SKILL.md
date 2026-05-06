@@ -124,7 +124,7 @@ echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness
   --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json"
 ```
 
-Capture the script's stdout as `READINESS` (the
+Capture the script's stdout as `READINESS_VERDICT` (the
 `{ status, reasons, suggested_actions }` JSON). Then `Read`
 `references/readiness-branching.md` (plugin-root shared reference; same
 file is loaded by deploy-app) and follow it to handle the three statuses

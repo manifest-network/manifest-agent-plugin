@@ -221,14 +221,19 @@ echo '<readiness JSON>' | node "$MANIFEST_PLUGIN_ROOT/scripts/evaluate-readiness
   --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json"
 ```
 
+Bind two variables before reading the reference:
+- `READINESS_RAW` — the raw `check_deployment_readiness` MCP response
+  (the JSON you piped into the evaluator). Step 6 needs `sku.uuid`,
+  `wallet_balances`, and `credits` from it.
+- `READINESS_VERDICT` — the evaluator's stdout (the
+  `{ status, reasons, suggested_actions }` JSON).
+
 `Read` `references/readiness-branching.md` (plugin-root shared reference;
 same file is loaded by author-manifest) and follow it to handle the
 three statuses (`block` / `warn` / `ok`). For this skill, "return to
 the SKU pick step" recovery is N/A (deploy-app takes SIZE as input, not
 via a pick step) — surface the SKU rejection and stop. "Re-run the
 readiness check" means returning to this Step 5.
-
-Save the readiness JSON as `READINESS`.
 
 ## Step 6 — Estimate the deploy_app tx fee, then render the DeploymentPlan
 
@@ -251,8 +256,8 @@ mcp__manifest-chain__cosmos_estimate_fee({
 })
 ```
 
-Where `skuUuid` is `READINESS.sku.uuid` (already in your context from the
-readiness check) and `META_HASH` is from Step 3.
+Where `skuUuid` is `READINESS_RAW.sku.uuid` (the raw response captured in
+Step 5) and `META_HASH` is from Step 3.
 
 **Storage SKU lookup**: if `SPEC.storage` is set, you need the storage
 SKU's UUID. Call `mcp__manifest-lease__get_skus` (no args), find the
@@ -319,7 +324,7 @@ Then render the canonical block. The summary + readiness JSON together
 contain no env values, so inline echo is acceptable here:
 
 ```bash
-echo '{"summary": <summary JSON from above>, "readiness": <READINESS JSON>}' \
+echo '{"summary": <summary JSON from above>, "readiness": <READINESS_RAW JSON>}' \
   | node "$MANIFEST_PLUGIN_ROOT/scripts/render-deployment-plan.cjs" \
       --meta-hash "$META_HASH" \
       --image "$IMAGE" \

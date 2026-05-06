@@ -21,10 +21,6 @@ const { join } = require('node:path');
 const { atomicWrite, readJsonFile, getDataDir } = require('./_io.cjs');
 const { composeGasPrice } = require('./_gas-price.cjs');
 
-const AGENT_DIR = getDataDir();
-const CONFIG_PATH = join(AGENT_DIR, 'config.json');
-const CHAINS_DIR = join(AGENT_DIR, 'chains');
-
 function parseArgs(argv) {
   const args = { chain: null, gasPrice: null, gasToken: null };
   for (let i = 2; i < argv.length; i++) {
@@ -45,13 +41,19 @@ function readStdin() {
   });
 }
 
-function readChainFile(network) {
-  const p = join(CHAINS_DIR, `${network}.json`);
+function readChainFile(chainsDir, network) {
+  const p = join(chainsDir, `${network}.json`);
   if (!existsSync(p)) return null;
   return readJsonFile(p);
 }
 
 (async () => {
+  // getDataDir() inside the IIFE so a missing MANIFEST_PLUGIN_DATA produces
+  // the helper's friendly error via the .catch handler, not a raw stack.
+  const AGENT_DIR = getDataDir();
+  const CONFIG_PATH = join(AGENT_DIR, 'config.json');
+  const CHAINS_DIR = join(AGENT_DIR, 'chains');
+
   const args = parseArgs(process.argv);
 
   if (!args.chain || !['testnet', 'mainnet'].includes(args.chain)) {
@@ -90,8 +92,8 @@ function readChainFile(network) {
   }
 
   // Read chain data
-  const mainnetData = readChainFile('mainnet');
-  const testnetData = readChainFile('testnet');
+  const mainnetData = readChainFile(CHAINS_DIR, 'mainnet');
+  const testnetData = readChainFile(CHAINS_DIR, 'testnet');
 
   const activeChainData = args.chain === 'mainnet' ? mainnetData : testnetData;
   if (!activeChainData) {

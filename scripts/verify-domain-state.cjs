@@ -9,9 +9,9 @@
  * Step 6 verification. Builds on `extract-lease-items.cjs` (item lookup +
  * camelCase/snake_case normalization) but adds the comparison against an
  * expected value so the call site doesn't have to inline the equality.
- * Reusable from any flow that needs to confirm a domain claim landed —
- * today: manage-domain set/clear, and the partial-success retry path
- * after a deploy-app failure.
+ * Used today by `manage-domain` set/clear; the deploy-app partial-success
+ * retry path uses `extract-lease-items.cjs` directly without going through
+ * this wrapper.
  *
  * Stdin (JSON object): the raw `leases_by_tenant` response (same shape
  *                      `extract-lease-items.cjs` consumes).

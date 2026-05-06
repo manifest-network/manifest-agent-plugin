@@ -33,10 +33,6 @@ const { join } = require('node:path');
 const { atomicWrite, readJsonFile, getDataDir } = require('./_io.cjs');
 const { composeGasPrice } = require('./_gas-price.cjs');
 
-const AGENT_DIR = getDataDir();
-const CONFIG_PATH = join(AGENT_DIR, 'config.json');
-const CHAINS_DIR = join(AGENT_DIR, 'chains');
-
 function parseArgs(argv) {
   const args = { chain: null, gasPrice: null, gasToken: null, gasMultiplier: null, refreshChains: false, status: false };
   for (let i = 2; i < argv.length; i++) {
@@ -50,13 +46,19 @@ function parseArgs(argv) {
   return args;
 }
 
-function readChainFile(network) {
-  const p = join(CHAINS_DIR, `${network}.json`);
+function readChainFile(chainsDir, network) {
+  const p = join(chainsDir, `${network}.json`);
   if (!existsSync(p)) return null;
   return readJsonFile(p);
 }
 
 (async () => {
+  // getDataDir() inside the IIFE so a missing MANIFEST_PLUGIN_DATA produces
+  // the helper's friendly error via the .catch handler, not a raw stack.
+  const AGENT_DIR = getDataDir();
+  const CONFIG_PATH = join(AGENT_DIR, 'config.json');
+  const CHAINS_DIR = join(AGENT_DIR, 'chains');
+
   const args = parseArgs(process.argv);
 
   if (!args.chain && !args.gasPrice && !args.gasToken && !args.gasMultiplier && !args.refreshChains && !args.status) {
@@ -117,7 +119,7 @@ function readChainFile(network) {
       console.error('--gas-token requires an active chain (pass --chain or set one previously)');
       process.exit(1);
     }
-    const chainData = readChainFile(targetChain);
+    const chainData = readChainFile(CHAINS_DIR, targetChain);
     if (!chainData) {
       console.error(`Chain data not found for ${targetChain}. Run fetch-chain-registry.cjs or pass --refresh-chains first.`);
       process.exit(1);
@@ -142,8 +144,8 @@ function readChainFile(network) {
 
   // Refresh chain data from files
   if (args.refreshChains) {
-    const mainnetData = readChainFile('mainnet');
-    const testnetData = readChainFile('testnet');
+    const mainnetData = readChainFile(CHAINS_DIR, 'mainnet');
+    const testnetData = readChainFile(CHAINS_DIR, 'testnet');
 
     if (!mainnetData && !testnetData) {
       console.error('No chain data files found. Run fetch-chain-registry.cjs first.');

@@ -19,9 +19,12 @@ The orchestrator must have these in scope before loading this file:
   Collected via `AskUserQuestion` when the `fund_credit` action is
   picked; passed unchanged to both `cosmos_estimate_fee` and
   `fund_credit`.
-- `READINESS` — the JSON `{ status, reasons, suggested_actions }`
+- `READINESS_VERDICT` — the JSON `{ status, reasons, suggested_actions }`
   printed by `evaluate-readiness.cjs` immediately before this file
-  loads. Branching below keys off `READINESS.status`.
+  loads. Branching below keys off `READINESS_VERDICT.status`. Note: the
+  raw `check_deployment_readiness` MCP response (`sku`, `wallet_balances`,
+  `credits`, etc.) is a separate object — consumers that need both must
+  bind them to distinct names.
 
 ## Per-skill recovery overrides
 
@@ -37,7 +40,7 @@ differs by consumer:
 ## Branches
 
 `evaluate-readiness.cjs` prints `{ status, reasons, suggested_actions }`.
-Branch on `status`:
+Branch on `READINESS_VERDICT.status`:
 
 - **`block`** — print the `reasons` to the user and stop. If
   `suggested_actions` includes `pick_different_sku`, return to the SKU

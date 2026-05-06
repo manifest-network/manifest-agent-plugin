@@ -16,11 +16,12 @@
  * extraction.
  *
  * Two entry points:
- *   - CLI: read JSON from stdin, write Markdown to stdout. Used directly
- *     by skills today.
  *   - Module export `renderStatusSection(s)`: returns the Markdown body
  *     as a string. Used by `render-troubleshoot-report.cjs` to compose
  *     the larger multi-section report without spawning a subprocess.
+ *   - CLI: read JSON from stdin, write Markdown to stdout. Available for
+ *     ad-hoc invocation (e.g. piping a saved `app_status` response into
+ *     a debugging shell); no skill calls the CLI form today.
  *
  * Stdin (JSON object): the `app_status` response. Expected shape (fields
  * are defensive — missing fields render with placeholder lines):

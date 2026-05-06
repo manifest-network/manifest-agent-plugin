@@ -137,12 +137,14 @@ spacing so the agent and the runtime policy cannot drift.
 
 The `Provider` field is intentionally absent from the block: the
 chain selects a provider internally during `deploy_app`, so it is
-not knowable pre-broadcast. Print the resolved provider name in the
-success output. On the typical happy path it comes from the
-`deploy_app` response itself (`provider_uuid` plus a `browse_catalog`
-lookup); on the fallback path where `deploy_app` returns without an
-active connection, the orchestrator calls `wait_for_app_ready` and
-`app_status` to obtain it instead.
+not knowable pre-broadcast. Print the resolved provider in the
+success output. On the typical happy path the orchestrator reads
+`provider_uuid` from the `deploy_app` response itself; on the
+fallback path where `deploy_app` returns without an active
+connection, it calls `wait_for_app_ready` and `app_status` to
+obtain it instead. The provider's catalog entry currently exposes
+no friendly `name` field, so the success output renders the raw
+UUID — `format-success.cjs` is the canonical renderer.
 
 Note that `check_deployment_readiness` does not validate the image
 registry allowlist — that check fires inside `deploy_app` at upload

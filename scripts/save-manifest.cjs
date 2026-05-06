@@ -67,8 +67,6 @@ const { join } = require('node:path');
 const { atomicWrite, getDataDir } = require('./_io.cjs');
 const { UUID_RE } = require('./_uuid.cjs');
 
-const AGENT_DIR = getDataDir();
-const MANIFESTS_DIR = join(AGENT_DIR, 'manifests');
 // SHA-256 hex digest: 64 lowercase hex chars. The chain stores meta_hash as
 // raw bytes; build_manifest_preview returns the hex form. Validating the
 // shape catches typos and the wrong field accidentally being passed.
@@ -92,6 +90,11 @@ function parseArgs(argv) {
 }
 
 (async () => {
+  // getDataDir() inside the IIFE so a missing MANIFEST_PLUGIN_DATA produces
+  // the helper's friendly error via the .catch handler, not a raw stack.
+  const AGENT_DIR = getDataDir();
+  const MANIFESTS_DIR = join(AGENT_DIR, 'manifests');
+
   const args = parseArgs(process.argv);
   const required = ['leaseUuid', 'image', 'size', 'metaHash', 'chainId', 'manifestFile'];
   const missing = required.filter((k) => !args[k]);
