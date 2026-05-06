@@ -2,10 +2,10 @@
 'use strict';
 
 /**
- * Write ~/.manifest-agent/config.json from key script output + chain selection.
+ * Write $MANIFEST_PLUGIN_DATA/config.json from key script output + chain selection.
  *
  * Reads key JSON from stdin (piped from gen-agent-key.cjs or import-key.cjs).
- * Reads chain data from ~/.manifest-agent/chains/{mainnet,testnet}.json.
+ * Reads chain data from $MANIFEST_PLUGIN_DATA/chains/{mainnet,testnet}.json.
  * Writes config.json with the password — so the password never enters the conversation.
  *
  * Usage:
@@ -16,19 +16,17 @@
  * The password is NOT included in stdout.
  */
 
-const { existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync } = require('node:fs');
+const { existsSync, mkdirSync, chmodSync } = require('node:fs');
 const { join } = require('node:path');
-const { homedir } = require('node:os');
-
-const AGENT_DIR = join(homedir(), '.manifest-agent');
-const CONFIG_PATH = join(AGENT_DIR, 'config.json');
-const CHAINS_DIR = join(AGENT_DIR, 'chains');
+const { atomicWrite, readJsonFile, getDataDir } = require('./_io.cjs');
+const { composeGasPrice } = require('./_gas-price.cjs');
 
 function parseArgs(argv) {
-  const args = { chain: null, gasPrice: null };
+  const args = { chain: null, gasPrice: null, gasToken: null };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--chain' && argv[i + 1]) args.chain = argv[++i];
     else if (argv[i] === '--gas-price' && argv[i + 1]) args.gasPrice = argv[++i];
+    else if (argv[i] === '--gas-token' && argv[i + 1]) args.gasToken = argv[++i];
   }
   return args;
 }
@@ -43,22 +41,32 @@ function readStdin() {
   });
 }
 
-function readChainFile(network) {
-  const p = join(CHAINS_DIR, `${network}.json`);
+function readChainFile(chainsDir, network) {
+  const p = join(chainsDir, `${network}.json`);
   if (!existsSync(p)) return null;
-  return JSON.parse(readFileSync(p, 'utf8'));
+  return readJsonFile(p);
 }
 
 (async () => {
+  // getDataDir() inside the IIFE so a missing MANIFEST_PLUGIN_DATA produces
+  // the helper's friendly error via the .catch handler, not a raw stack.
+  const AGENT_DIR = getDataDir();
+  const CONFIG_PATH = join(AGENT_DIR, 'config.json');
+  const CHAINS_DIR = join(AGENT_DIR, 'chains');
+
   const args = parseArgs(process.argv);
 
   if (!args.chain || !['testnet', 'mainnet'].includes(args.chain)) {
-    console.error('Usage: ... | node write-config.cjs --chain <testnet|mainnet> --gas-price <price><denom>');
+    console.error('Usage: ... | node write-config.cjs --chain <testnet|mainnet> --gas-price <price><denom> | --gas-token <symbol>');
     process.exit(1);
   }
 
-  if (!args.gasPrice) {
-    console.error('--gas-price is required (e.g., "1umfx").');
+  if (args.gasPrice && args.gasToken) {
+    console.error('--gas-price and --gas-token are mutually exclusive');
+    process.exit(1);
+  }
+  if (!args.gasPrice && !args.gasToken) {
+    console.error('--gas-price (e.g., "1umfx") or --gas-token (e.g., "MFX") is required');
     process.exit(1);
   }
 
@@ -84,13 +92,26 @@ function readChainFile(network) {
   }
 
   // Read chain data
-  const mainnetData = readChainFile('mainnet');
-  const testnetData = readChainFile('testnet');
+  const mainnetData = readChainFile(CHAINS_DIR, 'mainnet');
+  const testnetData = readChainFile(CHAINS_DIR, 'testnet');
 
   const activeChainData = args.chain === 'mainnet' ? mainnetData : testnetData;
   if (!activeChainData) {
     console.error(`Chain data not found for ${args.chain}. Run fetch-chain-registry.cjs first.`);
     process.exit(1);
+  }
+
+  // Resolve gas-price (raw string or compose from token symbol)
+  let resolvedGasPrice;
+  if (args.gasPrice) {
+    resolvedGasPrice = args.gasPrice;
+  } else {
+    try {
+      resolvedGasPrice = composeGasPrice(activeChainData, args.gasToken);
+    } catch (err) {
+      console.error(err.message);
+      process.exit(1);
+    }
   }
 
   // Build config
@@ -100,7 +121,7 @@ function readChainFile(network) {
 
   const config = {
     activeChain: args.chain,
-    gasPrice: args.gasPrice,
+    gasPrice: resolvedGasPrice,
     chains,
     agent: {
       keyFile: keyfile,
@@ -112,8 +133,7 @@ function readChainFile(network) {
   // Write config.json
   mkdirSync(AGENT_DIR, { recursive: true });
   chmodSync(AGENT_DIR, 0o700);
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
-  chmodSync(CONFIG_PATH, 0o600);
+  atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
 
   console.error(`Config written to ${CONFIG_PATH}`);
   console.error(`Agent address: ${address}`);

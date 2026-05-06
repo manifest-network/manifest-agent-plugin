@@ -4,7 +4,7 @@
 /**
  * Fetch chain registry data from the Cosmos chain registry on GitHub.
  *
- * Usage: node fetch-chain-registry.cjs [--data-dir ~/.manifest-agent]
+ * Usage: node fetch-chain-registry.cjs [--data-dir $MANIFEST_PLUGIN_DATA]
  *
  * Writes to <data-dir>/chains/{mainnet,testnet}.json and updates .last-registry-fetch.
  * Outputs JSON summary to stdout.
@@ -16,9 +16,9 @@ if (major < 18) {
   process.exit(1);
 }
 
-const { mkdirSync, writeFileSync, chmodSync } = require('node:fs');
+const { mkdirSync, chmodSync } = require('node:fs');
 const { join } = require('node:path');
-const { homedir } = require('node:os');
+const { atomicWrite, getDataDir } = require('./_io.cjs');
 
 const REGISTRY_BASE = 'https://raw.githubusercontent.com/cosmos/chain-registry/master';
 const CHAINS = {
@@ -78,7 +78,7 @@ function extractChainData(chainRaw, assetList) {
 
 (async () => {
   const args = parseArgs(process.argv);
-  const dataDir = args.dataDir || join(homedir(), '.manifest-agent');
+  const dataDir = args.dataDir || getDataDir();
   const chainsDir = join(dataDir, 'chains');
 
   mkdirSync(chainsDir, { recursive: true });
@@ -105,7 +105,11 @@ function extractChainData(chainRaw, assetList) {
       result[network] = data;
 
       const outPath = join(chainsDir, `${network}.json`);
-      writeFileSync(outPath, JSON.stringify(data, null, 2) + '\n');
+      // Chain registry data is public — explicitly write at 0o644 so the
+      // file mode matches its sensitivity. The parent dir is 0o700 so the
+      // file is still effectively private to the user; this is just for
+      // future-proofing if the dir mode ever loosens.
+      atomicWrite(outPath, JSON.stringify(data, null, 2) + '\n', { mode: 0o644 });
       console.error(`  Wrote ${outPath}`);
     } catch (err) {
       console.error(`  Error fetching ${network}: ${err.message}`);
@@ -113,7 +117,7 @@ function extractChainData(chainRaw, assetList) {
   }
 
   const tsPath = join(dataDir, '.last-registry-fetch');
-  writeFileSync(tsPath, String(Math.floor(Date.now() / 1000)));
+  atomicWrite(tsPath, String(Math.floor(Date.now() / 1000)), { mode: 0o644 });
 
   console.log(JSON.stringify(result, null, 2));
 })().catch((err) => {

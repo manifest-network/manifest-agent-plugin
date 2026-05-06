@@ -43,6 +43,77 @@ This walks you through:
 
 After setup, restart Claude Code (or run `/mcp` and reconnect) to start the MCP servers.
 
+### Deploying an app
+
+Once initialized and funded, you can deploy a containerized app three ways.
+
+**Image fast-path (single-service shortcut):**
+
+```
+/manifest-agent:deploy-app docker.io/library/nginx:1.27
+/manifest-agent:deploy-app ghcr.io/me/app@sha256:abc123…
+```
+
+If you pass an image reference (anything matching `<name>:<tag>` or `<name>@sha256:<digest>`), the plugin treats it as a single-service deploy and asks you only for what's still needed: SKU, port, and any optional env / labels / health check / etc. Skips the "what shape?" and "what image?" questions entirely.
+
+**Multi-image stack fast-path:**
+
+```
+/manifest-agent:deploy-app docker.io/lifted/wordpress:6 docker.io/library/mysql:9
+/manifest-agent:deploy-app wordpress:6 + mysql:9         # `+` is optional cosmetic separator
+```
+
+If you pass two or more image references separated by whitespace (with optional `+` tokens), the plugin treats them as services in a stack. Service names are derived from the image basenames (`wordpress`, `mysql`). The plugin shows you the parsed stack and asks for confirmation before authoring; you can rename services if the auto-derived names don't fit. Same per-service auto-detection as the single-service fast-path (ports, tmpfs, image defaults).
+
+Inter-service env vars (e.g. `WORDPRESS_DB_HOST=mysql`, `WORDPRESS_DB_PASSWORD=...`) are NOT auto-wired — you provide them through the per-service env prompts. The intent-recap step before broadcast flags obvious gaps (e.g. a wordpress with no DB credentials).
+
+**Sensitive env values (file-pipe pattern):** for secrets like database passwords, the env prompt offers a "From a file" option. Create a dotenv file in a separate terminal first:
+
+```bash
+cat > /tmp/wordpress.env
+WORDPRESS_DB_HOST=mysql
+WORDPRESS_DB_PASSWORD=hunter2
+^D
+chmod 600 /tmp/wordpress.env
+```
+
+Then tell the agent the path. Values flow through a script pipe into the spec file; they never enter the chat input box and the agent never echoes them in summaries. Mirrors the mnemonic-import pattern from `init-agent` / `import-key`. Note: env values still appear in the `deploy_app` MCP tool call args at broadcast time — eliminating that exposure entirely needs upstream MCP changes.
+
+**Interactive (full authoring, supports multi-service):**
+
+```
+/manifest-agent:deploy-app
+```
+
+Walks you through choosing single-service vs multi-service stack, picking a SKU, entering image refs, ports, env vars, etc., then deploys. No reusable *spec file* is written in this path, but after a successful deploy a saved manifest record is created at `$MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json` (see "Saved post-deploy records" in CLAUDE.md).
+
+**From a spec file (reusable):**
+
+```
+/manifest-agent:author-manifest        # walks you through, saves a spec file
+/manifest-agent:deploy-app /path/to/the/saved-spec.json
+```
+
+The spec file is plain JSON — hand-edit it, version-control it, generate it from a script, share it across deploys. Default save location is `$MANIFEST_PLUGIN_DATA/manifests-drafts/`, but you can save anywhere.
+
+All three paths assume you already have a public container image (e.g. `ghcr.io/me/app@sha256:…`) on a registry the Fred provider permits. Image build and image push are intentionally out of scope — bring your own published image.
+
+A confirmation step shows the deployment plan (image, SKU, cost, wallet/credit balances) before any broadcast. Failed deploys auto-invoke a troubleshoot sequence and offer to reclaim the lease.
+
+### Custom domains
+
+Attach an FQDN to a lease item so users reach the app via your own hostname instead of the provider-assigned subdomain. Available at deploy time (set via `customDomain` in the spec or in any of the interactive flows) and standalone via `/manifest-agent:manage-domain` after the lease exists.
+
+```
+/manifest-agent:manage-domain    # interactive: set / clear / lookup
+```
+
+When `customDomain` is set on a deploy, `deploy_app` broadcasts TWO billing transactions atomically: `create-lease` AND `set-item-custom-domain`. The DeploymentPlan shows both fees line-by-line plus a `Total fee:` so you see the full cost before approving. The single permission prompt that fires next covers both transactions.
+
+**DNS setup happens AFTER the deploy.** You can't point your CNAME until you know the provider's ingress hostname, which is only assigned once `deploy_app` succeeds. The flow is: deploy → note the provider FQDN from the success block → set your CNAME (or A record for an apex) at the provider FQDN → wait for DNS to propagate. TLS is provisioned by the provider after the lease item picks up the domain — typically takes a few minutes after both the chain claim and DNS are in place. (`/manifest-agent:manage-domain` does run a warn-only DNS pre-check before broadcasting, since by then the lease and provider FQDN exist.)
+
+**On a partial-success failure** (e.g. FQDN already claimed by another tenant — the upstream `Deploy partially succeeded:` error), the lease was created on-chain but the manifest was NEVER uploaded to the provider, so no app is running yet. The orchestrator detects the case, queries the lease state, and offers state-aware recovery: **Retry set-domain + upload** (re-attach the domain then upload the manifest via `update_app`), **Salvage without domain** (skip the domain; just upload the manifest now so the lease starts serving), or **Cancel/Close** the lease (uses `cancel-lease` for `LEASE_STATE_PENDING`, `close-lease` for `LEASE_STATE_ACTIVE`).
+
 ## Skills
 
 | Skill | Description |
@@ -52,6 +123,10 @@ After setup, restart Claude Code (or run `/mcp` and reconnect) to start the MCP 
 | `/manifest-agent:switch-chain` | Switch between testnet and mainnet |
 | `/manifest-agent:set-gas-price` | Change the gas fee token, price, and/or gas multiplier |
 | `/manifest-agent:refresh-registry` | Re-fetch chain data from the Cosmos chain registry |
+| `/manifest-agent:deploy-app [path-or-images]` | Deploy a containerized app end-to-end. Optional argument: a JSON spec file path, OR a single image reference (e.g. `nginx:1.27`) for a single-service fast-path, OR multiple whitespace-separated image references (e.g. `wordpress:6 mysql:9`) for a multi-service stack fast-path. Omit for full interactive authoring. Pre-flight → plan → confirm → broadcast → URL. Optional `customDomain` in the spec triggers a dual-tx broadcast (create-lease + set-item-custom-domain) with line-by-line fees in the plan |
+| `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `$MANIFEST_PLUGIN_DATA/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app`. Optionally collects a custom domain (FQDN + service for stacks) |
+| `/manifest-agent:manage-domain` | Set, clear, or look up the custom domain (FQDN) on an existing lease item. Set/clear go through cosmos_estimate_fee + textual confirm + permission prompt + on-chain verification; lookup is read-only |
+| `/manifest-agent:troubleshoot-deployment` | Bundle status, diagnostics, and recent logs for a deployed lease into a unified report. Lease picker now includes a "lookup by custom domain" option |
 
 ## MCP Servers
 
@@ -70,7 +145,7 @@ The servers start automatically when Claude Code launches but **will fail until 
 
 **MCP servers show "failed":**
 
-- **Before init-agent**: Expected. The servers need `~/.manifest-agent/config.json` which doesn't exist yet. Run `/manifest-agent:init-agent` first, then restart.
+- **Before init-agent**: Expected. The servers need `$MANIFEST_PLUGIN_DATA/config.json` (which holds the chain choice + key password — created by init-agent, never created automatically). Run `/manifest-agent:init-agent` first, then restart. Dependencies (`node_modules/`) are installed automatically by the SessionStart hook on first run; if init-agent reports the binary is still missing, check the SessionStart logs for an npm install failure.
 - **After init-agent**: Check your Node.js version. The MCP servers require **Node.js 18+**. If your system default `node` is older, the wrapper exits with a `Node 18+ required (found vX.X.X)` error visible in the MCP server logs. Verify with `node --version` and update if needed. If you use nvm, run `nvm alias default 22` to set the default.
 
 ## Supported Chains
@@ -85,14 +160,14 @@ Chain data (endpoints, gas prices, explorer URLs) is fetched live from the [Cosm
 ## How It Works
 
 ```
-┌──────────────────────┐     ┌──────────────────────────────┐
-│  Plugin (read-only)  │     │  ~/.manifest-agent/ (mutable) │
-│                      │     │                              │
-│  scripts/*.cjs       │────>│  config.json   (agent config)│
-│  skills/*/SKILL.md   │     │  keys/*.json   (encrypted)   │
-│  hooks/hooks.json    │     │  chains/*.json (registry)    │
-│  .mcp.json           │     │  node_modules/ (dependencies)│
-└──────────────────────┘     └──────────────┬───────────────┘
+┌──────────────────────┐     ┌─────────────────────────────────────┐
+│  Plugin (read-only)  │     │  $MANIFEST_PLUGIN_DATA (mutable)    │
+│                      │     │  ~/.claude/plugins/data/<id>/       │
+│  scripts/*.cjs       │────>│  config.json   (agent config)       │
+│  skills/*/SKILL.md   │     │  keys/*.json   (encrypted)          │
+│  hooks/hooks.json    │     │  chains/*.json (registry)           │
+│  .mcp.json           │     │  node_modules/ (dependencies)       │
+└──────────────────────┘     └──────────────┬──────────────────────┘
                                             │
                               start-server.cjs reads config
                                             │
@@ -106,8 +181,8 @@ Chain data (endpoints, gas prices, explorer URLs) is fetched live from the [Cosm
                              └──────────────────────────┘
 ```
 
-- **Plugin root is read-only** in production (marketplace cache). All mutable state lives in `~/.manifest-agent/`.
-- **Dependencies** (`@cosmjs/proto-signing`, `@manifest-network/manifest-mcp-node`) are installed to `~/.manifest-agent/node_modules/` during `init-agent`, not in the plugin directory.
+- **Plugin root is read-only** in production (marketplace cache). All mutable state lives in `$MANIFEST_PLUGIN_DATA` — Claude Code's per-plugin persistent data directory at `~/.claude/plugins/data/<id>/`. The directory survives plugin updates and is cleaned on uninstall.
+- **Dependencies** (`@cosmjs/proto-signing`, `@manifest-network/manifest-mcp-node`, `request-filtering-agent`) are installed to `$MANIFEST_PLUGIN_DATA/node_modules/` automatically by the SessionStart hook (diff-checked against the plugin's bundled `package.json` on every session start), not in the plugin directory.
 - **MCP servers** are launched by a wrapper script (`start-server.cjs`) that reads `config.json` and passes the appropriate environment variables to the server binary.
 - **Keypairs** are encrypted with a random 256-bit password and stored with `0600` permissions.
 

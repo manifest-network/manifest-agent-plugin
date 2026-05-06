@@ -1,6 +1,6 @@
 {
   "name": "manifest-agent-plugin",
-  "version": "0.2.1",
+  "version": "0.4.0",
   "private": true,
   "description": "Dependencies for the manifest-agent Claude Code plugin",
   "engines": {
@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@cosmjs/proto-signing": "0.32.4",
-    "@manifest-network/manifest-mcp-node": "0.6.2"
+    "@manifest-network/manifest-mcp-node": "0.8.0",
+    "request-filtering-agent": "3.2.0"
   }
 }

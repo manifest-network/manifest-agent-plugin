@@ -29,6 +29,10 @@ on_error() {
   # `cat` so an empty $PATH or missing coreutils cannot break the
   # fail-closed path on a safety-critical hook.
   trap - ERR
+  # Surface the failure on stderr so it appears in transcripts / the
+  # /plugin Errors tab. Exit code stays 0 so the JSON deny below is
+  # parsed (exit 2 would defeat the permission semantics).
+  printf '%s\n' 'manifest-agent pre-tool-use hook errored; emitting fail-closed deny' >&2
   printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"manifest-agent pre-tool-use hook errored; refusing to broadcast until the hook is fixed."}}'
   exit 0
 }

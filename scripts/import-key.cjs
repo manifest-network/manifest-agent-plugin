@@ -5,17 +5,17 @@
  * Non-interactive mnemonic import for Claude Code skills.
  *
  * Reads mnemonic from stdin (one line, space-separated words).
- * Usage: echo "word1 word2 ..." | NODE_PATH=~/.manifest-agent/node_modules node import-key.cjs [--prefix manifest] [--output path/to/key.json]
+ * Usage: echo "word1 word2 ..." | NODE_PATH=$MANIFEST_PLUGIN_DATA/node_modules node import-key.cjs [--prefix manifest] [--output path/to/key.json]
  *
  * Outputs JSON to stdout: { "address": "manifest1...", "keyfile": "/abs/path/to/key.json", "password": "...", "agentId": "..." }
  * All logs go to stderr. Mnemonic is NEVER written to stdout or stderr.
  */
 
-const { mkdirSync, writeFileSync, chmodSync } = require('node:fs');
+const { mkdirSync, chmodSync } = require('node:fs');
 const { dirname, resolve, join } = require('node:path');
 const { randomBytes } = require('node:crypto');
-const { homedir } = require('node:os');
 const { DirectSecp256k1HdWallet } = require('@cosmjs/proto-signing');
+const { atomicWrite, getDataDir } = require('./_io.cjs');
 
 function parseArgs(argv) {
   const args = { prefix: 'manifest', output: null };
@@ -65,7 +65,7 @@ function readStdin() {
 
   const agentId = randomBytes(4).toString('hex');
   const keyfilePath = resolve(
-    args.output ?? join(homedir(), '.manifest-agent', 'keys', `agent-${agentId}.json`),
+    args.output ?? join(getDataDir(), 'keys', `agent-${agentId}.json`),
   );
 
   const serialized = await wallet.serialize(password);
@@ -74,8 +74,7 @@ function readStdin() {
   mkdirSync(keyDir, { recursive: true });
   chmodSync(keyDir, 0o700);
 
-  writeFileSync(keyfilePath, serialized);
-  chmodSync(keyfilePath, 0o600);
+  atomicWrite(keyfilePath, serialized);
 
   console.error(`Keyfile written to ${keyfilePath}`);
 
