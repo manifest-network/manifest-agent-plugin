@@ -87,8 +87,13 @@ function parseArgs(argv) {
 
 function denomFromGasPrice(gasPrice) {
   // Cosmos convention: leading numeric (digits + optional decimal point),
-  // then the denom (lowercase alphanumeric, possibly with `/` for IBC).
-  const m = /^[0-9.]+(.+)$/.exec(gasPrice);
+  // then the denom. Denom grammar mirrors sdk.ValidateDenom:
+  // [a-zA-Z][a-zA-Z0-9/:._-]{2,127}, with `/` for IBC and factory denoms.
+  // The pattern is fully anchored so trailing whitespace from a stray
+  // heredoc — e.g. "1umfx " — fails fast instead of silently producing an
+  // unmatchable denom that would later read as a "no balance for gas"
+  // false-block against a chain-returned bare "umfx".
+  const m = /^[0-9]+(?:\.[0-9]+)?([a-zA-Z][a-zA-Z0-9/:._-]{2,127})$/.exec(gasPrice);
   return m ? m[1] : null;
 }
 

@@ -18,7 +18,23 @@ if (major < 18) {
 
 const { mkdirSync, chmodSync } = require('node:fs');
 const { join } = require('node:path');
+const { request } = require('node:https');
+const { URL } = require('node:url');
+const { RequestFilteringHttpsAgent } = require('request-filtering-agent');
 const { atomicWrite, getDataDir } = require('./_io.cjs');
+
+// Block requests to RFC 1918 / loopback / link-local at connect time. The
+// registry URLs below are hardcoded GitHub raw URLs today and are not
+// user-controlled, so SSRF is not exploitable in current call sites — but
+// applying the same agent that `inspect-image.cjs` uses keeps the defense
+// uniform across all outbound HTTPS the plugin makes, so a future change
+// that takes a registry URL from config or a user prompt cannot quietly
+// open an SSRF hole.
+const SSRF_AGENT = new RequestFilteringHttpsAgent();
+const REQUEST_TIMEOUT_MS = 15_000;
+// 5 MiB cap. The largest chain.json on cosmos/chain-registry today is ~50 KB;
+// 5 MiB is a comfortable headroom that still bounds memory usage.
+const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 const REGISTRY_BASE = 'https://raw.githubusercontent.com/cosmos/chain-registry/master';
 const CHAINS = {
@@ -34,6 +50,58 @@ const CHAINS = {
     faucetUrl: 'https://faucet.testnet.manifest.network/',
   },
 };
+
+function fetchJson(urlStr) {
+  return new Promise((resolveOuter, rejectOuter) => {
+    let settled = false;
+    const resolve = (v) => { if (!settled) { settled = true; resolveOuter(v); } };
+    const reject = (e) => { if (!settled) { settled = true; rejectOuter(e); } };
+
+    const u = new URL(urlStr);
+    const req = request({
+      host: u.host,
+      path: u.pathname + u.search,
+      method: 'GET',
+      headers: { 'User-Agent': 'manifest-agent-plugin/fetch-chain-registry', 'Accept': 'application/json' },
+      timeout: REQUEST_TIMEOUT_MS,
+      agent: SSRF_AGENT,
+    }, (res) => {
+      // Reject on non-2xx (including 3xx — chain-registry raw URLs serve
+      // content directly; a redirect almost certainly means the resource
+      // moved and we'd rather fail loud than silently follow).
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        res.resume();
+        reject(new Error(`HTTP ${res.statusCode} for ${urlStr}`));
+        return;
+      }
+      const chunks = [];
+      let received = 0;
+      let aborted = false;
+      res.on('data', (c) => {
+        if (aborted) return;
+        received += c.length;
+        if (received > MAX_BODY_BYTES) {
+          aborted = true;
+          req.destroy();
+          reject(new Error(`response body exceeded ${MAX_BODY_BYTES} bytes (cap) on ${urlStr}`));
+          return;
+        }
+        chunks.push(c);
+      });
+      res.on('end', () => {
+        if (aborted) return;
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        } catch (err) {
+          reject(new Error(`response from ${urlStr} was not JSON: ${err.message}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(new Error(`request timeout on ${urlStr}`)); });
+    req.end();
+  });
+}
 
 function parseArgs(argv) {
   const args = { dataDir: null };
@@ -89,16 +157,19 @@ function extractChainData(chainRaw, assetList) {
   for (const [network, urls] of Object.entries(CHAINS)) {
     console.error(`Fetching ${network} chain data...`);
     try {
-      const [chainRes, assetRes] = await Promise.all([
-        fetch(urls.chain),
-        fetch(urls.assets),
+      // Asset list is optional (used only for symbol lookup), so allow it to
+      // fail without aborting the whole network. Promise.allSettled keeps the
+      // chain.json failure as the load-bearing one.
+      const [chainRes, assetRes] = await Promise.allSettled([
+        fetchJson(urls.chain),
+        fetchJson(urls.assets),
       ]);
-      if (!chainRes.ok) {
-        console.error(`  Failed: HTTP ${chainRes.status} for ${urls.chain}`);
+      if (chainRes.status === 'rejected') {
+        console.error(`  Failed: ${chainRes.reason.message}`);
         continue;
       }
-      const chainRaw = await chainRes.json();
-      const assetList = assetRes.ok ? await assetRes.json() : null;
+      const chainRaw = chainRes.value;
+      const assetList = assetRes.status === 'fulfilled' ? assetRes.value : null;
       const data = extractChainData(chainRaw, assetList);
       if (urls.converterAddress) data.converterAddress = urls.converterAddress;
       if (urls.faucetUrl) data.faucetUrl = urls.faucetUrl;

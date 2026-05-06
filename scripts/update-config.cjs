@@ -71,6 +71,11 @@ function readChainFile(chainsDir, network) {
     process.exit(1);
   }
 
+  if (args.status && (args.chain || args.gasPrice || args.gasToken || args.gasMultiplier || args.refreshChains)) {
+    console.error('--status is read-only and cannot be combined with mutating flags (--chain, --gas-price, --gas-token, --gas-multiplier, --refresh-chains)');
+    process.exit(1);
+  }
+
   if (args.chain && !['testnet', 'mainnet'].includes(args.chain)) {
     console.error('--chain must be "testnet" or "mainnet".');
     process.exit(1);
