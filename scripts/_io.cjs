@@ -43,9 +43,23 @@ function atomicWrite(targetPath, contents, options = {}) {
     // save-manifest.cjs and save-manifest-draft.cjs do by hand after their
     // own mkdirSync calls. Without this, a parent dir created earlier with
     // looser permissions (umask drift, manual mkdir, another tool) would
-    // silently survive a 0o700-default ensureDir call. The catch swallows
-    // EPERM on dirs we don't own (mountpoints, system tmpdir).
-    try { chmodSync(dir, dirMode); } catch { /* not owned by us; ignore */ }
+    // silently survive a 0o700-default ensureDir call.
+    //
+    // Narrow the catch to known-benign error codes:
+    //   EPERM/EACCES — caller doesn't own the dir (system tmpdir, shared
+    //                  mountpoint). The intended ignore case.
+    //   EROFS        — read-only filesystem; chmod is impossible by design.
+    //   ENOSYS       — chmod not supported (rare; some FUSE filesystems).
+    //   ENOENT       — directory disappeared between mkdir and chmod (race).
+    // Anything else (EINVAL bad mode, ENOTDIR path is a file) signals a
+    // programmer error or environment we shouldn't paper over — rethrow
+    // so the caller sees it instead of silently leaving a permissive dir.
+    try {
+      chmodSync(dir, dirMode);
+    } catch (err) {
+      const ignored = new Set(['EPERM', 'EACCES', 'EROFS', 'ENOSYS', 'ENOENT']);
+      if (!err || !ignored.has(err.code)) throw err;
+    }
   }
   const tmp = join(dir, `.${basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
   try {

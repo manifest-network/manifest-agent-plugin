@@ -60,7 +60,9 @@ function httpsGet({ host, path, headers = {}, timeout = DEFAULT_TIMEOUT_MS, maxB
       host,
       path,
       method: 'GET',
-      headers: { 'User-Agent': userAgent, ...headers },
+      // Default Accept first so a caller-provided Accept (e.g.
+      // inspect-image's OCI manifest list) overrides via the spread.
+      headers: { 'Accept': 'application/json', 'User-Agent': userAgent, ...headers },
       timeout,
       agent: SSRF_AGENT,
     }, (res) => {
