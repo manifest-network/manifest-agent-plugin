@@ -22,7 +22,8 @@
  *
  *   findLease(payload, leaseUuid) — Convenience: pickLeasesArray + UUID
  *     lookup (case-insensitive, tolerates `uuid`, `lease_uuid`, `leaseUuid`
- *     keys). Returns the matched lease object or `null`.
+ *     keys). Returns the matched lease object or `null`. Throws TypeError
+ *     when `leaseUuid` is not a string.
  */
 
 function pickLeasesArray(payload) {
@@ -38,6 +39,14 @@ function normalizeItem(raw) {
 }
 
 function findLease(payload, leaseUuid) {
+  // Guard against non-string leaseUuid before calling .toLowerCase().
+  // Both current callers (extract-lease-items.cjs, verify-domain-state.cjs)
+  // pre-validate against UUID_RE, but this is an exported helper and a
+  // future caller might not. A clear Error beats a "Cannot read properties
+  // of null" stack trace.
+  if (typeof leaseUuid !== 'string') {
+    throw new TypeError(`findLease: leaseUuid must be a string, got ${leaseUuid === null ? 'null' : typeof leaseUuid}`);
+  }
   const leases = pickLeasesArray(payload);
   const target = leaseUuid.toLowerCase();
   return leases.find((l) => {

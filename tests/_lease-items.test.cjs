@@ -74,3 +74,13 @@ test('findLease: returns null when no lease matches', () => {
 test('findLease: returns null on empty leases array', () => {
   assert.equal(findLease({ leases: [] }, '11111111-1111-4111-8111-111111111111'), null);
 });
+
+test('findLease: throws TypeError for non-string leaseUuid (defensive guard)', () => {
+  // Both current callers pre-validate via UUID_RE so this is unreachable
+  // in practice today, but the shared helper's API surface justifies the
+  // guard — a clear TypeError beats `Cannot read properties of null`.
+  const payload = { leases: [{ uuid: '11111111-1111-4111-8111-111111111111' }] };
+  assert.throws(() => findLease(payload, null), { name: 'TypeError', message: /must be a string, got null/ });
+  assert.throws(() => findLease(payload, undefined), { name: 'TypeError', message: /got undefined/ });
+  assert.throws(() => findLease(payload, 12345), { name: 'TypeError', message: /got number/ });
+});
