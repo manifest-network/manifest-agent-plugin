@@ -1,6 +1,6 @@
 # Releasing
 
-The release process is tag-driven. Pushing a `v*.*.*` tag to `main` triggers `.github/workflows/release.yml`, which verifies version consistency and creates a GitHub Release with auto-generated notes.
+The release process is tag-driven. Pushing any `v*.*.*` tag triggers `.github/workflows/release.yml`; the workflow refuses tags whose commit isn't reachable from `origin/main`, verifies version consistency, and then creates a GitHub Release with auto-generated notes.
 
 ## Versioning
 

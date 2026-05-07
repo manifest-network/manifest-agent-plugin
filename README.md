@@ -218,7 +218,7 @@ The orchestrator detects this case, queries the lease state, and offers state-aw
 
 - **Retry set-domain + upload** — re-attach the domain then upload the manifest via `update_app`.
 - **Salvage without domain** — skip the domain; upload the manifest now so the lease starts serving.
-- **Cancel/Close the lease** — uses `cancel-lease` for `LEASE_STATE_PENDING`, `close-lease` for `LEASE_STATE_ACTIVE`.
+- **Cancel/Close the lease** — uses `billing cancel-lease` (via `mcp__manifest-chain__cosmos_tx`) for `LEASE_STATE_PENDING`, and the `mcp__manifest-lease__close_lease` MCP tool for `LEASE_STATE_ACTIVE`.
 
 ## Operations
 
