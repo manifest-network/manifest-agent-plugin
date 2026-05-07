@@ -67,6 +67,24 @@ test('atomicWrite: ensureDir + custom dirMode applies the mode', () => {
   });
 });
 
+test('atomicWrite: ensureDir tightens a pre-existing loose directory to the default 0o700', () => {
+  // Regression for the gap PR #3 flagged: mkdirSync({recursive:true}) does
+  // not chmod a directory that already exists. Without an unconditional
+  // chmod after mkdirSync, a parent dir created earlier at 0o755 (umask
+  // drift, another tool) would silently survive. atomicWrite with the
+  // default dirMode must tighten it.
+  const { mkdirSync, chmodSync } = require('node:fs');
+  withTmpDir((dir) => {
+    const subDir = join(dir, 'looseparent');
+    mkdirSync(subDir, { mode: 0o755 });
+    chmodSync(subDir, 0o755); // belt-and-suspenders against umask masking
+    assert.equal(statSync(subDir).mode & 0o777, 0o755);
+    const target = join(subDir, 'x.json');
+    atomicWrite(target, '{}\n', { ensureDir: true });
+    assert.equal(statSync(subDir).mode & 0o777, 0o700);
+  });
+});
+
 test('readJsonFile: parses a plain JSON object', () => {
   withTmpDir((dir) => {
     const target = join(dir, 'a.json');

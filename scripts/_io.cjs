@@ -10,8 +10,11 @@
  *   manifest JSON contains user env values). Pass `mode: 0o644` for
  *   non-secret data like the chain registry. Pass `ensureDir: true` to have
  *   the helper create the parent directory (recursive, default `dirMode`
- *   0o700) before writing — without this, writing into a not-yet-created
- *   parent throws ENOENT against the tmpfile name, which is hard to read.
+ *   0o700) AND chmod it to dirMode unconditionally — the chmod runs even
+ *   when the directory already existed, so a previously-loose parent gets
+ *   tightened to the requested mode rather than silently surviving.
+ *   Without `ensureDir`, writing into a not-yet-created parent throws
+ *   ENOENT against the tmpfile name, which is hard to read.
  *
  * - `readJsonFile(path)` — read + JSON.parse + shape-check (must be a plain
  *   object). Throws a descriptive error; caller decides exit handling.
@@ -36,10 +39,13 @@ function atomicWrite(targetPath, contents, options = {}) {
     const dirMode = options.dirMode ?? 0o700;
     mkdirSync(dir, { recursive: true, mode: dirMode });
     // mkdirSync({recursive}) does not chmod a pre-existing directory, so
-    // tighten explicitly when the caller asked for a non-default dirMode.
-    if (options.dirMode !== undefined) {
-      try { chmodSync(dir, dirMode); } catch { /* dir may be a mountpoint we don't own; ignore */ }
-    }
+    // tighten unconditionally — this matches the explicit chmodSync that
+    // save-manifest.cjs and save-manifest-draft.cjs do by hand after their
+    // own mkdirSync calls. Without this, a parent dir created earlier with
+    // looser permissions (umask drift, manual mkdir, another tool) would
+    // silently survive a 0o700-default ensureDir call. The catch swallows
+    // EPERM on dirs we don't own (mountpoints, system tmpdir).
+    try { chmodSync(dir, dirMode); } catch { /* not owned by us; ignore */ }
   }
   const tmp = join(dir, `.${basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
   try {
