@@ -53,15 +53,8 @@
  * treats an empty result as "no info, ask the user."
  */
 
-const { request } = require('node:https');
 const { URL } = require('node:url');
-const { RequestFilteringHttpsAgent } = require('request-filtering-agent');
-
-// Block requests to private / loopback / link-local addresses at connect time.
-// Hardens redirect-following against a malicious or compromised registry that
-// returns a Location header pointing inside the local network (cloud metadata,
-// RFC 1918, ::1, etc.). Default config blocks all non-unicast ranges in v4 + v6.
-const SSRF_AGENT = new RequestFilteringHttpsAgent();
+const { httpsGet } = require('./_https-json.cjs');
 
 const ACCEPT_MANIFEST = [
   'application/vnd.oci.image.index.v1+json',
@@ -170,47 +163,18 @@ function registryHost(registry) {
 }
 
 function httpsJson(host, path, headers = {}) {
-  return new Promise((resolveOuter, rejectOuter) => {
-    // Settle-once guard. The body-size-cap path rejects directly from the
-    // data handler (rather than relying on req.destroy(err) → req.on('error')
-    // which races with res.on('end')), so we may get multiple rejection
-    // attempts (cap reject, then req 'error' from the destroy, then a later
-    // timeout). Coalesce them.
-    let settled = false;
-    const resolve = (v) => { if (!settled) { settled = true; resolveOuter(v); } };
-    const reject = (e) => { if (!settled) { settled = true; rejectOuter(e); } };
-
-    const req = request({
-      host,
-      path,
-      method: 'GET',
-      headers: { 'User-Agent': 'manifest-agent-plugin/inspect-image', ...headers },
-      timeout: 10_000,
-      agent: SSRF_AGENT,
-    }, (res) => {
-      const chunks = [];
-      let received = 0;
-      let aborted = false;
-      res.on('data', (c) => {
-        if (aborted) return;
-        received += c.length;
-        if (received > MAX_BODY_BYTES) {
-          aborted = true;
-          req.destroy();
-          reject(new Error(`response body exceeded ${MAX_BODY_BYTES} bytes (cap) on ${host}${path}`));
-          return;
-        }
-        chunks.push(c);
-      });
-      res.on('end', () => {
-        if (aborted) return;
-        const body = Buffer.concat(chunks).toString('utf8');
-        resolve({ status: res.statusCode, headers: res.headers, body });
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(new Error(`request timeout on ${host}${path}`)); });
-    req.end();
+  // Thin wrapper over `_https-json.cjs`. The 10s timeout / 10 MiB cap
+  // are inspect-image's tighter limits — registry manifests and config
+  // blobs are small (well under 1 MB in practice), so a low cap is the
+  // right defensive choice here even though the helper defaults are
+  // looser. Returns the same { status, headers, body } shape as before.
+  return httpsGet({
+    host,
+    path,
+    headers,
+    timeout: 10_000,
+    maxBodyBytes: MAX_BODY_BYTES,
+    userAgent: 'manifest-agent-plugin/inspect-image',
   });
 }
 

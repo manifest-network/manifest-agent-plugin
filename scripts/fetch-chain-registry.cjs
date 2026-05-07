@@ -18,23 +18,16 @@ if (major < 18) {
 
 const { mkdirSync, chmodSync } = require('node:fs');
 const { join } = require('node:path');
-const { request } = require('node:https');
 const { URL } = require('node:url');
-const { RequestFilteringHttpsAgent } = require('request-filtering-agent');
 const { atomicWrite, getDataDir } = require('./_io.cjs');
+const { httpsGet } = require('./_https-json.cjs');
 
-// Block requests to RFC 1918 / loopback / link-local at connect time. The
-// registry URLs below are hardcoded GitHub raw URLs today and are not
-// user-controlled, so SSRF is not exploitable in current call sites — but
-// applying the same agent that `inspect-image.cjs` uses keeps the defense
-// uniform across all outbound HTTPS the plugin makes, so a future change
-// that takes a registry URL from config or a user prompt cannot quietly
-// open an SSRF hole.
-const SSRF_AGENT = new RequestFilteringHttpsAgent();
-const REQUEST_TIMEOUT_MS = 15_000;
-// 5 MiB cap. The largest chain.json on cosmos/chain-registry today is ~50 KB;
-// 5 MiB is a comfortable headroom that still bounds memory usage.
-const MAX_BODY_BYTES = 5 * 1024 * 1024;
+// SSRF guard, request timeout, and body-size cap all live in
+// `_https-json.cjs` now — see that file for the rationale on the shared
+// SSRF agent. The registry URLs below are hardcoded GitHub raw URLs and
+// are not user-controlled, so SSRF is not exploitable today, but using
+// the shared helper keeps the defense uniform across every outbound
+// HTTPS the plugin makes.
 
 const REGISTRY_BASE = 'https://raw.githubusercontent.com/cosmos/chain-registry/master';
 const CHAINS = {
@@ -51,56 +44,30 @@ const CHAINS = {
   },
 };
 
-function fetchJson(urlStr) {
-  return new Promise((resolveOuter, rejectOuter) => {
-    let settled = false;
-    const resolve = (v) => { if (!settled) { settled = true; resolveOuter(v); } };
-    const reject = (e) => { if (!settled) { settled = true; rejectOuter(e); } };
-
-    const u = new URL(urlStr);
-    const req = request({
-      host: u.host,
-      path: u.pathname + u.search,
-      method: 'GET',
-      headers: { 'User-Agent': 'manifest-agent-plugin/fetch-chain-registry', 'Accept': 'application/json' },
-      timeout: REQUEST_TIMEOUT_MS,
-      agent: SSRF_AGENT,
-    }, (res) => {
-      // Reject on non-2xx (including 3xx — chain-registry raw URLs serve
-      // content directly; a redirect almost certainly means the resource
-      // moved and we'd rather fail loud than silently follow).
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        res.resume();
-        reject(new Error(`HTTP ${res.statusCode} for ${urlStr}`));
-        return;
-      }
-      const chunks = [];
-      let received = 0;
-      let aborted = false;
-      res.on('data', (c) => {
-        if (aborted) return;
-        received += c.length;
-        if (received > MAX_BODY_BYTES) {
-          aborted = true;
-          req.destroy();
-          reject(new Error(`response body exceeded ${MAX_BODY_BYTES} bytes (cap) on ${urlStr}`));
-          return;
-        }
-        chunks.push(c);
-      });
-      res.on('end', () => {
-        if (aborted) return;
-        try {
-          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-        } catch (err) {
-          reject(new Error(`response from ${urlStr} was not JSON: ${err.message}`));
-        }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(new Error(`request timeout on ${urlStr}`)); });
-    req.end();
+async function fetchJson(urlStr) {
+  // Wrap `httpsGet` with chain-registry-specific status + JSON handling.
+  // Non-2xx (including 3xx redirects) is rejected: chain-registry raw
+  // URLs serve content directly today, so a redirect almost certainly
+  // means the resource moved and we'd rather fail loud than silently
+  // follow. inspect-image.cjs has different needs (it follows registry
+  // 307s explicitly), which is why each caller handles status itself
+  // rather than baking a policy into the shared helper.
+  const u = new URL(urlStr);
+  const { status, body } = await httpsGet({
+    host: u.host,
+    path: u.pathname + u.search,
+    headers: { 'Accept': 'application/json' },
+    userAgent: 'manifest-agent-plugin/fetch-chain-registry',
+    label: urlStr,
   });
+  if (status < 200 || status >= 300) {
+    throw new Error(`HTTP ${status} for ${urlStr}`);
+  }
+  try {
+    return JSON.parse(body);
+  } catch (err) {
+    throw new Error(`response from ${urlStr} was not JSON: ${err.message}`);
+  }
 }
 
 function parseArgs(argv) {

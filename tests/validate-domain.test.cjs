@@ -8,7 +8,7 @@ function validate(domain) {
   return runScript('validate-domain.cjs', ['--domain', domain]).json;
 }
 
-test('valid two-label FQDN passes', () => {
+test('valid FQDN passes', () => {
   const r = validate('app.example.com');
   assert.equal(r.valid, true);
   assert.deepEqual(r.reasons, []);
@@ -77,12 +77,10 @@ test('empty string is rejected', () => {
 });
 
 test('domain over 253 chars is rejected (length cap)', () => {
-  // 250 chars in label, so total > 253. Separately tests the cap, since
-  // any single label over 63 also fires the per-label rule.
-  const labels = ['abcdefghij', 'abcdefghij', 'abcdefghij', 'abcdefghij', 'abcdefghij'];
-  // 5 × 10 + 4 dots = 54. Build something deliberately > 253 across many short labels.
+  // Build a domain over 253 chars from many short labels so we trip the
+  // overall length cap without also tripping the per-label-63-char rule.
+  // 30 labels of 8 chars + 29 dots + ".com" = 273 chars.
   const big = Array.from({ length: 30 }, () => 'abcdefgh').join('.') + '.com';
-  // 30 × 8 + 29 + 4 = 273
   const r = validate(big);
   assert.equal(r.valid, false);
   assert.ok(r.reasons.some((s) => /exceeds 253 characters/.test(s)));
