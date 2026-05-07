@@ -18,7 +18,16 @@ if (major < 18) {
 
 const { mkdirSync, chmodSync } = require('node:fs');
 const { join } = require('node:path');
+const { URL } = require('node:url');
 const { atomicWrite, getDataDir } = require('./_io.cjs');
+const { httpsGet } = require('./_https-json.cjs');
+
+// SSRF guard, request timeout, and body-size cap all live in
+// `_https-json.cjs` now — see that file for the rationale on the shared
+// SSRF agent. The registry URLs below are hardcoded GitHub raw URLs and
+// are not user-controlled, so SSRF is not exploitable today, but using
+// the shared helper keeps the defense uniform across every outbound
+// HTTPS the plugin makes.
 
 const REGISTRY_BASE = 'https://raw.githubusercontent.com/cosmos/chain-registry/master';
 const CHAINS = {
@@ -34,6 +43,32 @@ const CHAINS = {
     faucetUrl: 'https://faucet.testnet.manifest.network/',
   },
 };
+
+async function fetchJson(urlStr) {
+  // Wrap `httpsGet` with chain-registry-specific status + JSON handling.
+  // Non-2xx (including 3xx redirects) is rejected: chain-registry raw
+  // URLs serve content directly today, so a redirect almost certainly
+  // means the resource moved and we'd rather fail loud than silently
+  // follow. inspect-image.cjs has different needs (it follows registry
+  // 307s explicitly), which is why each caller handles status itself
+  // rather than baking a policy into the shared helper.
+  const u = new URL(urlStr);
+  const { status, body } = await httpsGet({
+    host: u.host,
+    path: u.pathname + u.search,
+    headers: { 'Accept': 'application/json' },
+    userAgent: 'manifest-agent-plugin/fetch-chain-registry',
+    label: urlStr,
+  });
+  if (status < 200 || status >= 300) {
+    throw new Error(`HTTP ${status} for ${urlStr}`);
+  }
+  try {
+    return JSON.parse(body);
+  } catch (err) {
+    throw new Error(`response from ${urlStr} was not JSON: ${err.message}`);
+  }
+}
 
 function parseArgs(argv) {
   const args = { dataDir: null };
@@ -89,16 +124,19 @@ function extractChainData(chainRaw, assetList) {
   for (const [network, urls] of Object.entries(CHAINS)) {
     console.error(`Fetching ${network} chain data...`);
     try {
-      const [chainRes, assetRes] = await Promise.all([
-        fetch(urls.chain),
-        fetch(urls.assets),
+      // Asset list is optional (used only for symbol lookup), so allow it to
+      // fail without aborting the whole network. Promise.allSettled keeps the
+      // chain.json failure as the load-bearing one.
+      const [chainRes, assetRes] = await Promise.allSettled([
+        fetchJson(urls.chain),
+        fetchJson(urls.assets),
       ]);
-      if (!chainRes.ok) {
-        console.error(`  Failed: HTTP ${chainRes.status} for ${urls.chain}`);
+      if (chainRes.status === 'rejected') {
+        console.error(`  Failed: ${chainRes.reason.message}`);
         continue;
       }
-      const chainRaw = await chainRes.json();
-      const assetList = assetRes.ok ? await assetRes.json() : null;
+      const chainRaw = chainRes.value;
+      const assetList = assetRes.status === 'fulfilled' ? assetRes.value : null;
       const data = extractChainData(chainRaw, assetList);
       if (urls.converterAddress) data.converterAddress = urls.converterAddress;
       if (urls.faucetUrl) data.faucetUrl = urls.faucetUrl;

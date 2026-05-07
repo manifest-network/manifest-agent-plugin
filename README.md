@@ -94,7 +94,7 @@ Walks you through choosing single-service vs multi-service stack, picking a SKU,
 /manifest-agent:deploy-app /path/to/the/saved-spec.json
 ```
 
-The spec file is plain JSON — hand-edit it, version-control it, generate it from a script, share it across deploys. Default save location is `$MANIFEST_PLUGIN_DATA/manifests-drafts/`, but you can save anywhere.
+The spec file is plain JSON — hand-edit it, version-control it, generate it from a script, share it across deploys. Default save location is `$MANIFEST_PLUGIN_DATA/manifests-drafts/`; a custom absolute path is allowed as long as it resolves inside that drafts directory or the system tmpdir.
 
 All three paths assume you already have a public container image (e.g. `ghcr.io/me/app@sha256:…`) on a registry the Fred provider permits. Image build and image push are intentionally out of scope — bring your own published image.
 

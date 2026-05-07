@@ -35,6 +35,7 @@
 
 const { readFileSync } = require('node:fs');
 const { UUID_RE } = require('./_uuid.cjs');
+const { findLease, normalizeItem } = require('./_lease-items.cjs');
 
 function parseArgs(argv) {
   const args = {};
@@ -42,20 +43,6 @@ function parseArgs(argv) {
     if (argv[i] === '--lease-uuid' && argv[i + 1]) { args.leaseUuid = argv[++i]; }
   }
   return args;
-}
-
-function pickLeasesArray(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (payload && typeof payload === 'object' && Array.isArray(payload.leases)) return payload.leases;
-  throw new Error('leases_by_tenant response: expected `leases[]` array or bare array');
-}
-
-function normalizeItem(raw) {
-  // Accept both camelCase (chain post-snake-to-camel) and snake_case keys —
-  // the MCP wrappers have varied. Empty-string default on missing fields.
-  const serviceName = (raw && (raw.serviceName ?? raw.service_name)) || '';
-  const customDomain = (raw && (raw.customDomain ?? raw.custom_domain)) || '';
-  return { serviceName, customDomain };
 }
 
 (async () => {
@@ -78,20 +65,13 @@ function normalizeItem(raw) {
     process.exit(1);
   }
 
-  let leases;
+  let lease;
   try {
-    leases = pickLeasesArray(payload);
+    lease = findLease(payload, args.leaseUuid);
   } catch (err) {
     console.error(err.message);
     process.exit(1);
   }
-
-  const targetUuid = args.leaseUuid.toLowerCase();
-  const lease = leases.find((l) => {
-    if (!l || typeof l !== 'object') return false;
-    const u = (l.uuid ?? l.lease_uuid ?? l.leaseUuid);
-    return typeof u === 'string' && u.toLowerCase() === targetUuid;
-  });
 
   if (!lease) {
     console.log(JSON.stringify({ found: false, items: [], single_item: false }));

@@ -6,6 +6,9 @@
   "engines": {
     "node": ">=18"
   },
+  "scripts": {
+    "test": "node --test tests/"
+  },
   "dependencies": {
     "@cosmjs/proto-signing": "0.32.4",
     "@manifest-network/manifest-mcp-node": "0.8.0",

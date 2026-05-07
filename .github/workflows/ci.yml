@@ -126,3 +126,10 @@ jobs:
             fi
           done
           NODE_PATH="$HOME/.manifest-agent/node_modules" node -e "require('@cosmjs/proto-signing'); console.log('NODE_PATH resolution ok')"
+
+      - name: Run unit tests
+        # Tests use `node:test` + `node:assert` (no test framework dep). The
+        # NODE_PATH points at the same install populated above so any future
+        # test that requires() a runtime dep resolves the same way the
+        # plugin's MCP wrapper does at runtime.
+        run: NODE_PATH="$HOME/.manifest-agent/node_modules" node --test tests/*.test.cjs
