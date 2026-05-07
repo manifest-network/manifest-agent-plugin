@@ -6,9 +6,9 @@ The release process is tag-driven. Pushing a `v*.*.*` tag to `main` triggers `.g
 
 The plugin uses [Semantic Versioning](https://semver.org/):
 
-- **Patch** (`X.Y.Z+1`) — bug fixes, doc-only changes, dependency bumps that don't change behavior.
-- **Minor** (`X.Y+1.0`) — new skills, new flags, new MCP tool gating, behavior additions that don't break existing flows.
-- **Major** (`X+1.0.0`) — anything that breaks an existing skill argument, removes a script, changes a wrapper-file `schema_version`'s read contract, or otherwise requires existing users to take action.
+- **Patch** (`0.4.0` → `0.4.1`) — bug fixes, doc-only changes, dependency bumps that don't change behavior.
+- **Minor** (`0.4.0` → `0.5.0`) — new skills, new flags, new MCP tool gating, behavior additions that don't break existing flows.
+- **Major** (`0.4.0` → `1.0.0`) — anything that breaks an existing skill argument, removes a script, changes a wrapper-file `schema_version`'s read contract, or otherwise requires existing users to take action.
 
 The version string lives in two manifests that MUST match:
 

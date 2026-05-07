@@ -120,12 +120,12 @@ Use `grep -rn '<script>.cjs' skills/ scripts/ references/` if you need to locate
 - **`write-config.cjs`** — Writes a fresh `config.json` from key-script output + chain selection (used during init/import flows where there's no existing config to update). Flags: `--chain`, `--gas-price`, `--gas-token`.
 - **`start-server.cjs`** — MCP wrapper. Reads `config.json`, builds env vars (see "config.json → MCP env var mapping"), spawns `$MANIFEST_PLUGIN_DATA/node_modules/.bin/manifest-mcp-<name>` directly. Forwards SIGTERM/SIGINT/SIGHUP. Uses `stdio: 'inherit'` so MCP JSON-RPC passes through transparently. Argv: `<name>` (one of `chain` / `lease` / `fred` / `cosmwasm`). Wired up via `.mcp.json`.
 
-### Non-CLI renderers (documented exceptions to the underscore-prefix rule)
+### Renderers not invoked by skills (documented exceptions to the underscore-prefix rule)
 
-These are conceptually renderers that other renderers compose, so they live without an `_` prefix — but skills don't shell out to them.
+These are conceptually renderers that other renderers compose, so they live without an `_` prefix — but skills don't shell out to them as part of any orchestration flow. (`summarize-app-status.cjs` does carry a `#!/usr/bin/env node` shebang and a `require.main === module` block for ad-hoc debugging; it's intentionally not part of any skill's surface.)
 
-- **`humanize-denom.cjs`** — Converts on-chain denoms to human-readable symbols via the chain registry. Exports `loadChainDenomMap`, `humanizeCoin`, `humanizeBalances`, `denomToSymbol`.
-- **`summarize-app-status.cjs`** — Renders the "Status" section of the troubleshoot report. Exports `renderStatusSection`.
+- **`humanize-denom.cjs`** — Converts on-chain denoms to human-readable symbols via the chain registry. Exports `loadChainDenomMap`, `humanizeCoin`, `humanizeBalances`, `denomToSymbol`. Pure module — no CLI entry.
+- **`summarize-app-status.cjs`** — Renders the "Status" section of the troubleshoot report. Exports `renderStatusSection`. Has an ad-hoc CLI (reads JSON from stdin, prints the section) but no skill invokes it; the production caller is `render-troubleshoot-report.cjs` via `require()`.
 
 ### Internal helpers (`_<topic>.cjs`)
 
