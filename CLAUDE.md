@@ -33,7 +33,7 @@ Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
 
 **Secrets via stdin** — Mnemonics are piped via heredoc (`<<'EOF'`, single-quoted to prevent shell expansion), never as command-line args (visible in `/proc/*/cmdline`).
 
-**Underscore-prefix helpers** — Scripts named `_<topic>.cjs` (`_io.cjs`, `_uuid.cjs`, `_gas-price.cjs`, `_connection.cjs`, `_lease-state.cjs`, `_spec.cjs`, `_lease-items.cjs`, `_https-json.cjs`) are sibling-only modules consumed via `require('./_X.cjs')`. Skills MUST NOT shell out to them.
+**Underscore-prefix helpers** — Scripts named `_<topic>.cjs` (`_io.cjs`, `_uuid.cjs`, `_gas-price.cjs`, `_connection.cjs`, `_lease-state.cjs`, `_spec.cjs`, `_lease-items.cjs`, `_https-json.cjs`) are sibling-only modules consumed via `require('./_X.cjs')`. Skills MUST NOT shell out to them. Two non-underscore modules are documented exceptions because they're conceptually renderers that other renderers compose (`humanize-denom.cjs`, `summarize-app-status.cjs`); they're listed in the "Renderer / structural summarizers" subsection of the inventory below.
 
 **MCP wrapper** (`start-server.cjs`) — Reads `config.json`, builds env vars, spawns `$MANIFEST_PLUGIN_DATA/node_modules/.bin/manifest-mcp-<name>` directly (not npx — 30ms vs 800ms startup). Forwards SIGTERM/SIGINT/SIGHUP. Uses `stdio: 'inherit'` so MCP JSON-RPC passes through transparently.
 
@@ -76,6 +76,72 @@ This plugin codifies a split between deterministic operations (CJS scripts in `s
 **In prose:** asking the user open-ended questions (image refs, env values, service names), interpreting fuzzy diagnostic signals (the `troubleshoot-deployment` suggestion table), branching on unstable response shapes that require LLM judgment.
 
 The motivation: deterministic logic in prose accumulates LLM-paraphrasing drift across runs and can silently regress when models change. Scripts pin the contract.
+
+The enumeration above is illustrative; see "Scripts inventory" below for the full per-script catalog.
+
+## Scripts inventory
+
+Every file under `scripts/`. Underscore-prefixed files are sibling-only modules consumed via `require('./_X.cjs')` — skills MUST NOT shell out to them. Non-underscore files are normally CLI entry points invoked by skills (or by other scripts via `spawnSync`); two non-underscore non-CLI modules exist as a documented exception (`humanize-denom.cjs` and `summarize-app-status.cjs` — see "Renderer / structural summarizers" below). Most CLI scripts emit a single line of JSON on stdout; renderer scripts emit Markdown blocks. CLI scripts exit `1` on argv/usage errors and write a one-line diagnostic to stderr; scripts that classify or probe (e.g. `dns-precheck.cjs`, `classify-deploy-error.cjs`) treat the "failed" classification as a normal stdout result and exit `0`.
+
+Use `grep -rn '<script>.cjs' skills/ scripts/ references/` if you need to locate callers — the call graph drifts and isn't worth restating in prose.
+
+### CLI entry points
+
+- **`build-set-domain-args.cjs`** — Builds the positional args array for `set-item-custom-domain` broadcasts. Flags: `--lease-uuid`, `--fqdn`, `--clear`, `--service-name`.
+- **`classify-deploy-error.cjs`** — Classifies `deploy_app` MCP throw-path envelopes into `partially_succeeded` vs `failed`, extracts `lease_uuid` for partial-success recovery. Flags: `--expected-custom-domain`. Reads error envelope from stdin.
+- **`classify-deploy-response.cjs`** — Classifies `deploy_app` return values into `active` / `needs_wait` / `failed` based on connection presence and lease state. Reads response from stdin.
+- **`decode-lease-state.cjs`** — Decodes a Cosmos `LeaseState` integer or string to canonical name (`LEASE_STATE_ACTIVE`, `LEASE_STATE_PENDING`, etc.). Flags: `--state`, `--json`.
+- **`dispatch-deploy-input.cjs`** — Classifies the `/deploy-app` argument string into a mode (`empty`, `spec_file`, `single_image`, `multi_image`, `error`). Flags: `--arguments`.
+- **`dns-precheck.cjs`** — Warn-only DNS A/AAAA/CNAME probe with hard 5 s timeout. Flags: `--domain`, `--timeout-ms`. Used at FQDN-management time only — at deploy time the provider FQDN doesn't exist yet.
+- **`evaluate-readiness.cjs`** — Evaluates `check_deployment_readiness` response for `ok` / `warn` / `block` and explains which threshold tripped. Flags: `--gas-price`, `--gas-warn-floor`, `--chain-data-file`. Reads readiness response from stdin.
+- **`extract-lease-items.cjs`** — Extracts a specific lease's items array from `leases_by_tenant` response. Flags: `--lease-uuid`. Reads response from stdin.
+- **`extract-primary-image.cjs`** — Extracts the canonical image reference from a spec (first service's image for stacks, top-level for singles). Reads spec from stdin.
+- **`fetch-chain-registry.cjs`** — Fetches Manifest mainnet + testnet chain data from the Cosmos chain registry, injects the testnet `faucetUrl`, writes to `$MANIFEST_PLUGIN_DATA/chains/`. Flags: `--data-dir`.
+- **`format-success.cjs`** — Renders the user-facing "Deployed." block (URL, lease UUID, provider) from a `deploy_app` response. Flags: `--lease-uuid`. Reads response from stdin.
+- **`gen-agent-key.cjs`** — Non-interactive Cosmos keypair generation. Generates a random 32-byte password internally; emits `{ address, keyfile, password, agentId }` JSON on stdout (the orchestrator then pipes that into `write-config.cjs`). Flags: `--prefix`, `--output`.
+- **`humanize-fee.cjs`** — Renders a `cosmos_estimate_fee` result as a human-readable string (e.g. `0.0023 MFX`). Flags: `--chain-data-file`, `--fee-json`.
+- **`import-key.cjs`** — Non-interactive mnemonic import. Reads mnemonic from stdin (one line, space-separated). Generates a random 32-byte password internally; emits `{ address, keyfile, password, agentId }` JSON on stdout. Flags: `--prefix`, `--output`.
+- **`inspect-image.cjs`** — Inspects an OCI image via the Distribution API (extracts ports, env defaults, digest). Flags: `--image`.
+- **`list-saved-manifests.cjs`** — Lists saved post-deploy wrappers with redacted non-sensitive fields (never `manifest_json`).
+- **`merge-env.cjs`** — Reads dotenv-format from stdin and merges it into `spec.services[<name>].env` (or top-level `spec.env`) in place. Outputs only the merged keys, never values. Flags: `--spec-file`, `--service-name`.
+- **`remove-manifest.cjs`** — Unlinks a saved wrapper after `close_lease`. No-op if missing. Flags: `--lease-uuid`.
+- **`render-deployment-plan.cjs`** — Renders the canonical `DeploymentPlan` block printed verbatim before broadcasting. Flags: `--meta-hash`, `--image`, `--size`, `--tx-gas`, `--tx-fee` (human-readable string from `humanize-fee.cjs`, NOT raw `<amount><denom>`), `--custom-domain`, `--custom-domain-service`, `--set-domain-tx-gas`, `--set-domain-tx-fee`, `--chain-data-file`. Reads a `{ summary, readiness }` envelope on stdin (summary shape from `summarize-spec.cjs`; readiness shape from `evaluate-readiness.cjs`). Internally requires `humanize-denom.cjs` to format wallet balances. **Single source of truth for plan format** — the runtime policy in `session-start.sh` defers to this script's stdout, so changes here propagate to both the policy and the orchestrator skill.
+- **`render-intent-recap.cjs`** — Renders the deterministic structural portion of the deploy intent recap (chain, signer, format, service count). Flags: `--active-chain`. Reads spec from stdin.
+- **`render-partial-success-prompt.cjs`** — Renders the AskUserQuestion options for the partial-success recovery branch (retry-set-domain / salvage / cancel). Flags: `--lease-uuid`, `--decoded-state`, `--reason`, `--requested-custom-domain`.
+- **`render-troubleshoot-report.cjs`** — Renders the full Markdown troubleshoot report from `app_status` + `app_diagnostics` + `get_logs` responses. Reads payload from stdin.
+- **`save-manifest.cjs`** — Persists a v3 wrapper at `$MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json` (mode `0600`). Manifest JSON is read from a tmpfile to keep large payloads off the command line. Required flags: `--lease-uuid`, `--image`, `--size`, `--meta-hash`, `--chain-id`, `--manifest-file`. Optional: `--custom-domain`, `--custom-domain-service-name`.
+- **`save-manifest-draft.cjs`** — Atomic-writes a deployment spec to a user-managed draft path. Refuses to overwrite. Flags: `--path`. Reads spec from stdin.
+- **`summarize-manifest.cjs`** — Renders the redacted (env keys, never values) summary of a saved post-deploy wrapper. Flags: `--lease-uuid`.
+- **`summarize-spec.cjs`** — Reads a spec from stdin, emits structural summary (format, service count, env *keys* only, image refs). Used in intent recaps and as the `summary` half of `render-deployment-plan.cjs`'s stdin envelope.
+- **`synthesize-deploy-response.cjs`** — Synthesizes a `DEPLOY_RESPONSE`-shaped object from `app_status` for the fallback path where `deploy_app` returned without an active connection. Flags: `--lease-uuid`, `--custom-domain`.
+- **`update-config.cjs`** — Mutates `$MANIFEST_PLUGIN_DATA/config.json` in place (chain switch, gas price/multiplier change, registry refresh, status snapshot). Flags: `--status`, `--chain`, `--gas-price`, `--gas-token`, `--gas-multiplier`, `--refresh-chains`. `--status` is read-only and mutually exclusive with the mutating flags.
+- **`validate-domain.cjs`** — Loose client-side FQDN sanity check (length ≤ 253, lowercase, ≥1 dot, no leading/trailing dots/hyphens, non-numeric TLD). Flags: `--domain`. Authoritative validation is on-chain.
+- **`verify-domain-state.cjs`** — Re-queries `leases_by_tenant` post-broadcast and asserts the lease item's `customDomain` matches expected. Flags: `--lease-uuid`, `--service-name`, `--expected`.
+- **`write-config.cjs`** — Writes a fresh `config.json` from key-script output + chain selection (used during init/import flows where there's no existing config to update). Flags: `--chain`, `--gas-price`, `--gas-token`.
+- **`start-server.cjs`** — MCP wrapper. Reads `config.json`, builds env vars (see "config.json → MCP env var mapping"), spawns `$MANIFEST_PLUGIN_DATA/node_modules/.bin/manifest-mcp-<name>` directly. Forwards SIGTERM/SIGINT/SIGHUP. Uses `stdio: 'inherit'` so MCP JSON-RPC passes through transparently. Argv: `<name>` (one of `chain` / `lease` / `fred` / `cosmwasm`). Wired up via `.mcp.json`.
+
+### Non-CLI renderers (documented exceptions to the underscore-prefix rule)
+
+These are conceptually renderers that other renderers compose, so they live without an `_` prefix — but skills don't shell out to them.
+
+- **`humanize-denom.cjs`** — Converts on-chain denoms to human-readable symbols via the chain registry. Exports `loadChainDenomMap`, `humanizeCoin`, `humanizeBalances`, `denomToSymbol`.
+- **`summarize-app-status.cjs`** — Renders the "Status" section of the troubleshoot report. Exports `renderStatusSection`.
+
+### Internal helpers (`_<topic>.cjs`)
+
+- **`_connection.cjs`** — Decodes provider `connection` payloads into running-instance ingress data. Exports `extractRunningEndpoints`, `formatEndpointAsUrl`, `formatEndpointAsIngress`, `hasRunningInstances`.
+- **`_gas-price.cjs`** — Composes a Cosmos gas-price string (`<amount><denom>`) by symbol lookup in chain registry data. Exports `composeGasPrice`.
+- **`_https-json.cjs`** — Shared HTTPS GET helper with SSRF guard (via `request-filtering-agent`), 15 s timeout, 5 MB body cap. Exports `httpsGet`.
+- **`_io.cjs`** — Shared I/O primitives. Exports `getDataDir` (resolves `$MANIFEST_PLUGIN_DATA`, errors if missing), `atomicWrite` (write-tmp-then-rename with mode preservation), `readJsonFile`.
+- **`_lease-items.cjs`** — Shape decoders for lease responses. Exports `pickLeasesArray`, `normalizeItem`, `findLease`.
+- **`_lease-state.cjs`** — Canonical `LeaseState` enum table + decode/isTerminal helpers. Exports `STATES`, `TERMINAL_STATES`, `decode`, `isTerminal`.
+- **`_spec.cjs`** — Spec inspection (single-service vs services-map detection, normalization). Exports `isStack`, `firstImage`, `normalizeServices`.
+- **`_uuid.cjs`** — Strict UUID v4 regex (8-4-4-4-12 lowercase hex). Exports `UUID_RE`, `UUID_PATTERN`, `isUuid`.
+
+### Hook scripts
+
+- **`session-start.sh`** — SessionStart hook. (1) Emits the runtime transaction policy heredoc on stdout (canonical source of the runtime-facing policy; CLAUDE.md is dev-only). (2) Exports `MANIFEST_PLUGIN_ROOT`, `MANIFEST_PLUGIN_DATA`, `NODE_PATH` via `CLAUDE_ENV_FILE`. (3) Bootstraps `npm install --omit=dev` when `package.json` differs between plugin root and `$MANIFEST_PLUGIN_DATA`. Failure log at `$MANIFEST_PLUGIN_DATA/.last-install.log`.
+- **`pre-tool-use.sh`** — PreToolUse hook. Emits `{hookSpecificOutput.permissionDecision: "ask"}` for every broadcast tool in the matcher (see "Tools gated by the PreToolUse hook" below). Fail-closed: any error in the trap emits `deny` instead. Cannot verify the agent showed a fee summary first — that's the runtime policy's job.
 
 ## config.json → MCP env var mapping
 
@@ -121,28 +187,17 @@ Read-only tools and the testnet faucet (`mcp__manifest-chain__request_faucet`) a
 
 ## Testing Changes
 
+Quick smoke run:
+
 ```bash
 # Test the plugin locally (SessionStart hook handles npm install + env export)
 claude --plugin-dir .
 
-# Test scripts independently — set MANIFEST_PLUGIN_DATA manually since
-# SessionStart only fires inside Claude Code. Pick any directory you can write
-# to; the helper just needs a path and the dir is auto-created on first use.
-export MANIFEST_PLUGIN_DATA="$HOME/.manifest-agent-dev"
-
-# Install deps into that dir
-mkdir -p "$MANIFEST_PLUGIN_DATA" && cp package.json "$MANIFEST_PLUGIN_DATA/"
-npm install --omit=dev --prefix "$MANIFEST_PLUGIN_DATA"
-
-# Test fetch-chain-registry
-node scripts/fetch-chain-registry.cjs
-
-# Test key generation
-NODE_PATH="$MANIFEST_PLUGIN_DATA/node_modules" node scripts/gen-agent-key.cjs --prefix manifest
-
-# Test MCP wrapper (requires config.json + deps)
-node scripts/start-server.cjs chain
+# Run the unit tests (no MANIFEST_PLUGIN_DATA needed — tests stub it)
+npm test
 ```
+
+For exercising scripts directly without Claude Code, fixture setup, and the per-script test conventions, see [`docs/testing.md`](docs/testing.md).
 
 ## Manifest specs (user-managed)
 
@@ -195,15 +250,19 @@ What it doesn't: env values still flow into the `build_manifest_preview` and `de
 
 After a successful broadcast `/manifest-agent:deploy-app` persists a wrapper at `$MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json` (mode `0600`, parent dir `0700`). Wrapper schema v3: `{ schema_version: 3, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash_hex, format, manifest_json, custom_domain?, custom_domain_service_name? }` where `manifest_json` is the canonical Fred-rendered string (preserves the exact bytes whose SHA-256 is `meta_hash_hex` for audit), `format` is `"single"` or `"stack"`, and the optional v3 fields capture any custom-domain attached at deploy time. v2 wrappers remain readable; the new v3 fields are treated as undefined when absent. The wrapper itself carries no credentials, but `manifest_json` includes the env values the user supplied during authoring — those can be sensitive (DB URLs, API tokens). Exposure is mitigated by file permissions; skills must NOT pretty-print `manifest_json` into chat unredacted.
 
-Helpers (skills should use these instead of reading the wrapper file directly):
-
-- `scripts/save-manifest.cjs` — writes the wrapper. Manifest JSON is read from a tmpfile (`--manifest-file`) to keep large JSON off the command line. Atomic write.
-- `scripts/remove-manifest.cjs` — unlinks the file. Called by `/manifest-agent:deploy-app` and `troubleshoot-deployment` after a successful `close_lease`. No-op if the file is missing (close_lease may target a lease the agent never deployed).
-- `scripts/list-saved-manifests.cjs` — returns the safe-fields-only listing (never `manifest_json`). Used by `troubleshoot-deployment` as a fallback lease picker.
-- `scripts/summarize-manifest.cjs` — redacted structural summary (counts + env *keys*, never values). Used by `troubleshoot-deployment`'s "Saved manifest" appendix.
-- `scripts/merge-env.cjs` — merges dotenv-format stdin into `spec.services[<name>].env` (or flat `spec.env`) in place. Outputs `keys_merged` only. See "Sensitive env values" above.
+Skills MUST use the wrapper helpers (`save-manifest.cjs`, `remove-manifest.cjs`, `list-saved-manifests.cjs`, `summarize-manifest.cjs`) instead of `Read`-ing or `Write`-ing the wrapper file directly — the helpers enforce atomic write, mode `0600`, and redaction discipline. See the Scripts inventory above for each helper's flag surface.
 
 Naturally-expired leases leave their saved manifest in place — the file is the historical record. There is no periodic sweep. Lease lifecycle (active / closed / expired) is queried fresh from chain state via `app_status` rather than tracked in the wrapper.
+
+### Wrapper schema evolution
+
+When changing the wrapper shape, bump `schema_version` and update both writers and readers in lockstep:
+
+- **Writer**: `save-manifest.cjs` produces only the current version.
+- **Readers**: `summarize-manifest.cjs`, `list-saved-manifests.cjs`, and any skill prose that names a field. Readers MUST treat unknown-newer wrappers as readable to the extent of their known fields, and missing optional fields as `undefined` (no defaulting). The v2→v3 transition (custom-domain fields) is the worked example — v2 wrappers still load via the same readers, with `custom_domain`/`custom_domain_service_name` rendering as undefined.
+- **Tests**: `tests/summarize-manifest.test.cjs` is the canonical place to add a fixture asserting the new shape AND a v(N-1) fixture asserting backward read compatibility.
+
+There is no migration step — the wrapper is a record, not a config file. A v2 wrapper stays v2 on disk forever; v3 wrappers are written for new deploys only.
 
 ## Fred manifest schema
 
@@ -214,5 +273,13 @@ Naturally-expired leases leave their saved manifest in place — the file is the
 Fetched from the Cosmos chain registry (`cosmos/chain-registry` on GitHub):
 - Mainnet: `manifest/chain.json` — chain ID `manifest-ledger-mainnet`, RPC at `nodes.liftedinit.app`
 - Testnet: `testnets/manifesttestnet/chain.json` — chain ID `manifest-ledger-testnet`, RPC at `nodes.liftedinit.tech`
-- Gas: both `umfx` and factory `upwr` token are valid fee tokens. The plugin extracts `fees.fee_tokens[0]` (umfx) by default.
+- Gas: both `umfx` and factory `upwr` token are valid fee tokens. The plugin extracts `fees.fee_tokens[0]` (umfx) by default. If the chain registry's ordering ever changes, the default flips silently — pin the choice via `update-config.cjs --gas-token` if you need stability.
 - Faucet: testnet only. The chain registry does not advertise it, so `fetch-chain-registry.cjs` injects `https://faucet.testnet.manifest.network/` directly into the testnet chain data. See the env-var table above for how it propagates.
+
+## For contributors
+
+Workflow docs live in [`docs/`](docs/):
+
+- [`docs/testing.md`](docs/testing.md) — running tests, adding tests, fixture conventions, exercising scripts outside Claude Code.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch naming, commit conventions, PR checklist.
+- [`docs/release.md`](docs/release.md) — version-bump flow and tagging.
