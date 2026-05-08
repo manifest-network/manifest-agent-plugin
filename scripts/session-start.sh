@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SessionStart hook for the manifest-agent plugin.
 #
-# Three responsibilities:
+# Four responsibilities:
 #   1. Emit the runtime transaction policy on stdout so it is injected
 #      into every Claude session that uses the plugin. Plugin CLAUDE.md
 #      files are developer docs and do NOT reach runtime sessions — this
@@ -11,22 +11,38 @@
 #      runtime data directory from bash commands. MANIFEST_PLUGIN_DATA
 #      is Claude Code's persistent per-plugin data directory
 #      (~/.claude/plugins/data/<id>/) — survives plugin updates.
-#   3. Bootstrap npm dependencies on first run / when package.json
+#   3. Capture Claude Code's session_id from the SessionStart hook stdin
+#      payload and export it as MANIFEST_SESSION_ID. The operation
+#      journal (ENG-124) tags every record with this id so multiple
+#      records from one Claude Code session group together.
+#   4. Bootstrap npm dependencies on first run / when package.json
 #      changes (diff-check pattern from the docs). Removes the failure
 #      mode where a fresh user invokes /manifest-agent:deploy-app
 #      before /manifest-agent:init-agent and the MCP wrapper crashes
 #      with "binary not found".
 #
-# Ordering is deliberate: policy injection runs first so it is locked
-# into the session regardless of what happens with the env-file write
-# or npm install. `set -euo pipefail` means a failed write produces a
-# non-zero exit Claude Code can surface, rather than silently leaving
-# the session in a half-enforced state.
+# Ordering is deliberate: stdin is captured FIRST (before any other
+# command consumes it), then policy injection writes to stdout, then
+# env-file writes happen, then npm install. `set -euo pipefail` means
+# a failed write produces a non-zero exit Claude Code can surface,
+# rather than silently leaving the session in a half-enforced state.
 #
 # Edit the policy text below (not CLAUDE.md) if you need to change
 # runtime behavior.
 
 set -euo pipefail
+
+# Capture the SessionStart hook payload (a JSON object including
+# `session_id`, per Claude Code hook docs) before anything else reads
+# stdin. `cat` returns 0 even on EOF; the `|| true` is belt-and-
+# suspenders against `set -e` in degenerate cases (no stdin attached,
+# closed pipe). HOOK_PAYLOAD stays empty when no payload is sent —
+# e.g., when the script is invoked from `bash scripts/session-start.sh`
+# in CI for the policy syntax check.
+HOOK_PAYLOAD=""
+if [ ! -t 0 ]; then
+  HOOK_PAYLOAD=$(cat || true)
+fi
 
 cat <<'POLICY'
 # manifest-agent runtime transaction policy
@@ -173,6 +189,25 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   # scripts, which need exactly this resolution path. Hoisting kills the
   # 9-site duplication that was previously prefixed onto each invocation.
   printf 'export NODE_PATH=%q\n' "${CLAUDE_PLUGIN_DATA}/node_modules" >> "$CLAUDE_ENV_FILE"
+
+  # Extract session_id from the captured hook payload. Use jq when
+  # available, otherwise fall back to a tolerant grep+sed. Empty
+  # SESSION_ID just skips the export — _journal.cjs treats a missing
+  # MANIFEST_SESSION_ID as a null session id in the journal record.
+  SESSION_ID=""
+  if [ -n "$HOOK_PAYLOAD" ]; then
+    if command -v jq >/dev/null 2>&1; then
+      SESSION_ID=$(printf '%s' "$HOOK_PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null || true)
+    else
+      SESSION_ID=$(printf '%s' "$HOOK_PAYLOAD" \
+        | grep -oE '"session_id"[[:space:]]*:[[:space:]]*"[^"]+"' \
+        | head -n1 \
+        | sed -E 's/.*"session_id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+    fi
+  fi
+  if [ -n "$SESSION_ID" ]; then
+    printf 'export MANIFEST_SESSION_ID=%q\n' "$SESSION_ID" >> "$CLAUDE_ENV_FILE"
+  fi
 fi
 
 # Bootstrap deps when package.json differs (or on first run). Pattern from

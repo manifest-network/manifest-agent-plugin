@@ -73,3 +73,34 @@ Tell the user what was updated:
 - When `BEFORE` is null (first-time fetch), report what was newly written
   without claiming anything changed.
 - If config.json was updated, remind the user to restart MCP servers.
+
+## Step 5 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key whose name contains `password` or
+`mnemonic`; the writer refuses to append such records.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "refresh-registry",
+  "active_chain": "<activeChain from Step 1 status, or null if no config>",
+  "signer_address": "<address from Step 1 status, or null>",
+  "intent": "<the user's request, in their words, max ~240 chars>",
+  "plan_summary": "refresh chain registry",
+  "tool_calls": [],
+  "outcome": "success",
+  "final_state": {
+    "chains_changed": ["<list of dotted-path fields that changed, or empty array>"],
+    "config_updated": "<true|false>"
+  },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If `BEFORE === AFTER` or `BEFORE` was null, `chains_changed` is `[]`. Do
+NOT mention the journal write in your reply to the user.

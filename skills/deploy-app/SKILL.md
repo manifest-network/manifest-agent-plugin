@@ -504,6 +504,9 @@ If the script reports `Ingress: (none — service is internal or no FQDN
 reported)`, just print that as-is. The user knows what an internal-only
 service is; do not narrate around it.
 
+After printing the success block, continue to Step 12 with
+`JOURNAL_OUTCOME = "success"` and the success `final_state` shape.
+
 ## Step 11 — Failure
 
 Three sub-cases.
@@ -517,6 +520,13 @@ and the three recovery paths (retry set-domain + upload / salvage without
 domain / cancel-or-close, with PENDING-vs-ACTIVE branching for the
 correct chain primitive).
 
+After the recovery branch resolves, continue to Step 12 with
+`JOURNAL_OUTCOME = "partial"` and a `final_state` reflecting which path
+the user picked (retry / salvage / cancel) plus the chosen lease state.
+Track the user's pick as `RECOVERY_ACTION` (one of `retry-set-domain`,
+`salvage-without-domain`, `cancel-or-close`) and add it to
+`recovery_actions[]` in the journal record.
+
 ### When the broadcast created a lease (`LEASE_UUID` present)
 
 `Read` `skills/deploy-app/references/troubleshoot-after-deploy-failure.md`
@@ -526,9 +536,84 @@ diagnostic + cleanup flow (parallel `app_status` / `app_diagnostics` /
 on-chain verification with `terminal`-flag branching for
 `remove-manifest.cjs` cleanup).
 
+After the cleanup branch resolves, continue to Step 12 with
+`JOURNAL_OUTCOME = "failed"` and a `final_state` carrying `lease_uuid`
+and the user's close-or-keep choice.
+
 ### When no lease was created (`LEASE_UUID` absent)
 
 The broadcast failed before any lease was created (most commonly: registry
 rejected at upload time, insufficient gas, network error). Surface the
-`error_summary` from the classify-deploy-response output verbatim and stop.
-No cleanup needed.
+`error_summary` from the classify-deploy-response output verbatim. No
+cleanup needed.
+
+After surfacing the error, continue to Step 12 with
+`JOURNAL_OUTCOME = "failed"` and a minimal `final_state` (no lease_uuid).
+
+## Step 12 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key whose name contains `password` or
+`mnemonic`; the writer refuses to append such records. Do NOT embed
+`MANIFEST_JSON` or any spec env values; the redaction discipline (env
+keys-only, never values) is mandatory in `args_redacted` for
+`build_manifest_preview` and `deploy_app` — the rules live in
+`scripts/_journal.cjs#redactArgs`.
+
+`tool_calls[]` MUST enumerate every MCP tool call this skill made, in
+order. For each entry, set `outcome` to `"ok"` or `"error"`. The
+critical entries (omit any not used on the path you took):
+
+- `build_manifest_preview` (Step 3)
+- `check_deployment_readiness` (Step 5)
+- `cosmos_estimate_fee` for `create-lease` (Step 6a)
+- `cosmos_estimate_fee` for `set-item-custom-domain` (Step 6a-bis, when custom domain is set)
+- `deploy_app` (Step 8)
+- `wait_for_app_ready` (Step 9, only when classify said `needs_wait`)
+- `app_status` (Step 9 needs_wait branch, or Step 11 has-lease branch)
+- `app_diagnostics`, `get_logs` (Step 11 has-lease branch)
+- `cosmos_estimate_fee` for `close-lease` + `close_lease` (Step 11 cleanup)
+- `update_app` (Step 11 partial salvage / retry branch)
+- `set_item_custom_domain` (Step 11 partial retry branch)
+
+Each `args_redacted` follows the per-tool reduction in
+`scripts/_journal.cjs#redactArgs`:
+- `deploy_app` / `build_manifest_preview` → `{ summary: { format, service_count, env_count, env_keys, images }, customDomain?, serviceName?, size? }`. Env values MUST NOT appear.
+- `cosmos_estimate_fee` → `{ module, subcommand, args: [...], gas_multiplier }` verbatim (billing args carry no secrets).
+- Lease-module / fred provider tools → pass through (lease UUID, FQDN, service name, sku name).
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "deploy-app",
+  "active_chain": "<activeChain from Step 0>",
+  "signer_address": "<address from Step 0>",
+  "intent": "<the user's request, in their words, max ~240 chars>",
+  "plan_summary": "deploy <format> spec, <service_count> services, image=<primary image>, size=<SIZE>, custom_domain=<fqdn|null>",
+  "tool_calls": [
+    "<populate per the rules above; see scripts/_journal.cjs#redactArgs>"
+  ],
+  "outcome": "<JOURNAL_OUTCOME>",
+  "final_state": "<see per-branch shapes below>",
+  "errors": "<list of { class, message, mcp_error_code? } from any errored tool calls or empty []>",
+  "recovery_actions": "<list of recovery actions taken, e.g. ['retry-set-domain'] for partial branch>"
+}
+JOURNAL_EOF
+```
+
+`final_state` shapes by branch:
+
+- **success** (Step 10): `{ "lease_uuid": "<LEASE_UUID>", "image": "<IMAGE>", "size": "<SIZE>", "chain_id": "<CHAIN_ID>", "format": "<single|stack>", "meta_hash_hex": "<META_HASH>", "custom_domain": "<fqdn or null>", "custom_domain_service_name": "<service or null>", "provider_uuid": "<DEPLOY_RESPONSE.provider_uuid or null>", "url": "<first url from format-success.cjs output, or null>" }`
+- **partial** (Step 11 partial-success): `{ "lease_uuid": "<LEASE_UUID>", "what_succeeded": "create-lease", "what_failed": "<set-domain|upload>", "decoded_state": "<DECODED_STATE>", "recovery_choice": "<retry-set-domain|salvage-without-domain|cancel-or-close>" }`
+- **failed with lease** (Step 11 has-lease): `{ "lease_uuid": "<LEASE_UUID>", "close_choice": "<close|keep>", "verified_terminal": "<true|false>" }`
+- **failed no lease** (Step 11 no-lease): `{ "error_summary": "<error_summary from classify-deploy-response>" }`
+
+If the user cancelled at the textual confirm in Step 7 (or earlier in
+Step 1 mainnet warning, Step 4 intent-recap Abort), set `outcome` to
+`"cancelled"`, truncate `tool_calls[]` to whatever ran before the
+cancellation, and set `final_state` to a small object with at least the
+cancelled-step name (e.g. `{ "cancelled_at": "step-7-confirm" }`). Do
+NOT mention the journal write in your reply to the user — it's an
+internal audit trail.

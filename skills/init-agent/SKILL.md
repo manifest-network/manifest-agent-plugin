@@ -151,6 +151,41 @@ Tell the user:
 If the user chose testnet, suggest requesting faucet funds to the new address
 using the `mcp__manifest-chain__request_faucet` tool if it is available.
 
+## Step 8 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key whose name contains `password` or
+`mnemonic`; the writer refuses to append such records (this is the
+defense in depth for this skill — mnemonics flow only through stdin
+pipes between scripts and never enter the journal).
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "init-agent",
+  "active_chain": "<chosen chain — testnet or mainnet>",
+  "signer_address": "<address parsed from write-config output>",
+  "intent": "<the user's request, in their words, max ~240 chars>",
+  "plan_summary": "init-agent (<generate|import>) on <chosen chain>, gas_token=<GAS_TOKEN>",
+  "tool_calls": [],
+  "outcome": "success",
+  "final_state": {
+    "address": "<address>",
+    "active_chain": "<chosen chain>",
+    "gas_token": "<GAS_TOKEN>"
+  },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If the user declined the existing-key warning in Step 4 or cancelled at
+any choice prompt, set `outcome` to `"cancelled"`. Do NOT mention the
+journal write in your reply to the user.
+
 ## Security notes
 
 - The key password NEVER appears in this conversation. It flows directly from

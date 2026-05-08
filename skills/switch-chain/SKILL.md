@@ -84,3 +84,33 @@ Tell the user:
 3. MCP servers need to be restarted to connect to the new chain
 4. Their agent address remains the same (same key works on both chains, but
    balances differ)
+
+## Step 6 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key whose name contains `password` or
+`mnemonic`; the writer refuses to append such records.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "switch-chain",
+  "active_chain": "<new active chain — testnet or mainnet>",
+  "signer_address": "<address from Step 0>",
+  "intent": "<the user's request, in their words, max ~240 chars>",
+  "plan_summary": "<old chain> -> <new chain>",
+  "tool_calls": [],
+  "outcome": "success",
+  "final_state": { "active_chain": "<new chain>", "chain_id": "<chain ID from update-config output>" },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If the user cancelled (Step 1 "already on chain" early-out, or Step 2
+mainnet decline), set `outcome` to `"cancelled"` and adjust
+`final_state`. Do NOT mention the journal write in your reply to the
+user — it's an internal audit trail.

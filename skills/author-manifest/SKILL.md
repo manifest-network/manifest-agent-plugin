@@ -484,3 +484,56 @@ version-control as-is.
 
 The image registry will be checked by the provider at deploy-time. If it's
 rejected, `deploy_app` will fail with a clear error.
+
+## Step 10 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key whose name contains `password` or
+`mnemonic`, and do NOT embed the spec's env values; the writer refuses
+records with secret-shaped keys, and `tool_calls[].args_redacted` for
+`build_manifest_preview` MUST follow the env-keys-only convention (see
+`scripts/_journal.cjs#redactArgs`).
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "author-manifest",
+  "active_chain": "<activeChain from Step 0>",
+  "signer_address": "<address from Step 0>",
+  "intent": "<the user's request, in their words, max ~240 chars>",
+  "plan_summary": "author <SHAPE> spec, <service_count> services, image=<primary image>",
+  "tool_calls": [
+    {
+      "tool": "mcp__manifest-fred__build_manifest_preview",
+      "args_redacted": {
+        "summary": { "format": "<single|stack>", "service_count": <N>, "env_count": <N>, "env_keys": ["<KEY1>", "<KEY2>"], "images": ["<image1>"] },
+        "customDomain": "<fqdn or null>",
+        "serviceName": "<service or null>",
+        "size": "<SIZE>"
+      },
+      "outcome": "ok",
+      "result_summary": { "meta_hash_hex": "<META_HASH>", "format": "<format>", "valid": true }
+    }
+  ],
+  "outcome": "success",
+  "final_state": {
+    "saved_path": "<SAVED_PATH>",
+    "meta_hash_hex": "<META_HASH>",
+    "format": "<single|stack>",
+    "custom_domain": "<fqdn or null>",
+    "custom_domain_service_name": "<service or null>"
+  },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If the user cancelled mid-flow (e.g. aborted at the inspect-image fail
+prompt or chose Skip on every env mode), set `outcome` to `"cancelled"`
+and reduce `final_state` accordingly. If validation in Step 7 looped
+multiple times before succeeding, only the FINAL successful preview goes
+in `tool_calls[]` (the validation loop is implementation detail). Do
+NOT mention the journal write in your reply to the user.

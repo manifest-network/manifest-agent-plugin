@@ -12,11 +12,14 @@ A Claude Code plugin (`manifest-agent`) that bootstraps an autonomous agent for 
 
 ```
 Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
-├── scripts/*.cjs                ├── config.json        (0600, has key password)
-├── skills/*/SKILL.md            ├── keys/agent-*.json  (0600, encrypted wallets)
+├── scripts/*.cjs                ├── config.json                  (0600, has key password)
+├── skills/*/SKILL.md            ├── keys/agent-*.json            (0600, encrypted wallets)
 ├── hooks/hooks.json             ├── chains/{mainnet,testnet}.json
-├── .mcp.json                    ├── node_modules/      (deps installed here)
-└── package.json                 └── package.json       (copied from plugin root)
+├── .mcp.json                    ├── manifests/<lease-uuid>.json  (0600, post-deploy records)
+└── package.json                 ├── manifests-drafts/*.json      (0600, user-managed drafts)
+                                 ├── journal/<YYYY-MM-DD>.jsonl   (0600, append-only audit trail)
+                                 ├── node_modules/                (deps installed here)
+                                 └── package.json                 (copied from plugin root)
 ```
 
 **Data flow**: Skills run scripts → scripts write to `$MANIFEST_PLUGIN_DATA` → MCP wrapper reads `config.json` at startup → spawns MCP binary with computed env vars.
@@ -55,6 +58,7 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
     - `/manifest-agent:deploy-app` (no arg) — drive a thin inline authoring sequence and deploy in one shot.
   Both paths: validate via `build_manifest_preview` → `evaluate-readiness.cjs` → `render-deployment-plan.cjs` → confirm → `deploy_app` → `classify-deploy-response.cjs` → persist via `save-manifest.cjs` → `format-success.cjs`. On the typical happy path the orchestrator reads connection details directly from `deploy_app`'s response; the fallback path calls `wait_for_app_ready` and `app_status` only when `deploy_app` returns without an active connection. Failure path runs an inline troubleshoot sequence and offers `close_lease`. **When `customDomain` is set in the spec**, `deploy_app` broadcasts TWO billing txes atomically (`create-lease` + `set-item-custom-domain`); the orchestrator estimates both fees, shows them line-by-line in the DeploymentPlan, and on partial failure (`Deploy partially succeeded:` MCP error) routes through `classify-deploy-error.cjs` to a retry-set-domain / close-lease / leave-as-is branch.
 - **manage-domain** — Set, clear, or look up the custom domain (FQDN) attached to an existing lease item. Three sub-flows via `AskUserQuestion`. Set/clear go through `cosmos_estimate_fee` + textual confirm + PreToolUse + on-chain verification (re-query `leases_by_tenant`, find item, check `customDomain`). Lookup is read-only (`lease_by_custom_domain` reverse query).
+- **journal** — Read-only audit-trail query over `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. Filter by date / skill / lease UUID / outcome / signer. Markdown or JSONL output. The journal is written by every state-changing skill at the end of each invocation; this skill is the canonical reader.
 
 ### `references/` files and cross-skill loading
 
@@ -102,6 +106,8 @@ Use `grep -rn '<script>.cjs' skills/ scripts/ references/` if you need to locate
 - **`humanize-fee.cjs`** — Renders a `cosmos_estimate_fee` result as a human-readable string (e.g. `0.0023 MFX`). Flags: `--chain-data-file`, `--fee-json`.
 - **`import-key.cjs`** — Non-interactive mnemonic import. Reads mnemonic from stdin (one line, space-separated). Generates a random 32-byte password internally; emits `{ address, keyfile, password, agentId }` JSON on stdout. Flags: `--prefix`, `--output`.
 - **`inspect-image.cjs`** — Inspects an OCI image via the Distribution API (extracts ports, env defaults, digest). Flags: `--image`.
+- **`journal-read.cjs`** — Read-only query over the operation journal. Flags: `--date`, `--since`/`--until` (inclusive range), `--skill`, `--lease`, `--outcome`, `--signer`, `--format markdown|jsonl` (default markdown), `--limit`. Tolerates a torn final line silently (power-loss safety); earlier unparseable lines log to stderr but don't abort. Default scope is today UTC.
+- **`journal-write.cjs`** — Append a JSON record (read on stdin) to today's `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl` (UTC). Auto-fills `timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` (from `$MANIFEST_SESSION_ID`) when absent. Refuses to append (exit 1) when any key matches the secret denylist (`mnemonic`/`password`, case-insensitive substring). Flag: `--dry-run`.
 - **`list-saved-manifests.cjs`** — Lists saved post-deploy wrappers with redacted non-sensitive fields (never `manifest_json`).
 - **`merge-env.cjs`** — Reads dotenv-format from stdin and merges it into `spec.services[<name>].env` (or top-level `spec.env`) in place. Outputs only the merged keys, never values. Flags: `--spec-file`, `--service-name`.
 - **`remove-manifest.cjs`** — Unlinks a saved wrapper after `close_lease`. No-op if missing. Flags: `--lease-uuid`.
@@ -133,6 +139,7 @@ These are conceptually renderers that other renderers compose, so they live with
 - **`_gas-price.cjs`** — Composes a Cosmos gas-price string (`<amount><denom>`) by symbol lookup in chain registry data. Exports `composeGasPrice`.
 - **`_https-json.cjs`** — Shared HTTPS GET helper with SSRF guard (via `request-filtering-agent`), 15 s timeout, 5 MB body cap. Exports `httpsGet`.
 - **`_io.cjs`** — Shared I/O primitives. Exports `getDataDir` (resolves `$MANIFEST_PLUGIN_DATA`, errors if missing), `atomicWrite` (write-tmp-then-rename with mode preservation), `readJsonFile`.
+- **`_journal.cjs`** — Operation-journal helpers. Exports `SCHEMA_VERSION` (1), `MAX_RECORD_BYTES` (4096 — PIPE_BUF on Linux, the atomic O_APPEND bound), `appendRecord(record)` (validates + atomically appends; oversized records replaced with a `journal_truncated` marker), `redactArgs(toolName, rawArgs)` (per-tool reduction — spec → summary for `deploy_app`/`build_manifest_preview`, pass-through for known-safe tools, defensive walk for unknown tools), `validateRecord(record)` (refuses any record whose key tree contains `mnemonic`/`password` substrings), `todayUtcDate`, `journalDir`, `journalFilePath`. Used by `journal-write.cjs`/`journal-read.cjs` and any future sibling that needs to write directly without shelling out.
 - **`_lease-items.cjs`** — Shape decoders for lease responses. Exports `pickLeasesArray`, `normalizeItem`, `findLease`.
 - **`_lease-state.cjs`** — Canonical `LeaseState` enum table + decode/isTerminal helpers. Exports `STATES`, `TERMINAL_STATES`, `decode`, `isTerminal`.
 - **`_spec.cjs`** — Spec inspection (single-service vs services-map detection, normalization). Exports `isStack`, `firstImage`, `normalizeServices`.
@@ -140,7 +147,7 @@ These are conceptually renderers that other renderers compose, so they live with
 
 ### Hook scripts
 
-- **`session-start.sh`** — SessionStart hook. (1) Emits the runtime transaction policy heredoc on stdout (canonical source of the runtime-facing policy; CLAUDE.md is dev-only). (2) Exports `MANIFEST_PLUGIN_ROOT`, `MANIFEST_PLUGIN_DATA`, `NODE_PATH` via `CLAUDE_ENV_FILE`. (3) Bootstraps `npm install --omit=dev` when `package.json` differs between plugin root and `$MANIFEST_PLUGIN_DATA`. Failure log at `$MANIFEST_PLUGIN_DATA/.last-install.log`.
+- **`session-start.sh`** — SessionStart hook. (1) Captures the hook payload from stdin so step (3) can extract `session_id`. (2) Emits the runtime transaction policy heredoc on stdout (canonical source of the runtime-facing policy; CLAUDE.md is dev-only). (3) Exports `MANIFEST_PLUGIN_ROOT`, `MANIFEST_PLUGIN_DATA`, `NODE_PATH` via `CLAUDE_ENV_FILE`, and `MANIFEST_SESSION_ID` when the hook payload's `session_id` field is parseable (jq if available, grep+sed fallback otherwise; absent → field omitted, journal records carry `session_id: null`). (4) Bootstraps `npm install --omit=dev` when `package.json` differs between plugin root and `$MANIFEST_PLUGIN_DATA`. Failure log at `$MANIFEST_PLUGIN_DATA/.last-install.log`.
 - **`pre-tool-use.sh`** — PreToolUse hook. Emits `{hookSpecificOutput.permissionDecision: "ask"}` for every broadcast tool in the matcher (see "Tools gated by the PreToolUse hook" below). Fail-closed: any error in the trap emits `deny` instead. Cannot verify the agent showed a fee summary first — that's the runtime policy's job.
 
 ## config.json → MCP env var mapping
@@ -263,6 +270,26 @@ When changing the wrapper shape, bump `schema_version` and update both writers a
 - **Tests**: `tests/summarize-manifest.test.cjs` is the canonical place to add a fixture asserting the new shape AND a v(N-1) fixture asserting backward read compatibility.
 
 There is no migration step — the wrapper is a record, not a config file. A v2 wrapper stays v2 on disk forever; v3 wrappers are written for new deploys only.
+
+## Operation journal
+
+Every state-changing skill appends one record per invocation to `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl` (UTC, mode `0600`, parent dir `0700`). Records capture intent, plan summary, tool calls (`args_redacted` per `_journal.cjs#redactArgs`), outcome, errors, recovery actions, and final state. Schema docstring lives at the top of `_journal.cjs`. The skill `/manifest-agent:journal` is the canonical reader.
+
+**Writing**: skills pipe a JSON record to `journal-write.cjs`. The writer auto-fills `timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` (from `$MANIFEST_SESSION_ID`); validates that no key in the record's tree contains `mnemonic` or `password` (case-insensitive substring); appends one line via `fs.appendFileSync(... { flag: 'a' })`. POSIX guarantees atomic O_APPEND below `PIPE_BUF` (4 KiB on Linux); records exceeding that bound are replaced with a smaller `journal_truncated` marker so the daily file never carries a torn line.
+
+**Redaction discipline** — same posture as `summarize-manifest.cjs`:
+- Env maps render as sorted keys, never values.
+- `mnemonic` / `password` keys are stripped (writer refuses to append).
+- `manifest_json` is reduced via the in-process equivalent of `summarize-spec.cjs`, never embedded raw.
+- Lease UUIDs, addresses, image refs, custom domains ARE captured.
+
+**Skills that DON'T write a record**: `manage-domain` lookup sub-flow (read-only), `troubleshoot-deployment` when `close_lease` doesn't fire (read-only). The `/manifest-agent:journal` query skill is also read-only and writes nothing.
+
+**Failure-path records**: `deploy-app` writes a record at every terminal point — Step 10 success, Step 11 partial-success, Step 11 has-lease failure, Step 11 no-lease failure. Cancelled flows (user declined at any confirm gate) get a record with `outcome: "cancelled"` and a small `final_state.cancelled_at`.
+
+**Schema versioning**: bump `_journal.cjs#SCHEMA_VERSION` when the record shape changes. Readers (`journal-read.cjs`) treat unknown-newer schema versions as opaque records — they're surfaced verbatim in JSONL mode and rendered with whatever fields they happen to carry in markdown mode. There is no migration; old records stay on disk in their original schema forever.
+
+**Out of scope by design**: encryption at rest (mode `0600` + parent `0700` is the same posture as saved manifest wrappers), vector store / embeddings / retrieval (JSONL is the substrate; indexing layers slot on top later without changing the writer), cross-host sync (the journal is per-machine).
 
 ## Fred manifest schema
 
