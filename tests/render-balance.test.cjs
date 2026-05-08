@@ -49,6 +49,83 @@ test('full credit account renders all four lines', () => {
   });
 });
 
+test('funded credits without active lease falls back to credits.available_balances', () => {
+  // Real-world scenario the chain emits when a user has funded their credit
+  // account but has no ACTIVE leases yet: `current_balance` is absent (the
+  // per-tenant credit estimator skips its computation), but `credits` is
+  // populated. render-deployment-plan.cjs already handles this via
+  // `current_balance` -> `credits.available_balances` -> `credits.balances`;
+  // render-balance.cjs must mirror that chain, otherwise funded users would
+  // be mislabeled as having no credit account at all.
+  const payload = {
+    credits: {
+      available_balances: [{ denom: 'umfx', amount: '750000' }],
+      balances: [{ denom: 'umfx', amount: '1000000' }],
+    },
+    balances: [{ denom: 'umfx', amount: '500000' }],
+  };
+  withChainData(FEE_TOKENS, (path) => {
+    const r = runScript(
+      'render-balance.cjs',
+      ['--chain-data-file', path, '--address', ADDR],
+      JSON.stringify(payload),
+    );
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /- Credit balance: 0\.75 MFX/);
+    // Live estimator fields are not meaningful when sourced from
+    // available_balances / balances — they must NOT appear.
+    assert.match(r.stdout, /- Burn rate: \(unavailable\)/);
+    assert.match(r.stdout, /- Hours remaining: ~\(unavailable\)/);
+  });
+});
+
+test('credits with only balances (gross funded) falls back further', () => {
+  const payload = {
+    credits: {
+      balances: [{ denom: 'umfx', amount: '2000000' }],
+    },
+    balances: [],
+  };
+  withChainData(FEE_TOKENS, (path) => {
+    const r = runScript(
+      'render-balance.cjs',
+      ['--chain-data-file', path, '--address', ADDR],
+      JSON.stringify(payload),
+    );
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /- Credit balance: 2 MFX/);
+  });
+});
+
+test('credits exists but every balance array is empty renders "(empty)"', () => {
+  const payload = {
+    credits: { available_balances: [], balances: [] },
+    balances: [],
+  };
+  withChainData(FEE_TOKENS, (path) => {
+    const r = runScript(
+      'render-balance.cjs',
+      ['--chain-data-file', path, '--address', ADDR],
+      JSON.stringify(payload),
+    );
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /- Credit balance: \(empty\)/);
+    assert.doesNotMatch(r.stdout, /- Credit balance: \(no credit account\)/);
+  });
+});
+
+test('rejects array stdin (not a JSON object)', () => {
+  withChainData(FEE_TOKENS, (path) => {
+    const r = runScript(
+      'render-balance.cjs',
+      ['--chain-data-file', path, '--address', ADDR],
+      '[]',
+    );
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /expected a JSON object/);
+  });
+});
+
 test('null credits surfaces "(no credit account)" and "(unavailable)" fallbacks', () => {
   const payload = {
     credits: null,

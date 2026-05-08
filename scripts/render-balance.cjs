@@ -19,16 +19,37 @@
  *                             (echoed in the heading; the MCP response
  *                             doesn't carry it back).
  *
- * Output (stdout, Markdown, fixed shape):
+ * Output (stdout, Markdown): a heading line plus four bullet rows, one
+ * per credit-account dimension. The exact layout:
+ *
  *   ### Balance for <address>
  *   - Wallet: <humanized balances list, or "(empty)">
- *   - Credit balance: <humanized current_balance | "(no credit account)">
+ *   - Credit balance: <humanized | "(no credit account)" | "(empty)">
  *   - Burn rate: <humanized spending_per_hour> / hour (running: <n> apps)
  *   - Hours remaining: ~<hours_remaining>
  *
- * Missing optional fields render as `(unavailable)`. When `credits` is
- * null or absent, "Credit balance:" surfaces `(no credit account)` and
- * the burn-rate / hours-remaining lines fall back to `(unavailable)`.
+ * Credit-balance fallback chain (mirrors `render-deployment-plan.cjs`'s
+ * `fmtCredits` to keep the two renderers in sync — a freshly-funded
+ * tenant with no ACTIVE leases otherwise gets mislabeled "(no credit
+ * account)" because the chain only emits `current_balance` when the
+ * per-tenant credit estimator has live leases to compute against):
+ *
+ *   1. `payload.current_balance`  (live estimator output; only present
+ *      when the user has at least one ACTIVE lease)
+ *   2. `payload.credits.available_balances`  (funded minus reserved)
+ *   3. `payload.credits.balances`  (gross funded)
+ *
+ * `(no credit account)` is reserved STRICTLY for `credits == null/undefined`.
+ * If the credit account exists but every fallback array is empty/absent,
+ * the credit-balance line renders `(empty)` instead.
+ *
+ * Burn rate / running_apps / hours_remaining are part of the same
+ * per-tenant estimator output as `current_balance`, so they are
+ * meaningful only when the credit-balance source is `'current'`. When
+ * we fall back to `available_balances` / `balances`, those three lines
+ * render `(unavailable)` — the chain does not emit them in that case
+ * (and `hours_remaining: 0` from a no-active-leases tenant would
+ * mislead users into thinking their funded credits expire immediately).
  *
  * Exit codes: 0 success; 1 bad args / unparseable stdin / unrecognized shape.
  */
@@ -43,6 +64,28 @@ function parseArgs(argv) {
     else if (argv[i] === '--address' && argv[i + 1]) { args.address = argv[++i]; }
   }
   return args;
+}
+
+function pickCreditBalance(payload) {
+  const c = payload.credits;
+  if (c === null || c === undefined) return { value: null, source: 'none' };
+
+  let balances = Array.isArray(payload.current_balance) && payload.current_balance.length > 0
+    ? payload.current_balance
+    : null;
+  if (balances) return { value: balances, source: 'current' };
+
+  balances = Array.isArray(c.available_balances) && c.available_balances.length > 0
+    ? c.available_balances
+    : null;
+  if (balances) return { value: balances, source: 'available' };
+
+  balances = Array.isArray(c.balances) && c.balances.length > 0
+    ? c.balances
+    : null;
+  if (balances) return { value: balances, source: 'funded' };
+
+  return { value: null, source: 'empty' };
 }
 
 (async () => {
@@ -65,7 +108,7 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
-  if (!payload || typeof payload !== 'object') {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     console.error('expected a JSON object on stdin');
     process.exit(1);
   }
@@ -74,20 +117,27 @@ function parseArgs(argv) {
 
   const wallet = humanizeBalances(payload.balances, denomMap);
 
-  const hasCreditAccount = payload.credits !== null && payload.credits !== undefined;
-  const creditBalance = hasCreditAccount && Array.isArray(payload.current_balance)
-    ? humanizeBalances(payload.current_balance, denomMap)
-    : '(no credit account)';
+  const credit = pickCreditBalance(payload);
+  let creditBalance;
+  if (credit.source === 'none') creditBalance = '(no credit account)';
+  else if (credit.source === 'empty') creditBalance = '(empty)';
+  else creditBalance = humanizeBalances(credit.value, denomMap);
 
-  const burnRate = hasCreditAccount && Array.isArray(payload.spending_per_hour)
+  // Live estimator fields (spending_per_hour, running_apps, hours_remaining)
+  // are part of the SAME response slice as `current_balance` — only meaningful
+  // when the credit balance is sourced from there. Fallback paths produce a
+  // useful credit-balance number but no live runway data.
+  const isLive = credit.source === 'current';
+
+  const burnRate = isLive && Array.isArray(payload.spending_per_hour)
     ? humanizeBalances(payload.spending_per_hour, denomMap)
     : '(unavailable)';
 
-  const runningApps = hasCreditAccount && typeof payload.running_apps === 'string'
+  const runningApps = isLive && typeof payload.running_apps === 'string'
     ? payload.running_apps
     : '(unavailable)';
 
-  const hoursRemaining = hasCreditAccount && typeof payload.hours_remaining === 'string'
+  const hoursRemaining = isLive && typeof payload.hours_remaining === 'string'
     ? payload.hours_remaining
     : '(unavailable)';
 

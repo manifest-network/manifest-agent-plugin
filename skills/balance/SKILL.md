@@ -42,11 +42,15 @@ and stop. Otherwise parse the JSON; you need:
 
 **Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly.
 
-## Step 1 — Resolve the target tenant
+## Step 1 — Resolve the target address for the heading
 
-If `$ARGUMENTS` is a non-empty string, treat it as the target tenant
-(`TENANT = $ARGUMENTS`). Otherwise use the agent's own address from
-Step 0 (`TENANT = address`).
+The renderer always echoes a `### Balance for <address>` heading, so
+you need a concrete address to pass it as `--address`. Resolve once:
+
+- If `$ARGUMENTS` is a non-empty string, treat it as the target tenant.
+  Set `TENANT = $ARGUMENTS` and `EXPLICIT_TENANT = true`.
+- Otherwise, set `TENANT = address` (from Step 0) and
+  `EXPLICIT_TENANT = false`.
 
 Do not validate the bech32 client-side — `credit_balance` calls the
 chain's `validateAddress` and will surface a precise error on bad
@@ -54,14 +58,23 @@ input.
 
 ## Step 2 — Fetch the balance
 
-Call:
+Call `credit_balance`. Two cases (the `tenant` arg semantics differ
+from the heading address resolved above):
 
-```
-mcp__manifest-lease__credit_balance({ tenant: TENANT })
-```
+- **Explicit tenant**: when `EXPLICIT_TENANT === true`, pass the
+  argument through:
+  ```
+  mcp__manifest-lease__credit_balance({ tenant: TENANT })
+  ```
+- **Implicit caller**: when `EXPLICIT_TENANT === false`, omit `tenant`
+  entirely so the MCP tool defaults to the caller (avoids a redundant
+  round-trip):
+  ```
+  mcp__manifest-lease__credit_balance({})
+  ```
 
-(Omit `tenant` entirely when `$ARGUMENTS` was empty — the MCP tool
-defaults to the caller, which avoids a redundant round-trip.)
+In both cases, `TENANT` is still used in Step 3 as the renderer's
+`--address` so the heading is correct.
 
 ## Step 3 — Render
 
@@ -74,10 +87,14 @@ echo '<credit_balance response>' \
       --address "$TENANT"
 ```
 
-**Print the script's stdout verbatim.** It's a four-line Markdown block
-covering wallet balances, credit balance, burn rate (with running-app
-count), and runway hours. Optional fields render as `(unavailable)` —
-do not paraphrase or rearrange.
+**Print the script's stdout verbatim.** The renderer emits a heading
+(`### Balance for <address>`) followed by four bullet rows: wallet,
+credit balance, burn rate (with running-app count), and runway hours.
+Missing optional fields render as `(unavailable)`; a freshly-funded
+credit account with no active leases falls back through
+`credits.available_balances` / `credits.balances` rather than
+mislabeling itself as `(no credit account)`. Do not paraphrase or
+rearrange.
 
 ## Step 4 — Optional follow-ups
 

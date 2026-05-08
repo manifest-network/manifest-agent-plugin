@@ -12,9 +12,12 @@ allowed-tools: Bash(*), Read
 # Restart App
 
 You are restarting a running Manifest app via its provider. The lease
-stays open; the container is signaled to stop and start again. The tx
-is a broadcast (gas only, no fee estimate available because
-`restart_app` is not estimable).
+stays open; the container is signaled to stop and start again.
+`restart_app` is an HTTPS call to the provider — NOT a Cosmos
+transaction. There is no on-chain broadcast, no gas, and no fee
+estimate. The PreToolUse permission prompt still fires (the runtime
+policy gates it) and a textual confirmation is still required, but do
+not query balances or call `cosmos_estimate_fee` for this skill.
 
 **For all user choices in this skill, use the `AskUserQuestion` tool.**
 
@@ -22,7 +25,7 @@ is a broadcast (gas only, no fee estimate available because
 Step numbers (e.g. "Step 4") are scaffolding for skill authors only.
 To the user, just describe what you're doing in plain language — e.g.
 "I'll show you the lease status, then ask you to confirm before
-broadcasting", not "Now in Step 2". Skip phrases like "Now in Step N"
+restarting", not "Now in Step 2". Skip phrases like "Now in Step N"
 or "Branching to..."; describe the action itself.
 
 ## Step 0 — Verify environment
@@ -97,28 +100,35 @@ and stop:
 
 If `activeChain === "mainnet"`, ask via `AskUserQuestion`:
 
-> Mainnet warning: restarting on mainnet costs gas and briefly
-> interrupts traffic to your app. Continue?
+> Mainnet warning: restarting on mainnet briefly interrupts traffic to
+> your app while the provider stops and starts the container.
+> Continue?
 
 Options: **Yes** / **No**. Stop on No.
+
+(No "costs gas" wording — `restart_app` is a provider HTTPS call, not
+a Cosmos broadcast; the user is not paying gas for it.)
 
 ## Step 4 — Textual confirm
 
 Use `AskUserQuestion` (Yes / No):
 
 > Restart lease `<LEASE_UUID>` (image `<IMAGE>`)?
-> `restart_app` is not estimable — only the gas-only tx fee applies.
 > The container will briefly stop and restart at the provider; the
-> lease stays open.
+> lease stays open. This is an HTTPS call to the provider, not an
+> on-chain transaction — no gas is spent and no fee estimate applies.
 
 Stop on No.
 
-## Step 5 — Broadcast
+## Step 5 — Call the provider
 
 Call `mcp__manifest-fred__restart_app({ lease_uuid: LEASE_UUID })`.
-The PreToolUse permission prompt will fire — that's expected. The
-textual confirm in Step 4 is the primary gate per runtime policy; the
-permission prompt is a safety net, not a substitute.
+The PreToolUse permission prompt will fire — that's expected (the
+matcher in `hooks/hooks.json` gates `restart_app` even though it's
+not a Cosmos broadcast, because it's still a state-changing
+operation). The textual confirm in Step 4 is the primary gate per
+runtime policy; the permission prompt is a safety net, not a
+substitute.
 
 If the call throws, surface the error and stop. Do not retry
 automatically.

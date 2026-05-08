@@ -72,3 +72,9 @@ test('rejects unparseable stdin', () => {
   assert.equal(r.status, 1);
   assert.match(r.stderr, /not valid JSON/);
 });
+
+test('rejects array stdin (not a JSON object)', () => {
+  const r = runScript('render-providers.cjs', [], '[]');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /expected a JSON object/);
+});

@@ -69,3 +69,9 @@ test('non-object stdin exits 1', () => {
   assert.equal(r.status, 1);
   assert.match(r.stderr, /expected a JSON object/);
 });
+
+test('array stdin exits 1 (not a JSON object)', () => {
+  const r = runScript('render-releases.cjs', [], '[]');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /expected a JSON object/);
+});

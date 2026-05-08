@@ -37,7 +37,7 @@ const { readFileSync } = require('node:fs');
     process.exit(1);
   }
 
-  if (!payload || typeof payload !== 'object') {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     console.error('expected a JSON object on stdin');
     process.exit(1);
   }
