@@ -11,23 +11,34 @@
  * Underscore prefix marks this as a sibling-only helper. Skills MUST NOT
  * shell out to it — they pipe a pre-built JSON record to `journal-write.cjs`.
  *
- * Concurrency: `appendRecord` uses `fs.appendFileSync` with the implicit
- * `O_APPEND` flag. POSIX guarantees writes <= PIPE_BUF (4096 bytes on Linux)
- * are atomic with O_APPEND, so two writers in different OS processes do not
- * interleave. Records exceeding that bound are replaced with a smaller
- * `journal_truncated` marker so the historical line stays intact.
+ * Concurrency: `appendRecord` calls `fs.appendFileSync(file, line, { flag: 'a' })`,
+ * which opens the file with `O_APPEND` and issues `write(2)` until all bytes
+ * are accepted. On Linux, ext4 / xfs serialize concurrent `write(2)` calls
+ * to a regular file via the inode mutex, so a single record under
+ * `MAX_RECORD_BYTES` (4 KiB) is appended atomically in practice — two
+ * writers in different processes do NOT interleave each other's lines.
+ * This is best-effort, not a POSIX guarantee: `PIPE_BUF` only formally
+ * applies to pipes/FIFOs, and a partial-write retry inside `appendFileSync`
+ * could in principle leave a window where another writer's append slips
+ * between our two `write(2)` syscalls. Records exceeding 4 KiB are
+ * replaced with a smaller `journal_truncated` marker so the historical
+ * line stays intact and the realistic-concurrency story stays inside the
+ * single-syscall regime.
  *
  * Exports:
  *   - SCHEMA_VERSION (1) — bump when the record shape changes.
- *   - MAX_RECORD_BYTES (4096) — PIPE_BUF on Linux; the atomic-append bound.
+ *   - MAX_RECORD_BYTES (4096) — single-`write(2)` target so realistic
+ *     concurrent appends don't interleave on Linux ext4 / xfs.
  *   - SECRET_KEY_DENYLIST — regex of keys that must NEVER appear in a record.
  *   - SUSPECT_KEY_PATTERN — regex of keys whose values get redacted in
  *     generic args walks (defense in depth for unknown tools).
  *   - appendRecord(record) — validate + append, returns the journal file path.
  *   - redactArgs(toolName, rawArgs) — produce the `args_redacted` block for a
  *     `tool_calls[]` entry. Tool-specific reductions (spec → summary for
- *     deploy_app / build_manifest_preview), pass-through for known-safe
- *     tools, defensive walk for unknown tools.
+ *     deploy_app / build_manifest_preview), deep-redact-by-key for
+ *     known-safe tools (whitelist-shaped fields are preserved verbatim;
+ *     SUSPECT_KEY_PATTERN matches are replaced with `<redacted>` as
+ *     defense in depth), best-effort walk for unknown tools.
  *   - validateRecord(record) — throws if any key in the record matches the
  *     secret denylist anywhere in the tree.
  *   - todayUtcDate() — `YYYY-MM-DD` of the current UTC date.
@@ -41,9 +52,15 @@ const { isStack, normalizeServices } = require('./_spec.cjs');
 
 const SCHEMA_VERSION = 1;
 
-// PIPE_BUF on Linux. POSIX promises atomic writes below this size with
-// O_APPEND; above it, two concurrent appenders may interleave. The writer
-// reserves one byte for the trailing newline.
+// Target single-`write(2)` size. Linux ext4 / xfs serialize concurrent
+// `write(2)` to a regular file via the inode mutex, so a record under this
+// size is appended without interleaving in practice. Above the bound, a
+// partial-write retry inside `appendFileSync` could split the append into
+// two `write(2)` calls and leave a window where another writer's append
+// slips between them. The writer reserves one byte for the trailing
+// newline. PIPE_BUF (4096 on Linux) is the formal POSIX bound for pipes /
+// FIFOs only; we use 4096 here because that's the realistic upper limit
+// for a single ext4 / xfs write and avoids a separate magic constant.
 const MAX_RECORD_BYTES = 4096;
 
 // Keys that must NEVER appear in a record. Case-insensitive substring match
@@ -60,7 +77,7 @@ const SUSPECT_KEY_PATTERN = /(MNEMONIC|PASSWORD|TOKEN|SECRET|API[_-]?KEY|PRIVATE
 // summarize-spec.cjs for the deployment plan can keep doing so; this is for
 // callers (the journal layer) that want the same shape without a subprocess.
 function summarizeSpec(spec) {
-  if (!spec || typeof spec !== 'object') return null;
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return null;
   const format = isStack(spec) ? 'stack' : 'single';
   const services = normalizeServices(spec);
   let port_count = 0;
@@ -96,6 +113,13 @@ function deepRedactByKey(value) {
   return value;
 }
 
+// Best-effort heuristic redaction for tools we don't have explicit shape
+// rules for. NOT a security boundary: a short credential (under 256 chars)
+// stored under a benign-looking key like `note` or `value` will pass
+// through verbatim. Treat the unknown-tool path as audit-only — if a new
+// MCP tool is added that takes secret-bearing inputs, register it in
+// SAFE_TOOLS / SAFE_TOOL_PREFIXES with an explicit redaction rule rather
+// than relying on this fallback.
 function deepRedactByKeyAndLongStrings(value) {
   if (Array.isArray(value)) return value.map(deepRedactByKeyAndLongStrings);
   if (value && typeof value === 'object') {
@@ -138,7 +162,7 @@ function isSafeTool(toolName) {
 }
 
 function redactArgs(toolName, rawArgs) {
-  if (!rawArgs || typeof rawArgs !== 'object') return rawArgs;
+  if (!rawArgs || typeof rawArgs !== 'object' || Array.isArray(rawArgs)) return rawArgs;
 
   // deploy_app / build_manifest_preview accept a structured spec (potentially
   // carrying user env values). Reduce it to summarize-spec.cjs's shape.
@@ -256,9 +280,21 @@ function appendRecord(record) {
     toAppend = JSON.stringify(marker);
   }
 
-  // appendFileSync's `mode` option only applies on file creation. For a
-  // pre-existing file with looser permissions, we tighten after the write.
+  // appendFileSync's `mode` option only applies at file *creation*, so a
+  // pre-existing journal file with looser permissions would expose the new
+  // record between the write and a post-hoc chmod. Tighten the file mode
+  // BEFORE the append when it already exists. We accept the tiny race
+  // between the existsSync check and the chmod (an external process would
+  // have to recreate the file in between, which doesn't happen for the
+  // plugin-private journal/ directory) in exchange for closing the
+  // larger write-then-chmod window.
+  if (fs.existsSync(file)) {
+    tightenIgnoringExpectedErrors(file, 0o600);
+  }
   fs.appendFileSync(file, toAppend + '\n', { mode: 0o600, flag: 'a' });
+  // Belt-and-suspenders: in the rare case the file was created by this
+  // appendFileSync call but the runtime ignored the mode option, tighten
+  // again. No-op on Linux when mode was honored at creation.
   tightenIgnoringExpectedErrors(file, 0o600);
   return file;
 }

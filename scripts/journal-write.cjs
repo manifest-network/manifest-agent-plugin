@@ -17,8 +17,10 @@
  *   3. Runs `validateRecord` — refuses (exit 1) if any key in the tree
  *      matches the secret-key denylist (mnemonic|password). Defense in
  *      depth: callers should already redact via `_journal.redactArgs`.
- *   4. Calls `_journal.appendRecord` (atomic O_APPEND under PIPE_BUF;
- *      oversized records replaced with a `journal_truncated` marker).
+ *   4. Calls `_journal.appendRecord` (best-effort non-interleaving append
+ *      via `O_APPEND`; oversized records replaced with a `journal_truncated`
+ *      marker so realistic concurrent writes stay in the single-`write(2)`
+ *      regime — see `_journal.cjs`'s header for the concurrency model).
  *
  * Usage:
  *   echo '<record-json>' | node journal-write.cjs [--dry-run]

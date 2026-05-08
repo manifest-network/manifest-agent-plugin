@@ -33,9 +33,11 @@
  *   JSONL (--format jsonl) — one record per line.
  *
  * Exit codes:
- *   0 — query succeeded (zero matches is success; markdown emits "(no
- *       records match)", jsonl emits empty stdout).
- *   1 — argv error, missing journal directory, or IO failure.
+ *   0 — query succeeded. Zero matches is success: markdown emits "(no
+ *       records match)", jsonl emits empty stdout. A missing journal
+ *       directory is also treated as zero matches (callers may run this
+ *       before any state-changing skill has written its first record).
+ *   1 — argv error or IO failure.
  */
 
 const fs = require('node:fs');
@@ -151,21 +153,28 @@ function recordMatches(record, filters) {
   if (filters.outcome && record.outcome !== filters.outcome) return false;
   if (filters.signer && record.signer_address !== filters.signer) return false;
   if (filters.lease) {
-    const target = filters.lease;
-    const final = record.final_state && record.final_state.lease_uuid === target;
-    let inToolCalls = false;
-    if (Array.isArray(record.tool_calls)) {
-      for (const tc of record.tool_calls) {
-        const a = tc && tc.args_redacted;
-        if (a && typeof a === 'object' && a.lease_uuid === target) {
-          inToolCalls = true;
-          break;
-        }
-      }
-    }
-    if (!final && !inToolCalls) return false;
+    if (!recordMentionsLease(record, filters.lease)) return false;
   }
   return true;
+}
+
+// Recursively walk the record looking for the lease UUID anywhere — exact
+// string match against any leaf value. Catches the UUID whether it's keyed
+// (e.g. `args_redacted.lease_uuid`) or buried in a positional args array
+// (e.g. `cosmos_estimate_fee.args[0]` for the `set-item-custom-domain`
+// subcommand). Tolerates arbitrary nesting because future tool shapes
+// shouldn't silently drop out of the filter.
+function recordMentionsLease(value, target) {
+  if (typeof value === 'string') return value === target;
+  if (Array.isArray(value)) {
+    for (const v of value) if (recordMentionsLease(v, target)) return true;
+    return false;
+  }
+  if (value && typeof value === 'object') {
+    for (const v of Object.values(value)) if (recordMentionsLease(v, target)) return true;
+    return false;
+  }
+  return false;
 }
 
 function renderMarkdown(records) {

@@ -153,6 +153,47 @@ test('--lease matches both final_state and tool_calls.args_redacted scopes', () 
   });
 });
 
+test('--lease matches when UUID is buried inside cosmos_estimate_fee args[]', () => {
+  // Catches the case where a tool's args_redacted has the UUID only as a
+  // positional element (e.g. cosmos_estimate_fee for set-item-custom-domain),
+  // not as a top-level lease_uuid key. The filter must recurse into nested
+  // structures so future tool shapes don't silently fall out of the query.
+  const UUID_C = 'cccccccc-cccc-4ccc-cccc-cccccccccccc';
+  const record = {
+    schema_version: 1,
+    timestamp_iso: '2026-05-08T15:00:00Z',
+    timestamp_unix: 1762614000,
+    skill: 'manage-domain',
+    active_chain: 'testnet',
+    signer_address: 'manifest1xyz',
+    intent: 'set domain',
+    plan_summary: 'set fqdn',
+    tool_calls: [
+      {
+        tool: 'mcp__manifest-chain__cosmos_estimate_fee',
+        args_redacted: {
+          module: 'billing',
+          subcommand: 'set-item-custom-domain',
+          args: [UUID_C, 'app.example.com'],
+        },
+        outcome: 'ok',
+      },
+    ],
+    outcome: 'success',
+    // Intentionally missing final_state.lease_uuid and any top-level
+    // lease_uuid in args_redacted — UUID is reachable ONLY via args[0].
+    final_state: { action: 'set', verified: true },
+  };
+  withDataDir((dataDir) => {
+    seedJournal(dataDir, TODAY, [record]);
+    const r = runRead(dataDir, ['--lease', UUID_C, '--format', 'jsonl']);
+    assert.equal(r.status, 0);
+    const lines = r.stdout.trimEnd().split('\n').filter(Boolean);
+    assert.equal(lines.length, 1);
+    assert.equal(JSON.parse(lines[0]).skill, 'manage-domain');
+  });
+});
+
 test('--signer filter matches signer_address exactly', () => {
   withDataDir((dataDir) => {
     seedJournal(dataDir, TODAY, SEED_TODAY);

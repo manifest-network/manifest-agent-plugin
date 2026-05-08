@@ -100,9 +100,10 @@ Argv recipes per `MODE`:
 - **By outcome** → `--outcome <OUTCOME>` (today by default).
 - **By signer address** → `--signer <SIGNER_ADDRESS>` (today by
   default).
-- **Recent failures** → `--outcome failed` (or loop the four non-success
-  outcomes: agent runs the script three times and concatenates, OR
-  re-runs with each non-success outcome — simpler is fine).
+- **Recent failures** → start with `--outcome failed`. To cover all four
+  non-success outcomes (`partial`, `failed`, `cancelled`,
+  `journal_truncated`), run the script once per outcome and concatenate
+  the results.
 
 For "By skill" / "By lease UUID" / "By outcome" / "By signer address",
 also offer the user a `--since`/`--until` range follow-up if they want

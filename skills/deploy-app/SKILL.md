@@ -563,26 +563,28 @@ keys-only, never values) is mandatory in `args_redacted` for
 `scripts/_journal.cjs#redactArgs`.
 
 `tool_calls[]` MUST enumerate every MCP tool call this skill made, in
-order. For each entry, set `outcome` to `"ok"` or `"error"`. The
-critical entries (omit any not used on the path you took):
+order. For each entry, set `outcome` to `"ok"` or `"error"` and use the
+fully-qualified MCP tool name (the same string that fires in chat) so
+the journal stays grep-friendly. The critical entries (omit any not
+used on the path you took):
 
-- `build_manifest_preview` (Step 3)
-- `check_deployment_readiness` (Step 5)
-- `cosmos_estimate_fee` for `create-lease` (Step 6a)
-- `cosmos_estimate_fee` for `set-item-custom-domain` (Step 6a-bis, when custom domain is set)
-- `deploy_app` (Step 8)
-- `wait_for_app_ready` (Step 9, only when classify said `needs_wait`)
-- `app_status` (Step 9 needs_wait branch, or Step 11 has-lease branch)
-- `app_diagnostics`, `get_logs` (Step 11 has-lease branch)
-- `cosmos_estimate_fee` for `close-lease` + `close_lease` (Step 11 cleanup)
-- `update_app` (Step 11 partial salvage / retry branch)
-- `set_item_custom_domain` (Step 11 partial retry branch)
+- `mcp__manifest-fred__build_manifest_preview` (Step 3)
+- `mcp__manifest-fred__check_deployment_readiness` (Step 5)
+- `mcp__manifest-chain__cosmos_estimate_fee` for `create-lease` (Step 6a)
+- `mcp__manifest-chain__cosmos_estimate_fee` for `set-item-custom-domain` (Step 6a-bis, when custom domain is set)
+- `mcp__manifest-fred__deploy_app` (Step 8)
+- `mcp__manifest-fred__wait_for_app_ready` (Step 9, only when classify said `needs_wait`)
+- `mcp__manifest-fred__app_status` (Step 9 needs_wait branch, or Step 11 has-lease branch)
+- `mcp__manifest-fred__app_diagnostics`, `mcp__manifest-fred__get_logs` (Step 11 has-lease branch)
+- `mcp__manifest-chain__cosmos_estimate_fee` for `close-lease` + `mcp__manifest-lease__close_lease` (Step 11 cleanup)
+- `mcp__manifest-fred__update_app` (Step 11 partial salvage / retry branch)
+- `mcp__manifest-lease__set_item_custom_domain` (Step 11 partial retry branch)
 
 Each `args_redacted` follows the per-tool reduction in
 `scripts/_journal.cjs#redactArgs`:
 - `deploy_app` / `build_manifest_preview` → `{ summary: { format, service_count, env_count, env_keys, images }, customDomain?, serviceName?, size? }`. Env values MUST NOT appear.
 - `cosmos_estimate_fee` → `{ module, subcommand, args: [...], gas_multiplier }` verbatim (billing args carry no secrets).
-- Lease-module / fred provider tools → pass through (lease UUID, FQDN, service name, sku name).
+- Lease-module / fred provider tools → deep-redact-by-key: top-level fields like `lease_uuid`, `fqdn`, `service_name`, `sku name`, `amount` are preserved verbatim, but any nested key matching `MNEMONIC|PASSWORD|TOKEN|SECRET|API[_-]?KEY|PRIVATE[_-]?KEY` (case-insensitive) is replaced with `<redacted>`. None of today's lease/fred tools accept such keys, so the practical effect is a pass-through; the deep-redact is defense in depth for future tool surface.
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
