@@ -87,6 +87,13 @@ function validateArgs(args) {
       console.error(`--${key} must be YYYY-MM-DD; got "${args[key]}"`);
       process.exit(1);
     }
+    // DATE_RE only checks the SHAPE; JS silently normalizes invalid
+    // calendar dates (Feb 30 -> Mar 2). Round-trip the components
+    // through Date.UTC to catch typos that the shape regex lets pass.
+    if (args[key] && !isValidUtcDate(args[key])) {
+      console.error(`--${key} is not a valid calendar date; got "${args[key]}"`);
+      process.exit(1);
+    }
   }
   if (args.lease && !UUID_RE.test(args.lease)) {
     console.error(`--lease must be a UUID; got "${args.lease}"`);
@@ -106,15 +113,28 @@ function validateArgs(args) {
   }
 }
 
+// Returns true iff `dateStr` is a valid YYYY-MM-DD that round-trips through
+// Date.UTC unchanged. JS's `new Date()` normalizes calendar-invalid inputs
+// (Feb 30 -> Mar 2, month 13 -> January of next year, etc.), so a NaN check
+// alone doesn't reject typos. Caller is expected to have already validated
+// the shape via DATE_RE.
+function isValidUtcDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const t = Date.UTC(y, m - 1, d);
+  if (Number.isNaN(t)) return false;
+  const dt = new Date(t);
+  return dt.getUTCFullYear() === y
+    && dt.getUTCMonth() === m - 1
+    && dt.getUTCDate() === d;
+}
+
 function datesInRange(since, until) {
   // Inclusive on both ends. Iterates calendar days at UTC midnight.
+  // Calendar validity is enforced upstream in validateArgs via
+  // isValidUtcDate; here we only need to construct the range.
   const out = [];
   const start = new Date(`${since}T00:00:00Z`);
   const end = new Date(`${until}T00:00:00Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    console.error(`--since/--until must be valid YYYY-MM-DD dates`);
-    process.exit(1);
-  }
   if (start > end) return out;
   const cur = new Date(start);
   while (cur <= end) {

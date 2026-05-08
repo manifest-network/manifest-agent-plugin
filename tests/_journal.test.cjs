@@ -190,6 +190,27 @@ test('redactArgs for unknown tool replaces long string values with marker', () =
   assert.equal(out.note, '<redacted-long-string>');
 });
 
+test('redactArgs routes top-level long strings through the long-string redactor', () => {
+  // None of today's MCP tools pass a bare string as rawArgs (the schema
+  // describes args_redacted as a JSON object), but the header docstring
+  // promises ">256-char strings get redacted" in the unknown-tool
+  // fallback. Without this routing, a top-level long string would pass
+  // through verbatim — same shape as the array gap fixed in 03bc730.
+  const longSecret = 'X'.repeat(300);
+  assert.equal(
+    _journal.redactArgs('mcp__some-future-tool__do_thing', longSecret),
+    '<redacted-long-string>'
+  );
+  // Short strings still pass through.
+  assert.equal(
+    _journal.redactArgs('mcp__some-future-tool__do_thing', 'hello'),
+    'hello'
+  );
+  // Numbers / booleans pass through too (no redaction applies).
+  assert.equal(_journal.redactArgs('mcp__some-future-tool__do_thing', 42), 42);
+  assert.equal(_journal.redactArgs('mcp__some-future-tool__do_thing', true), true);
+});
+
 test('redactArgs routes array rawArgs through the unknown-tool fallback', () => {
   // None of today's MCP tools pass a bare array as rawArgs (the schema
   // describes args_redacted as a JSON object), but if a hypothetical

@@ -320,6 +320,25 @@ test('rejects malformed --date', () => {
   });
 });
 
+test('rejects calendar-invalid --date (e.g. Feb 30) instead of silently normalizing', () => {
+  // JS's `new Date("2026-02-30T00:00:00Z")` normalizes to March 2 rather
+  // than returning NaN, so a shape-only regex check would let this pass.
+  // The round-trip validator rejects it.
+  withDataDir((dataDir) => {
+    const r = runRead(dataDir, ['--date', '2026-02-30']);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /not a valid calendar date/);
+  });
+});
+
+test('rejects calendar-invalid --since / --until', () => {
+  withDataDir((dataDir) => {
+    const r = runRead(dataDir, ['--since', '2026-04-31', '--until', '2026-05-01']);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /not a valid calendar date/);
+  });
+});
+
 test('rejects non-UUID --lease value (path-traversal-class guard)', () => {
   withDataDir((dataDir) => {
     const r = runRead(dataDir, ['--lease', '../../etc/passwd']);
