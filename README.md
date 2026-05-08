@@ -297,6 +297,10 @@ For development installs (`claude --plugin-dir`), pull the latest commits in you
 | `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `$MANIFEST_PLUGIN_DATA/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app`. Optionally collects a custom domain (FQDN + service for stacks) |
 | `/manifest-agent:manage-domain` | Set, clear, or look up the custom domain (FQDN) on an existing lease item. Set/clear go through cosmos_estimate_fee + textual confirm + permission prompt + on-chain verification; lookup is read-only |
 | `/manifest-agent:troubleshoot-deployment` | Bundle status, diagnostics, and recent logs for a deployed lease into a unified report. Lease picker includes a "lookup by custom domain" option |
+| `/manifest-agent:restart-app [<lease-uuid>]` | Restart a running app via its provider without closing the lease. Optional argument: a lease UUID. Refuses on terminal leases; goes through textual confirm + permission prompt; verifies post-restart provision status |
+| `/manifest-agent:list-releases [<lease-uuid>]` | Read-only — show the on-provider release/version history for a deployed lease as a Markdown table sorted newest first. Rolling back a release is out of scope |
+| `/manifest-agent:balance [<bech32-tenant>]` | Read-only — show wallet balances, credit balance, burn rate, and runway hours. Defaults to the agent's own address; pass a bech32 to query another tenant |
+| `/manifest-agent:list-providers [--all]` | Read-only — list registered providers on the active chain. Default surfaces active providers only; `--all` includes inactive entries |
 | `/manifest-agent:journal` | Read-only audit-trail query. Filter by date / skill / lease UUID / outcome / signer. Markdown or JSONL output. Records are written by every state-changing skill at the end of each invocation |
 
 ## MCP servers

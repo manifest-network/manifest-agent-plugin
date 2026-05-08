@@ -7,7 +7,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test tests/*.test.cjs"
   },
   "dependencies": {
     "@cosmjs/proto-signing": "0.32.4",
