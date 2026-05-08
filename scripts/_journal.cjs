@@ -63,11 +63,20 @@
  *     generic args walks (defense in depth for unknown tools).
  *   - appendRecord(record) — validate + append, returns the journal file path.
  *   - redactArgs(toolName, rawArgs) — produce the `args_redacted` block for a
- *     `tool_calls[]` entry. Tool-specific reductions (spec → summary for
- *     deploy_app / build_manifest_preview), deep-redact-by-key for
- *     known-safe tools (whitelist-shaped fields are preserved verbatim;
- *     SUSPECT_KEY_PATTERN matches are replaced with `<redacted>` as
- *     defense in depth), best-effort walk for unknown tools.
+ *     `tool_calls[]` entry. Four tool-specific branches:
+ *       (1) deploy_app / build_manifest_preview → reduce spec to
+ *           summarize-spec output (env keys-only summary), preserve
+ *           whitelisted top-level fields (customDomain, serviceName, size).
+ *       (2) cosmos_tx / cosmos_estimate_fee → preserve {module,
+ *           subcommand, gas_multiplier, args[]} verbatim — billing-module
+ *           CLI args carry no secrets.
+ *       (3) Known-safe tools (lease module, fred provider, cosmwasm,
+ *           read-only chain queries, faucet) → deep-redact-by-key:
+ *           whitelisted shapes preserved, SUSPECT_KEY_PATTERN matches
+ *           replaced with `<redacted>` as defense in depth.
+ *       (4) Unknown tool → best-effort walk: redact suspect keys + any
+ *           string longer than 256 chars. Audit-only; not a security
+ *           boundary (see deepRedactByKeyAndLongStrings).
  *   - validateRecord(record) — throws if any key in the record matches the
  *     secret denylist anywhere in the tree.
  *   - todayUtcDate() — `YYYY-MM-DD` of the current UTC date.
@@ -215,11 +224,18 @@ function redactArgs(toolName, rawArgs) {
     toolName === 'mcp__manifest-fred__deploy_app'
     || toolName === 'mcp__manifest-fred__build_manifest_preview'
   ) {
-    // Tolerate two call shapes: a bare spec, or `{ spec: ... }`.
+    // Tolerate two call shapes: a bare spec, or `{ spec: ... }`. Today's
+    // MCP call uses the bare-spec shape (deploy-app SKILL.md splats fields
+    // directly), but the wrapper shape is supported defensively.
     const spec = rawArgs.spec && typeof rawArgs.spec === 'object' ? rawArgs.spec : rawArgs;
     const out = { summary: summarizeSpec(spec) };
+    // Whitelisted passthrough fields. Read from `spec` first, then fall
+    // back to `rawArgs` so a wrapper-shape caller that puts these at the
+    // top level (e.g. `{ spec: {...}, customDomain: 'X' }`) doesn't
+    // silently lose audit data.
     for (const key of ['customDomain', 'serviceName', 'size']) {
       if (typeof spec[key] === 'string') out[key] = spec[key];
+      else if (typeof rawArgs[key] === 'string') out[key] = rawArgs[key];
     }
     return out;
   }

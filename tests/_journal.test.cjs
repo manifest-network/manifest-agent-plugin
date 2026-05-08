@@ -125,6 +125,27 @@ test('redactArgs(build_manifest_preview, ...) accepts the {spec: ...} call shape
   assert.deepEqual(out.summary.images, ['nginx:1.27']);
 });
 
+test('redactArgs preserves wrapper-shape passthrough fields at the top level', () => {
+  // Defensive shape: caller wraps the spec and puts customDomain/etc. at
+  // the wrapper level rather than inside spec. Without the rawArgs
+  // fallback, these would be silently dropped.
+  const out = _journal.redactArgs('mcp__manifest-fred__deploy_app', {
+    spec: { image: 'nginx:1.27', port: 80 },
+    customDomain: 'app.example.com',
+    serviceName: 'web',
+    size: 'small',
+  });
+  assert.equal(out.customDomain, 'app.example.com');
+  assert.equal(out.serviceName, 'web');
+  assert.equal(out.size, 'small');
+  // Spec-level fields still take precedence when both are set.
+  const out2 = _journal.redactArgs('mcp__manifest-fred__deploy_app', {
+    spec: { image: 'nginx:1.27', port: 80, customDomain: 'inner.example.com' },
+    customDomain: 'outer.example.com',
+  });
+  assert.equal(out2.customDomain, 'inner.example.com');
+});
+
 test('redactArgs(cosmos_estimate_fee, ...) preserves billing-module CLI args verbatim', () => {
   const out = _journal.redactArgs('mcp__manifest-chain__cosmos_estimate_fee', {
     module: 'billing',
