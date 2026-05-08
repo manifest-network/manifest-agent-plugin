@@ -189,7 +189,10 @@ test('validateRecord does NOT throw on the word "password" in an intent value', 
 });
 
 test('validateRecord does NOT throw on a key named "passcode" or "key_id"', () => {
-  // Substring match is intentionally narrow: "password" and "mnemonic" only.
+  // The denylist matches credential-shaped substrings (mnemonic, password,
+  // private_key, secret_key, api_key, auth_token, bearer_token), but NOT
+  // bare "key", "code", or "id" — so legitimate field names like `key_id`
+  // (e.g. metadata identifiers) and `passcode` continue to pass through.
   const ok = makeRecord({ final_state: { key_id: '123', passcode: 'ok' } });
   assert.doesNotThrow(() => _journal.validateRecord(ok));
 });
@@ -199,6 +202,21 @@ test('appendRecord refuses to write a record with a forbidden key', () => {
     const bad = makeRecord({ final_state: { password: 'secret' } });
     assert.throws(() => _journal.appendRecord(bad), /secret-key denylist/);
     // Nothing should have been written.
+    assert.equal(existsSync(_journal.journalFilePath()), false);
+  });
+});
+
+test('validateRecord rejects array roots (typeof [] === "object" pitfall)', () => {
+  // The CLI in journal-write.cjs already guards against array stdin; this
+  // test pins that a direct sibling caller using _journal.appendRecord
+  // can't sneak an array past the helper. Without the explicit
+  // Array.isArray check, the bare `typeof !== 'object'` guard would let
+  // arrays through and the reader's non-object filter would later skip
+  // them — an invisible audit gap.
+  withDataDir(() => {
+    assert.throws(() => _journal.validateRecord([]), /must be a JSON object/);
+    assert.throws(() => _journal.validateRecord([{ skill: 'x' }]), /must be a JSON object/);
+    assert.throws(() => _journal.appendRecord([]), /must be a JSON object/);
     assert.equal(existsSync(_journal.journalFilePath()), false);
   });
 });

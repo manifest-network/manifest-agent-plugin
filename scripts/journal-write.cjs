@@ -15,8 +15,11 @@
  *      the field is absent. The SessionStart hook captures Claude Code's
  *      session id from the hook payload and exports it.
  *   3. Runs `validateRecord` — refuses (exit 1) if any key in the tree
- *      matches the secret-key denylist (mnemonic|password). Defense in
- *      depth: callers should already redact via `_journal.redactArgs`.
+ *      matches `_journal.SECRET_KEY_DENYLIST` (the canonical list of
+ *      credential-shaped key names that must never appear in a record).
+ *      Defense in depth: callers should already redact via
+ *      `_journal.redactArgs`. The writer is fail-closed, not strip-and-
+ *      continue — a record with a denylisted key never lands on disk.
  *   4. Calls `_journal.appendRecord` (best-effort non-interleaving append
  *      via `O_APPEND`; oversized records replaced with a `journal_truncated`
  *      marker so realistic concurrent writes stay in the single-`write(2)`

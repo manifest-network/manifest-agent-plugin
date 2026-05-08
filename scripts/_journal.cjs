@@ -213,7 +213,11 @@ function redactArgs(toolName, rawArgs) {
 function validateRecord(record) {
   // Iterative DFS to avoid recursion depth issues on pathologically nested
   // payloads. Throws on the first match so the writer can refuse to append.
-  if (!record || typeof record !== 'object') {
+  // `typeof [] === 'object'`, so arrays would slip past a bare typeof check;
+  // reject them explicitly here so direct sibling callers (which bypass the
+  // CLI's own array guard in journal-write.cjs) can't append a non-object
+  // top-level record that the reader would later silently skip.
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
     throw new Error('record must be a JSON object');
   }
   const stack = [record];
