@@ -5,11 +5,40 @@
  *
  * The journal is a daily-rotating JSONL file at
  * `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl` that every state-changing
- * skill writes one record to per invocation. See `journal-write.cjs` for the
- * CLI wrapper and the schema docstring for the record shape.
+ * skill writes one record to per invocation. `journal-write.cjs` is the CLI
+ * wrapper; this module exposes the underlying helpers.
  *
  * Underscore prefix marks this as a sibling-only helper. Skills MUST NOT
  * shell out to it — they pipe a pre-built JSON record to `journal-write.cjs`.
+ *
+ * Record shape (schema_version 1) — one JSON object per line:
+ *   {
+ *     schema_version: 1,
+ *     timestamp_iso:   string,        // ISO 8601 UTC, e.g. "2026-05-08T12:00:00.000Z"
+ *     timestamp_unix:  number,        // seconds since epoch
+ *     session_id:      string|null,   // Claude Code session id (from $MANIFEST_SESSION_ID); null when unset
+ *     skill:           string,        // skill name (no leading slash)
+ *     active_chain:    string,        // "testnet" | "mainnet"
+ *     signer_address:  string,        // bech32, e.g. "manifest1..."
+ *     intent:          string,        // user's request, in their words (truncated by skill)
+ *     plan_summary:    string,        // structural summary, NOT the prose plan
+ *     tool_calls:      Array<{
+ *       tool:           string,        // fully-qualified MCP tool name (e.g. "mcp__manifest-fred__deploy_app")
+ *       args_redacted:  object,        // per-tool reduction; see redactArgs() below
+ *       outcome:        "ok" | "error",
+ *       result_summary: object,        // small object (e.g. { meta_hash_hex, lease_uuid })
+ *       latency_ms?:    number
+ *     }>,
+ *     outcome:           "success" | "partial" | "failed" | "cancelled" | "journal_truncated",
+ *     final_state:       object,        // skill-specific (deploy-app: { lease_uuid, image, ... })
+ *     errors:            Array<{ class: string, message: string, mcp_error_code?: string }>,
+ *     recovery_actions:  Array<string>  // populated by ENG-123 verify-recover layer; empty until then
+ *   }
+ *
+ * Skills construct the record using data already in scope at the end of their
+ * run. The writer auto-fills `schema_version`, `timestamp_iso`,
+ * `timestamp_unix`, and `session_id` (from `$MANIFEST_SESSION_ID`) when
+ * absent; everything else is the skill's responsibility.
  *
  * Concurrency: `appendRecord` calls `fs.appendFileSync(file, line, { flag: 'a' })`,
  * which opens the file with `O_APPEND` and issues `write(2)` until all bytes

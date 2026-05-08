@@ -511,7 +511,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
     {
       "tool": "mcp__manifest-fred__build_manifest_preview",
       "args_redacted": {
-        "summary": { "format": "<single|stack>", "service_count": <N>, "env_count": <N>, "env_keys": ["<KEY1>", "<KEY2>"], "images": ["<image1>"] },
+        "summary": { "format": "<single|stack>", "service_count": <N>, "port_count": <N>, "env_count": <N>, "env_keys": ["<KEY1>", "<KEY2>"], "images": ["<image1>"] },
         "customDomain": "<fqdn or null>",
         "serviceName": "<service or null>",
         "size": "<SIZE>"

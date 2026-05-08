@@ -585,7 +585,7 @@ used on the path you took):
 
 Each `args_redacted` follows the per-tool reduction in
 `scripts/_journal.cjs#redactArgs`:
-- `deploy_app` / `build_manifest_preview` → `{ summary: { format, service_count, env_count, env_keys, images }, customDomain?, serviceName?, size? }`. Env values MUST NOT appear.
+- `deploy_app` / `build_manifest_preview` → `{ summary: { format, service_count, port_count, env_count, env_keys, images }, customDomain?, serviceName?, size? }`. Env values MUST NOT appear.
 - `cosmos_estimate_fee` → `{ module, subcommand, args: [...], gas_multiplier }` verbatim (billing args carry no secrets).
 - Lease-module / fred provider tools → deep-redact-by-key: top-level fields like `lease_uuid`, `fqdn`, `service_name`, `sku name`, `amount` are preserved verbatim, but any nested key matching `MNEMONIC|PASSWORD|TOKEN|SECRET|API[_-]?KEY|PRIVATE[_-]?KEY` (case-insensitive) is replaced with `<redacted>`. None of today's lease/fred tools accept such keys, so the practical effect is a pass-through; the deep-redact is defense in depth for future tool surface.
 
