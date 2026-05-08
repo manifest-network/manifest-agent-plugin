@@ -86,11 +86,30 @@ test('auto-fills session_id from $MANIFEST_SESSION_ID when absent', () => {
   });
 });
 
-test('session_id falls back to null when $MANIFEST_SESSION_ID is unset', () => {
+test('session_id falls back to null when $MANIFEST_SESSION_ID is empty', () => {
   withDataDir((dataDir) => {
-    // Pass MANIFEST_SESSION_ID explicitly empty (Node treats that as set-but-empty).
+    // Set the env var to an empty string. process.env reads this back as "",
+    // which the writer's `||` fallback coerces to null.
     const r = runWrite(dataDir, makeRecord(), [], { MANIFEST_SESSION_ID: '' });
     assert.equal(r.status, 0);
+    const record = JSON.parse(readFileSync(r.stdout.trim(), 'utf8').trimEnd());
+    assert.equal(record.session_id, null);
+  });
+});
+
+test('session_id falls back to null when $MANIFEST_SESSION_ID is genuinely unset', () => {
+  withDataDir((dataDir) => {
+    // Don't pass MANIFEST_SESSION_ID at all in the subprocess env. Start
+    // from a clean parent env (delete from a copy) so any value the
+    // current shell happens to have set doesn't leak through.
+    const env = { ...process.env, MANIFEST_PLUGIN_DATA: dataDir };
+    delete env.MANIFEST_SESSION_ID;
+    const r = spawnSync(process.execPath, [SCRIPT], {
+      encoding: 'utf8',
+      input: JSON.stringify(makeRecord()),
+      env,
+    });
+    assert.equal(r.status, 0, `stderr: ${r.stderr}`);
     const record = JSON.parse(readFileSync(r.stdout.trim(), 'utf8').trimEnd());
     assert.equal(record.session_id, null);
   });

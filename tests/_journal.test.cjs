@@ -141,11 +141,11 @@ test('redactArgs(cosmos_estimate_fee, ...) preserves billing-module CLI args ver
 test('redactArgs for safe-tool prefix passes through known fields', () => {
   const out = _journal.redactArgs('mcp__manifest-lease__set_item_custom_domain', {
     lease_uuid: '11111111-1111-4111-8111-111111111111',
-    fqdn: 'app.example.com',
+    custom_domain: 'app.example.com',
     service_name: 'web',
   });
   assert.equal(out.lease_uuid, '11111111-1111-4111-8111-111111111111');
-  assert.equal(out.fqdn, 'app.example.com');
+  assert.equal(out.custom_domain, 'app.example.com');
   assert.equal(out.service_name, 'web');
 });
 
@@ -167,6 +167,25 @@ test('redactArgs for unknown tool replaces long string values with marker', () =
     note: longSecret,
   });
   assert.equal(out.note, '<redacted-long-string>');
+});
+
+test('redactArgs routes array rawArgs through the unknown-tool fallback', () => {
+  // None of today's MCP tools pass a bare array as rawArgs (the schema
+  // describes args_redacted as a JSON object), but if a hypothetical
+  // future tool does, the array must still get key + long-string
+  // redaction rather than passing through unchanged.
+  const longSecret = 'B'.repeat(300);
+  const out = _journal.redactArgs('mcp__some-future-tool__do_thing', [
+    { lease_uuid: '11111111-1111-4111-8111-111111111111' },
+    { api_token: 'sk-leak' },
+    longSecret,
+  ]);
+  assert.ok(Array.isArray(out));
+  assert.equal(out[0].lease_uuid, '11111111-1111-4111-8111-111111111111');
+  // Suspect key inside an array element is redacted.
+  assert.equal(out[1].api_token, '<redacted>');
+  // Long string inside the array is redacted.
+  assert.equal(out[2], '<redacted-long-string>');
 });
 
 test('validateRecord throws on a record containing a "password" key anywhere', () => {

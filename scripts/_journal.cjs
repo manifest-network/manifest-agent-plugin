@@ -171,7 +171,14 @@ function isSafeTool(toolName) {
 }
 
 function redactArgs(toolName, rawArgs) {
-  if (!rawArgs || typeof rawArgs !== 'object' || Array.isArray(rawArgs)) return rawArgs;
+  if (!rawArgs || typeof rawArgs !== 'object') return rawArgs;
+  // The per-tool branches below assume rawArgs is a plain object (they
+  // index by key). If a caller passes a bare array — none of today's MCP
+  // tools do, but a hypothetical future one might — route it through the
+  // unknown-tool fallback so it still gets key + long-string redaction
+  // rather than silently passing through unchanged. The fallback handles
+  // arrays correctly via `Array.isArray(value) ? value.map(...)`.
+  if (Array.isArray(rawArgs)) return deepRedactByKeyAndLongStrings(rawArgs);
 
   // deploy_app / build_manifest_preview accept a structured spec (potentially
   // carrying user env values). Reduce it to summarize-spec.cjs's shape.
