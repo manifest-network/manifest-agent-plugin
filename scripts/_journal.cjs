@@ -282,7 +282,11 @@ function appendRecord(record) {
     // history visible: future readers see "something happened here, it was
     // too big to atomically append".
     const marker = {
-      schema_version: SCHEMA_VERSION,
+      // Preserve the caller's schema_version when present so the marker
+      // can't mislabel a record written under a different schema (e.g.
+      // during a future migration where readers tolerate older versions
+      // but writers temporarily continue producing v(N-1) records).
+      schema_version: record.schema_version || SCHEMA_VERSION,
       timestamp_iso: record.timestamp_iso || new Date().toISOString(),
       timestamp_unix: record.timestamp_unix || Math.floor(Date.now() / 1000),
       session_id: record.session_id || null,

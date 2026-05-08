@@ -25,7 +25,7 @@ function makeRecord(overrides = {}) {
   return {
     schema_version: _journal.SCHEMA_VERSION,
     timestamp_iso: '2026-05-08T12:00:00.000Z',
-    timestamp_unix: 1762603200,
+    timestamp_unix: 1778241600,
     session_id: 'sess-abc',
     skill: 'set-gas-price',
     active_chain: 'testnet',

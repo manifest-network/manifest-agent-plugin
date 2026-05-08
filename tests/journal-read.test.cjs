@@ -40,7 +40,7 @@ const SEED_TODAY = [
   {
     schema_version: 1,
     timestamp_iso: '2026-05-08T10:00:00Z',
-    timestamp_unix: 1762595200,
+    timestamp_unix: 1778234400,
     session_id: 'sess-1',
     skill: 'deploy-app',
     active_chain: 'testnet',
@@ -54,7 +54,7 @@ const SEED_TODAY = [
   {
     schema_version: 1,
     timestamp_iso: '2026-05-08T11:00:00Z',
-    timestamp_unix: 1762598800,
+    timestamp_unix: 1778238000,
     session_id: 'sess-1',
     skill: 'manage-domain',
     active_chain: 'testnet',
@@ -74,7 +74,7 @@ const SEED_TODAY = [
   {
     schema_version: 1,
     timestamp_iso: '2026-05-08T12:00:00Z',
-    timestamp_unix: 1762602400,
+    timestamp_unix: 1778241600,
     session_id: 'sess-2',
     skill: 'deploy-app',
     active_chain: 'mainnet',
@@ -119,7 +119,7 @@ test('jsonl output round-trips; one line per record; sorted newest-first', () =>
     assert.equal(lines.length, 3);
     const ts = lines.map((l) => JSON.parse(l).timestamp_unix);
     // Newest first: 12:00 > 11:00 > 10:00.
-    assert.deepEqual(ts, [1762602400, 1762598800, 1762595200]);
+    assert.deepEqual(ts, [1778241600, 1778238000, 1778234400]);
   });
 });
 
@@ -170,7 +170,7 @@ test('--lease matches when UUID is buried inside cosmos_estimate_fee args[]', ()
   const record = {
     schema_version: 1,
     timestamp_iso: '2026-05-08T15:00:00Z',
-    timestamp_unix: 1762614000,
+    timestamp_unix: 1778252400,
     skill: 'manage-domain',
     active_chain: 'testnet',
     signer_address: 'manifest1xyz',
@@ -218,7 +218,7 @@ test('--limit caps the number of records returned (newest first)', () => {
     assert.equal(r.status, 0);
     const lines = r.stdout.trimEnd().split('\n').filter(Boolean);
     assert.equal(lines.length, 1);
-    assert.equal(JSON.parse(lines[0]).timestamp_unix, 1762602400);
+    assert.equal(JSON.parse(lines[0]).timestamp_unix, 1778241600);
   });
 });
 

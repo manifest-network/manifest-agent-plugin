@@ -44,8 +44,10 @@ Use `AskUserQuestion`:
 - **Specific date** — pick a single `YYYY-MM-DD`.
 - **Date range** — pick `--since` and `--until` (inclusive).
 - **By skill** — filter to a single skill (e.g. `deploy-app`).
-- **By lease UUID** — every record that touched a given lease, in either
-  `final_state.lease_uuid` or `tool_calls[].args_redacted.lease_uuid`.
+- **By lease UUID** — every record that mentions the UUID anywhere in
+  the record tree (recursive walk: `final_state`, `tool_calls[].args_redacted`,
+  `errors[]`, and any nested arrays — including positional args like
+  `cosmos_estimate_fee.args[0]`).
 - **By outcome** — `success` / `partial` / `failed` / `cancelled` / `journal_truncated`.
 - **By signer address** — every record signed by a given `manifest1...`.
 - **Recent failures (today)** — shorthand for "today's records where
@@ -125,8 +127,12 @@ range or relax filters.
   is no automatic GC — the user manages disk by deleting old files
   manually.
 - Records are redacted at write time: env values are reduced to keys
-  only, mnemonics and passwords are stripped, and the writer refuses to
-  append records containing any `password`- or `mnemonic`-keyed field.
+  only via `_journal.redactArgs`. The writer is fail-closed (NOT
+  strip-and-continue): any key in the record tree matching
+  `_journal.SECRET_KEY_DENYLIST` (`mnemonic`, `password`, `private_key`,
+  `secret_key`, `api_key`, `auth_token`, `bearer_token` — all with
+  optional `_`/`-` separators, case-insensitive) makes
+  `journal-write.cjs` exit 1 and refuse to append.
 - The journal is per-machine; if the user runs the plugin on multiple
   machines, that's two separate journals.
 - A torn final line (e.g. from power loss mid-append) is silently

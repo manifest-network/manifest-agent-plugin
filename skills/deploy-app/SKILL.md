@@ -555,12 +555,15 @@ After surfacing the error, continue to Step 12 with
 Append one record to the operation journal at
 `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
 `timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
-omit them. Do NOT include any key whose name contains `password` or
-`mnemonic`; the writer refuses to append such records. Do NOT embed
-`MANIFEST_JSON` or any spec env values; the redaction discipline (env
-keys-only, never values) is mandatory in `args_redacted` for
-`build_manifest_preview` and `deploy_app` — the rules live in
-`scripts/_journal.cjs#redactArgs`.
+omit them. Do NOT include any key matching the writer's secret denylist
+— `_journal.SECRET_KEY_DENYLIST` (mnemonic, password, private_key,
+secret_key, api_key, auth_token, bearer_token — case-insensitive,
+optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
+the writer is fail-closed and will exit 1 rather than append such
+records. Do NOT embed `MANIFEST_JSON` or any spec env values; the
+redaction discipline (env keys-only, never values) is mandatory in
+`args_redacted` for `build_manifest_preview` and `deploy_app` — the
+rules live in `scripts/_journal.cjs#redactArgs`.
 
 `tool_calls[]` MUST enumerate every MCP tool call this skill made, in
 order. For each entry, set `outcome` to `"ok"` or `"error"` and use the
