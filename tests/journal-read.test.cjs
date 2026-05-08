@@ -87,11 +87,19 @@ const SEED_TODAY = [
   },
 ];
 
-const TODAY = new Date().toISOString().slice(0, 10);
+// Helper: returns the current UTC date in `YYYY-MM-DD`. Called inside
+// each test (rather than captured at module load) so the date matches
+// what `journal-read.cjs` computes when the subprocess runs. Without
+// this, a test suite started just before UTC midnight could seed
+// `2026-05-07.jsonl` and then run a subprocess that defaults to
+// `2026-05-08.jsonl`, missing the seeded data.
+function todayUtc() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 test('default markdown output for today; renders all seeded records', () => {
   withDataDir((dataDir) => {
-    seedJournal(dataDir, TODAY, SEED_TODAY);
+    seedJournal(dataDir, todayUtc(), SEED_TODAY);
     const r = runRead(dataDir);
     assert.equal(r.status, 0);
     // 3 section headers expected.
@@ -104,7 +112,7 @@ test('default markdown output for today; renders all seeded records', () => {
 
 test('jsonl output round-trips; one line per record; sorted newest-first', () => {
   withDataDir((dataDir) => {
-    seedJournal(dataDir, TODAY, SEED_TODAY);
+    seedJournal(dataDir, todayUtc(), SEED_TODAY);
     const r = runRead(dataDir, ['--format', 'jsonl']);
     assert.equal(r.status, 0);
     const lines = r.stdout.trimEnd().split('\n');
@@ -117,7 +125,7 @@ test('jsonl output round-trips; one line per record; sorted newest-first', () =>
 
 test('--skill filter reduces to matching records', () => {
   withDataDir((dataDir) => {
-    seedJournal(dataDir, TODAY, SEED_TODAY);
+    seedJournal(dataDir, todayUtc(), SEED_TODAY);
     const r = runRead(dataDir, ['--skill', 'deploy-app', '--format', 'jsonl']);
     assert.equal(r.status, 0);
     const lines = r.stdout.trimEnd().split('\n').filter(Boolean);
@@ -128,7 +136,7 @@ test('--skill filter reduces to matching records', () => {
 
 test('--outcome filter reduces to matching records', () => {
   withDataDir((dataDir) => {
-    seedJournal(dataDir, TODAY, SEED_TODAY);
+    seedJournal(dataDir, todayUtc(), SEED_TODAY);
     const r = runRead(dataDir, ['--outcome', 'failed', '--format', 'jsonl']);
     assert.equal(r.status, 0);
     const lines = r.stdout.trimEnd().split('\n').filter(Boolean);
@@ -139,7 +147,7 @@ test('--outcome filter reduces to matching records', () => {
 
 test('--lease matches both final_state and tool_calls.args_redacted scopes', () => {
   withDataDir((dataDir) => {
-    seedJournal(dataDir, TODAY, SEED_TODAY);
+    seedJournal(dataDir, todayUtc(), SEED_TODAY);
     // UUID_A appears in two records' final_state.
     const ra = runRead(dataDir, ['--lease', UUID_A, '--format', 'jsonl']);
     assert.equal(ra.status, 0);
@@ -185,7 +193,7 @@ test('--lease matches when UUID is buried inside cosmos_estimate_fee args[]', ()
     final_state: { action: 'set', verified: true },
   };
   withDataDir((dataDir) => {
-    seedJournal(dataDir, TODAY, [record]);
+    seedJournal(dataDir, todayUtc(), [record]);
     const r = runRead(dataDir, ['--lease', UUID_C, '--format', 'jsonl']);
     assert.equal(r.status, 0);
     const lines = r.stdout.trimEnd().split('\n').filter(Boolean);
@@ -196,7 +204,7 @@ test('--lease matches when UUID is buried inside cosmos_estimate_fee args[]', ()
 
 test('--signer filter matches signer_address exactly', () => {
   withDataDir((dataDir) => {
-    seedJournal(dataDir, TODAY, SEED_TODAY);
+    seedJournal(dataDir, todayUtc(), SEED_TODAY);
     const r = runRead(dataDir, ['--signer', 'manifest1abc', '--format', 'jsonl']);
     assert.equal(r.status, 0);
     assert.equal(r.stdout.trimEnd().split('\n').filter(Boolean).length, 2);
@@ -205,7 +213,7 @@ test('--signer filter matches signer_address exactly', () => {
 
 test('--limit caps the number of records returned (newest first)', () => {
   withDataDir((dataDir) => {
-    seedJournal(dataDir, TODAY, SEED_TODAY);
+    seedJournal(dataDir, todayUtc(), SEED_TODAY);
     const r = runRead(dataDir, ['--limit', '1', '--format', 'jsonl']);
     assert.equal(r.status, 0);
     const lines = r.stdout.trimEnd().split('\n').filter(Boolean);
@@ -216,7 +224,7 @@ test('--limit caps the number of records returned (newest first)', () => {
 
 test('trailing torn line on last record is silently dropped', () => {
   withDataDir((dataDir) => {
-    const file = seedJournal(dataDir, TODAY, SEED_TODAY);
+    const file = seedJournal(dataDir, todayUtc(), SEED_TODAY);
     // Append a partial line WITHOUT a trailing newline (simulates power-loss).
     appendFileSync(file, '{"timestamp_iso":"2026-05-08T13:00:00Z","skil');
     const r = runRead(dataDir, ['--format', 'jsonl']);
@@ -230,7 +238,7 @@ test('trailing torn line on last record is silently dropped', () => {
 
 test('mid-file unparseable line is skipped with a stderr breadcrumb (rest still processed)', () => {
   withDataDir((dataDir) => {
-    const file = join(dataDir, 'journal', `${TODAY}.jsonl`);
+    const file = join(dataDir, 'journal', `${todayUtc()}.jsonl`);
     const ok1 = JSON.stringify(SEED_TODAY[0]);
     const garbage = 'this is not JSON';
     const ok2 = JSON.stringify(SEED_TODAY[1]);
@@ -240,6 +248,24 @@ test('mid-file unparseable line is skipped with a stderr breadcrumb (rest still 
     assert.match(r.stderr, /line 2 .* unparseable/);
     const lines = r.stdout.trimEnd().split('\n').filter(Boolean);
     assert.equal(lines.length, 2);
+  });
+});
+
+test('non-object JSON lines are skipped (null, primitive, array)', () => {
+  withDataDir((dataDir) => {
+    const file = join(dataDir, 'journal', `${todayUtc()}.jsonl`);
+    const ok = JSON.stringify(SEED_TODAY[0]);
+    // Mix in a null, a number, a string, and an array — all valid JSON
+    // but not the object shape readRecordsForDate expects. Without the
+    // shape guard, recordMatches would crash on `null.skill`.
+    writeFileSync(file, [ok, 'null', '42', '"a string"', '[1,2,3]', ok].join('\n') + '\n');
+    const r = runRead(dataDir, ['--format', 'jsonl']);
+    assert.equal(r.status, 0);
+    assert.match(r.stderr, /not a JSON object/);
+    const lines = r.stdout.trimEnd().split('\n').filter(Boolean);
+    // Only the two `ok` records survive.
+    assert.equal(lines.length, 2);
+    for (const l of lines) assert.equal(JSON.parse(l).skill, 'deploy-app');
   });
 });
 

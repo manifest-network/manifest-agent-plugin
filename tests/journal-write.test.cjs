@@ -42,14 +42,21 @@ function makeRecord(overrides = {}) {
   };
 }
 
-const TODAY = new Date().toISOString().slice(0, 10);
+// Returns the current UTC date in `YYYY-MM-DD`. Called inside each test
+// (rather than captured at module load) so the date matches what the
+// journal-write.cjs subprocess computes when it runs. Without this, a
+// test suite started just before UTC midnight could assert against
+// `2026-05-07.jsonl` while the subprocess writes to `2026-05-08.jsonl`.
+function todayUtc() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 test('happy path: appends a record and returns the journal file path', () => {
   withDataDir((dataDir) => {
     const r = runWrite(dataDir, makeRecord(), [], { MANIFEST_SESSION_ID: '' });
     assert.equal(r.status, 0, `stderr: ${r.stderr}`);
     const filePath = r.stdout.trim();
-    assert.ok(filePath.endsWith(`${TODAY}.jsonl`));
+    assert.ok(filePath.endsWith(`${todayUtc()}.jsonl`));
     assert.equal(existsSync(filePath), true);
     const lines = readFileSync(filePath, 'utf8').trimEnd().split('\n');
     assert.equal(lines.length, 1);
@@ -107,7 +114,7 @@ test('rejects record containing a forbidden key (defense in depth)', () => {
     assert.equal(r.status, 1);
     assert.match(r.stderr, /secret-key denylist/);
     // No journal file should have been created.
-    const file = join(dataDir, 'journal', `${TODAY}.jsonl`);
+    const file = join(dataDir, 'journal', `${todayUtc()}.jsonl`);
     assert.equal(existsSync(file), false);
   });
 });
@@ -144,7 +151,7 @@ test('--dry-run does not write to disk; prints the would-be line and path', () =
     assert.equal(lines.length, 2);
     const record = JSON.parse(lines[0]);
     assert.equal(record.skill, 'set-gas-price');
-    assert.ok(lines[1].endsWith(`${TODAY}.jsonl`));
+    assert.ok(lines[1].endsWith(`${todayUtc()}.jsonl`));
     // Nothing on disk.
     assert.equal(existsSync(join(dataDir, 'journal')), false);
   });

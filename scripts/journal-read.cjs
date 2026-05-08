@@ -137,15 +137,27 @@ function readRecordsForDate(date, filePath) {
     const line = lines[i];
     if (line.length === 0) continue;
     const isLastLine = i === lines.length - 1;
+    let parsed;
     try {
-      records.push(JSON.parse(line));
+      parsed = JSON.parse(line);
     } catch (err) {
       // The very last line is allowed to be torn (power-loss truncation);
       // drop it silently per the ticket. Earlier lines are unexpected and
       // get a stderr breadcrumb so a human can investigate.
       if (isLastLine && !hasTrailingNewline) continue;
       process.stderr.write(`(line ${i + 1} of ${filePath} unparseable; skipped)\n`);
+      continue;
     }
+    // Guard against valid-JSON-but-wrong-shape lines (e.g. `null`,
+    // `42`, `"string"`, `[1,2]`). Without this, downstream
+    // recordMatches/renderMarkdownRecord would throw on property access
+    // and the whole query would fail. Treat these the same as
+    // unparseable: skip with a stderr breadcrumb.
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      process.stderr.write(`(line ${i + 1} of ${filePath} is not a JSON object; skipped)\n`);
+      continue;
+    }
+    records.push(parsed);
   }
   return records;
 }
