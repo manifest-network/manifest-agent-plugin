@@ -64,7 +64,7 @@ const SEED_TODAY = [
     tool_calls: [
       {
         tool: 'mcp__manifest-lease__set_item_custom_domain',
-        args_redacted: { lease_uuid: UUID_B, fqdn: 'app.example.com' },
+        args_redacted: { lease_uuid: UUID_B, custom_domain: 'app.example.com' },
         outcome: 'ok',
       },
     ],

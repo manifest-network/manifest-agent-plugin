@@ -223,7 +223,43 @@ test('SECRET_KEY_DENYLIST is case-insensitive substring on key names', () => {
   assert.match('Password', _journal.SECRET_KEY_DENYLIST);
   assert.match('MANIFEST_KEY_PASSWORD', _journal.SECRET_KEY_DENYLIST);
   assert.match('userMnemonic', _journal.SECRET_KEY_DENYLIST);
+  // Credential-shaped suffixes (added to catch skill-author mistakes
+  // outside args_redacted, e.g. accidentally putting an api key in
+  // final_state).
+  assert.match('api_key', _journal.SECRET_KEY_DENYLIST);
+  assert.match('apiKey', _journal.SECRET_KEY_DENYLIST);
+  assert.match('private_key', _journal.SECRET_KEY_DENYLIST);
+  assert.match('secret_key', _journal.SECRET_KEY_DENYLIST);
+  assert.match('auth_token', _journal.SECRET_KEY_DENYLIST);
+  assert.match('bearer-token', _journal.SECRET_KEY_DENYLIST);
   // Negative cases.
   assert.doesNotMatch('intent', _journal.SECRET_KEY_DENYLIST);
   assert.doesNotMatch('lease_uuid', _journal.SECRET_KEY_DENYLIST);
+  // Legitimate blockchain terms — must NOT trip the denylist.
+  assert.doesNotMatch('gas_token', _journal.SECRET_KEY_DENYLIST);
+  assert.doesNotMatch('fee_token', _journal.SECRET_KEY_DENYLIST);
+  assert.doesNotMatch('token_id', _journal.SECRET_KEY_DENYLIST);
+  assert.doesNotMatch('token_symbol', _journal.SECRET_KEY_DENYLIST);
+  assert.doesNotMatch('secret_share', _journal.SECRET_KEY_DENYLIST);
+  assert.doesNotMatch('chain_id', _journal.SECRET_KEY_DENYLIST);
+});
+
+test('appendRecord allows legitimate blockchain field names', () => {
+  withDataDir(() => {
+    // gas_token is a legitimate non-sensitive field used in set-gas-price
+    // journal records — must round-trip cleanly.
+    const ok = makeRecord({ final_state: { gas_token: 'MFX', gas_multiplier: 1.6 } });
+    assert.doesNotThrow(() => _journal.appendRecord(ok));
+  });
+});
+
+test('validateRecord rejects api_key, private_key, etc. anywhere in the tree', () => {
+  for (const key of ['api_key', 'apiKey', 'private_key', 'secret_key', 'auth_token', 'bearer_token']) {
+    const bad = makeRecord({ final_state: { [key]: 'leak' } });
+    assert.throws(
+      () => _journal.validateRecord(bad),
+      /secret-key denylist/,
+      `expected '${key}' to trip the denylist`,
+    );
+  }
 });

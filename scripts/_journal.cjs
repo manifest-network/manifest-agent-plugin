@@ -65,8 +65,17 @@ const MAX_RECORD_BYTES = 4096;
 
 // Keys that must NEVER appear in a record. Case-insensitive substring match
 // on the KEY name only (not the value) so the user-typed `intent` field can
-// freely mention "password rotation" without tripping the check.
-const SECRET_KEY_DENYLIST = /(mnemonic|password)/i;
+// freely mention "password rotation" without tripping the check. The list
+// is intentionally narrow: it covers the high-confidence sensitive shapes
+// that have appeared in this plugin's secret-bearing flows (mnemonic +
+// keyfile password) PLUS a small set of credential-shaped suffixes
+// (`api[_-]?key`, `private[_-]?key`, `secret[_-]?key`, `auth[_-]?token`,
+// `bearer[_-]?token`) that catch obvious skill-author mistakes outside
+// `args_redacted` (e.g. in `final_state` or `errors`). The blanket
+// `token` and `secret` keywords are intentionally NOT here — this is a
+// blockchain plugin where `gas_token`, `fee_token`, `token_id`,
+// `token_symbol` are legitimate non-sensitive field names.
+const SECRET_KEY_DENYLIST = /(mnemonic|password|private[_-]?key|secret[_-]?key|api[_-]?key|auth[_-]?token|bearer[_-]?token)/i;
 
 // Keys whose value is replaced with `<redacted>` in `redactArgs` walks. This
 // is defense in depth; the canonical reduction for known-shaped tools (e.g.

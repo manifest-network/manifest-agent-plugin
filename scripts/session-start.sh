@@ -199,10 +199,16 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
     if command -v jq >/dev/null 2>&1; then
       SESSION_ID=$(printf '%s' "$HOOK_PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null || true)
     else
-      SESSION_ID=$(printf '%s' "$HOOK_PAYLOAD" \
+      # `|| true` is required because `set -o pipefail` is active above:
+      # if the payload doesn't contain `session_id`, grep exits 1, the
+      # pipeline exits 1, and the whole hook would abort — preventing
+      # the runtime policy injection. Failing soft (empty SESSION_ID)
+      # is the right posture: the journal records will simply carry
+      # `session_id: null` for that session.
+      SESSION_ID=$({ printf '%s' "$HOOK_PAYLOAD" \
         | grep -oE '"session_id"[[:space:]]*:[[:space:]]*"[^"]+"' \
         | head -n1 \
-        | sed -E 's/.*"session_id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+        | sed -E 's/.*"session_id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'; } || true)
     fi
   fi
   if [ -n "$SESSION_ID" ]; then

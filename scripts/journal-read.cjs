@@ -21,8 +21,11 @@
  *   --since <YYYY-MM-DD>           inclusive start of range (with --until)
  *   --until <YYYY-MM-DD>           inclusive end of range (with --since)
  *   --skill <name>                 e.g. deploy-app
- *   --lease <uuid>                 matches both final_state.lease_uuid and
- *                                  any tool_calls[].args_redacted.lease_uuid
+ *   --lease <uuid>                 matches the UUID anywhere in the record
+ *                                  (recursive walk over final_state,
+ *                                  tool_calls[].args_redacted, errors[],
+ *                                  and any nested arrays — e.g. positional
+ *                                  args like `cosmos_estimate_fee.args[0]`)
  *   --outcome <success|partial|failed|cancelled|journal_truncated>
  *   --signer <address>             filters on signer_address
  *
