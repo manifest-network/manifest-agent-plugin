@@ -42,7 +42,6 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { getDataDir } = require('./_io.cjs');
 const { UUID_RE } = require('./_uuid.cjs');
 const { journalDir, todayUtcDate } = require('./_journal.cjs');
 
@@ -251,7 +250,8 @@ function formatValue(v) {
   }
 
   // Verify the journal directory at least exists; if not, return empty.
-  // getDataDir() throws a friendly error if MANIFEST_PLUGIN_DATA is unset.
+  // journalDir() resolves $MANIFEST_PLUGIN_DATA via _io.cjs#getDataDir,
+  // which throws a friendly error if the env var is unset.
   const dir = journalDir();
   if (!fs.existsSync(dir)) {
     if (args.format === 'markdown') process.stdout.write('(no records match)\n');
