@@ -144,8 +144,9 @@ once. Surface the post-restart `chainState.state` (decoded via
   accepted and the provider is bringing the container back up. TLS /
   ingress can take a few seconds to settle.
 - If `provision_status` reports a failure or the lease state regressed,
-  tell the user the tx was sent but the provider's post-restart status
-  shows `<provision_status>` (and `fail_count: <n>`); suggest
+  tell the user the restart request was sent to the provider but the
+  post-restart status shows `<provision_status>` (and `fail_count: <n>`);
+  suggest
   `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` for a full
   status + diagnostics + logs report.
 
