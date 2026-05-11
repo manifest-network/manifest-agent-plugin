@@ -355,6 +355,16 @@ test('rejects unknown --outcome value', () => {
   });
 });
 
+test('rejects --limit edge cases (zero, negative, non-integer, non-numeric)', () => {
+  withDataDir((dataDir) => {
+    for (const bad of ['0', '-1', '1.5', 'abc']) {
+      const r = runRead(dataDir, ['--limit', bad]);
+      assert.equal(r.status, 1, `--limit ${bad} should be rejected`);
+      assert.match(r.stderr, /must be a positive integer/);
+    }
+  });
+});
+
 test('rejects unknown --format value', () => {
   withDataDir((dataDir) => {
     const r = runRead(dataDir, ['--format', 'yaml']);

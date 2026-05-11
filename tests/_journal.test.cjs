@@ -282,6 +282,21 @@ test('validateRecord rejects array roots (typeof [] === "object" pitfall)', () =
   });
 });
 
+test('truncation marker preserves the caller-supplied schema_version', () => {
+  // Default fixtures use SCHEMA_VERSION (1), so the `|| SCHEMA_VERSION`
+  // fallback in the marker is dead-code-tested. Forge a record with
+  // schema_version: 2 (simulating a future migration mid-write) and
+  // assert the marker stamps 2, not 1.
+  withDataDir(() => {
+    const huge = makeRecord({ schema_version: 2, intent: 'X'.repeat(5000) });
+    const file = _journal.appendRecord(huge);
+    const parsed = JSON.parse(readFileSync(file, 'utf8').trimEnd());
+    assert.equal(parsed.outcome, 'journal_truncated');
+    assert.equal(parsed.schema_version, 2,
+      'marker must preserve the original record schema_version');
+  });
+});
+
 test('oversized records produce a journal_truncated marker (never a torn line)', () => {
   withDataDir(() => {
     // Build a record whose JSON > 4 KiB. Stuff a long intent string.
@@ -334,6 +349,27 @@ test('appendRecord allows legitimate blockchain field names', () => {
 
 test('validateRecord rejects api_key, private_key, etc. anywhere in the tree', () => {
   for (const key of ['api_key', 'apiKey', 'private_key', 'secret_key', 'auth_token', 'bearer_token']) {
+    const bad = makeRecord({ final_state: { [key]: 'leak' } });
+    assert.throws(
+      () => _journal.validateRecord(bad),
+      /secret-key denylist/,
+      `expected '${key}' to trip the denylist`,
+    );
+  }
+});
+
+test('validateRecord rejects all case variants of mnemonic and password', () => {
+  // MANIFEST_KEY_PASSWORD is the actual config-file field name in this
+  // plugin; keyPassword is the camelCase variant. Both must trip the
+  // denylist via case-insensitive substring match — the regex test
+  // already covers the pattern, this test covers the actual writer
+  // refusal path.
+  const variants = [
+    'mnemonic', 'Mnemonic', 'MNEMONIC', 'userMnemonic', 'mnemonic_phrase',
+    'password', 'Password', 'PASSWORD',
+    'keyPassword', 'MANIFEST_KEY_PASSWORD', 'db_password',
+  ];
+  for (const key of variants) {
     const bad = makeRecord({ final_state: { [key]: 'leak' } });
     assert.throws(
       () => _journal.validateRecord(bad),
