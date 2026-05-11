@@ -95,6 +95,13 @@ function validateArgs(args) {
       process.exit(1);
     }
   }
+  // Reject reversed range. Without this, `--since 2026-05-08 --until
+  // 2026-05-01` would silently exit 0 with "(no records match)",
+  // indistinguishable from a query that returned nothing.
+  if (args.since && args.until && args.since > args.until) {
+    console.error(`--since (${args.since}) must be on or before --until (${args.until})`);
+    process.exit(1);
+  }
   if (args.lease && !UUID_RE.test(args.lease)) {
     console.error(`--lease must be a UUID; got "${args.lease}"`);
     process.exit(1);
@@ -262,14 +269,27 @@ function renderMarkdownRecord(r) {
 
 function truncate(s, n) {
   if (typeof s !== 'string') return String(s);
-  return s.length <= n ? s : s.slice(0, n) + '...';
+  const collapsed = collapseWhitespace(s);
+  return collapsed.length <= n ? collapsed : collapsed.slice(0, n) + '...';
+}
+
+// Replace CR/LF runs with a single space so user-controlled strings
+// (intent, plan_summary, errors[].message) can't break the Markdown
+// bullet structure when the /manifest-agent:journal skill prints
+// stdout verbatim. A multi-line error message (e.g. a stack trace)
+// without this would turn one bullet into several lines that may
+// render as adjacent paragraphs or headings.
+function collapseWhitespace(s) {
+  return s.replace(/[\r\n]+/g, ' ');
 }
 
 function formatValue(v) {
   if (v === null || v === undefined) return 'null';
-  if (typeof v === 'string') return v;
+  if (typeof v === 'string') return collapseWhitespace(v);
   if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-  return JSON.stringify(v);
+  // JSON.stringify a nested object/array — collapse any embedded
+  // newlines it produces so the bullet stays single-line.
+  return collapseWhitespace(JSON.stringify(v));
 }
 
 (async () => {

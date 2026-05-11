@@ -339,6 +339,53 @@ test('rejects calendar-invalid --since / --until', () => {
   });
 });
 
+test('rejects --since > --until (reversed range) with a clear error', () => {
+  // Regression for the silent-empty-result UX bug: without explicit
+  // ordering validation, swapping --since and --until produced a
+  // misleading "(no records match)" exit 0.
+  withDataDir((dataDir) => {
+    const r = runRead(dataDir, ['--since', '2026-05-08', '--until', '2026-05-01']);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /must be on or before/);
+  });
+});
+
+test('markdown render normalizes embedded newlines in user-controlled fields', () => {
+  // Without normalization, an error message containing a stack trace
+  // (very common) would inject newlines into the bullet and break the
+  // visual structure when /manifest-agent:journal prints the output
+  // verbatim. We collapse CR/LF runs to a single space.
+  withDataDir((dataDir) => {
+    const tricky = {
+      schema_version: 1,
+      timestamp_iso: '2026-05-08T10:00:00Z',
+      timestamp_unix: 1778234400,
+      skill: 'deploy-app',
+      intent: 'deploy nginx\nwith broken intent',
+      plan_summary: 'multi\r\nline plan',
+      tool_calls: [],
+      outcome: 'failed',
+      final_state: {},
+      errors: [
+        { class: 'MCPError', message: 'something went wrong\n  at line 42\n  at line 99' },
+      ],
+    };
+    seedJournal(dataDir, todayUtc(), [tricky]);
+    const r = runRead(dataDir);
+    assert.equal(r.status, 0);
+    // Each user-controlled field should be on a single line (no
+    // embedded \n that would break the bullet structure).
+    assert.match(r.stdout, /- intent: deploy nginx with broken intent/);
+    assert.match(r.stdout, /- plan: multi line plan/);
+    // The original message had `\n  at` segments; the \n collapses to
+    // one space, the existing two indent spaces stay, so we get 3 total.
+    assert.match(r.stdout, /- MCPError: something went wrong\s+at line 42\s+at line 99/);
+    // Negative: the raw newlines must NOT be present in the rendered
+    // fields (they'd break the bullet).
+    assert.doesNotMatch(r.stdout, /deploy nginx\nwith broken intent/);
+  });
+});
+
 test('rejects non-UUID --lease value (path-traversal-class guard)', () => {
   withDataDir((dataDir) => {
     const r = runRead(dataDir, ['--lease', '../../etc/passwd']);
