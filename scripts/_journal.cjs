@@ -14,25 +14,31 @@
  * Record shape (schema_version 1) — one JSON object per line:
  *   {
  *     schema_version: 1,
- *     timestamp_iso:   string,        // ISO 8601 UTC, e.g. "2026-05-08T12:00:00.000Z"
- *     timestamp_unix:  number,        // seconds since epoch
- *     session_id:      string|null,   // Claude Code session id (from $MANIFEST_SESSION_ID); null when unset
- *     skill:           string,        // skill name (no leading slash)
- *     active_chain:    string,        // "testnet" | "mainnet"
- *     signer_address:  string,        // bech32, e.g. "manifest1..."
- *     intent:          string,        // brief paraphrase of the user's request; skills MUST NOT echo verbatim user prose (may contain credentials — this field is stored unredacted)
- *     plan_summary:    string,        // structural summary, NOT the prose plan
- *     tool_calls:      Array<{
- *       tool:           string,        // fully-qualified MCP tool name (e.g. "mcp__manifest-fred__deploy_app")
- *       args_redacted:  object,        // per-tool reduction; see redactArgs() below
- *       outcome:        "ok" | "error",
- *       result_summary: object,        // small object (e.g. { meta_hash_hex, lease_uuid })
- *       latency_ms?:    number
+ *     timestamp_iso:    string,             // ISO 8601 UTC, e.g. "2026-05-08T12:00:00.000Z"
+ *     timestamp_unix:   number,             // seconds since epoch
+ *     session_id:       string | null,      // Claude Code session id (from $MANIFEST_SESSION_ID); null when unset
+ *     skill:            string,             // skill name (no leading slash)
+ *     active_chain:     string | null,      // "testnet" | "mainnet" | null when no config (e.g. refresh-registry first-run)
+ *     signer_address:   string | null,      // bech32, e.g. "manifest1..."; null when no config
+ *     intent:           string,             // brief paraphrase of the user's request; skills MUST NOT echo verbatim user prose (may contain credentials — this field is stored unredacted)
+ *     plan_summary:     string,             // structural summary, NOT the prose plan
+ *     tool_calls:       Array<{
+ *       tool:            string,             // fully-qualified MCP tool name (e.g. "mcp__manifest-fred__deploy_app")
+ *       args_redacted:   object | string | number | boolean | Array<any>,
+ *                                            // per-tool reduction; see redactArgs() below. Object is the
+ *                                            // common case; non-object values appear when the unknown-tool
+ *                                            // fallback receives a primitive/array root.
+ *       outcome:         "ok" | "error",
+ *       result_summary?: object,             // small object (e.g. { meta_hash_hex, lease_uuid }); omitted when the skill doesn't need to surface anything beyond `outcome`
+ *       latency_ms?:     number
  *     }>,
  *     outcome:           "success" | "partial" | "failed" | "cancelled" | "journal_truncated",
- *     final_state:       object,        // skill-specific (deploy-app: { lease_uuid, image, ... })
- *     errors:            Array<{ class: string, message: string, mcp_error_code?: string }>,
- *     recovery_actions:  Array<string>  // populated by ENG-123 verify-recover layer; empty until then
+ *     final_state:       object,            // skill-specific (deploy-app: { lease_uuid, image, ... })
+ *     errors?:           Array<{ class: string, message: string, mcp_error_code?: string }>,
+ *                                            // skill prose templates emit `[]` rather than omit, but the
+ *                                            // reader tolerates absent (older records / external writers).
+ *     recovery_actions?: Array<string>      // same tolerance pattern as errors. Will be populated by ENG-123
+ *                                            // verify-recover layer once it lands; empty/absent until then.
  *   }
  *
  * Skills construct the record using data already in scope at the end of their
