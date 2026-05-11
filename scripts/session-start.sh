@@ -205,10 +205,15 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
     else
       # `|| true` is required because `set -o pipefail` is active above:
       # if the payload doesn't contain `session_id`, grep exits 1, the
-      # pipeline exits 1, and the whole hook would abort — preventing
-      # the runtime policy injection. Failing soft (empty SESSION_ID)
-      # is the right posture: the journal records will simply carry
-      # `session_id: null` for that session.
+      # pipeline exits 1, and `set -e` would abort the hook. By the time
+      # we reach this block, the policy heredoc has already been emitted
+      # to stdout, so the failure mode is aborting the env-file writes
+      # (MANIFEST_PLUGIN_ROOT/DATA/NODE_PATH/SESSION_ID) and the npm
+      # bootstrap that follow — leaving the session with the runtime
+      # policy injected but no env vars exported, which is a degraded
+      # state. Failing soft (empty SESSION_ID) is the right posture:
+      # the journal records will simply carry `session_id: null` for
+      # that session and the rest of the hook completes normally.
       SESSION_ID=$({ printf '%s' "$HOOK_PAYLOAD" \
         | grep -oE '"session_id"[[:space:]]*:[[:space:]]*"[^"]+"' \
         | head -n1 \
