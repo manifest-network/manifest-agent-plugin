@@ -595,18 +595,18 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "skill": "deploy-app",
   "active_chain": "<activeChain from Step 0>",
   "signer_address": "<address from Step 0>",
-  "intent": "<the user's request, in their words, max ~240 chars>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
   "plan_summary": "deploy <format> spec, <service_count> services, image=<primary image>, size=<SIZE>, custom_domain=<fqdn|null>",
-  "tool_calls": [
-    "<populate per the rules above; see scripts/_journal.cjs#redactArgs>"
-  ],
+  "tool_calls": [],
   "outcome": "<JOURNAL_OUTCOME>",
-  "final_state": "<see per-branch shapes below>",
-  "errors": "<list of { class, message, mcp_error_code? } from any errored tool calls or empty []>",
-  "recovery_actions": "<list of recovery actions taken, e.g. ['retry-set-domain'] for partial branch>"
+  "final_state": {},
+  "errors": [],
+  "recovery_actions": []
 }
 JOURNAL_EOF
 ```
+
+Populate `tool_calls[]` per the rules above (see `scripts/_journal.cjs#redactArgs`). `final_state` shapes are per-branch (see table below). `errors[]` is an array of `{ class, message, mcp_error_code? }` objects — empty when the run succeeded cleanly. `recovery_actions[]` is an array of strings like `"retry-set-domain"`, `"salvage-without-domain"`, `"cancel-or-close"` for the partial branch — empty for the other branches.
 
 `final_state` shapes by branch:
 

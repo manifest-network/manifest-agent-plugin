@@ -505,7 +505,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "skill": "author-manifest",
   "active_chain": "<activeChain from Step 0>",
   "signer_address": "<address from Step 0>",
-  "intent": "<the user's request, in their words, max ~240 chars>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
   "plan_summary": "author <SHAPE> spec, <service_count> services, image=<primary image>",
   "tool_calls": [
     {
@@ -513,8 +513,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "args_redacted": {
         "summary": { "format": "<single|stack>", "service_count": <N>, "port_count": <N>, "env_count": <N>, "env_keys": ["<KEY1>", "<KEY2>"], "images": ["<image1>"] },
         "customDomain": "<fqdn or null>",
-        "serviceName": "<service or null>",
-        "size": "<SIZE>"
+        "serviceName": "<service or null>"
       },
       "outcome": "ok",
       "result_summary": { "meta_hash_hex": "<META_HASH>", "format": "<format>", "valid": true }

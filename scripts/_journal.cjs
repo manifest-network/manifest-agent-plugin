@@ -63,18 +63,23 @@
  *     generic args walks (defense in depth for unknown tools).
  *   - appendRecord(record) — validate + append, returns the journal file path.
  *   - redactArgs(toolName, rawArgs) — produce the `args_redacted` block for a
- *     `tool_calls[]` entry. Four tool-specific branches:
+ *     `tool_calls[]` entry. Five tool-specific branches:
  *       (1) deploy_app / build_manifest_preview → reduce spec to
  *           summarize-spec output (env keys-only summary), preserve
- *           whitelisted top-level fields (customDomain, serviceName, size).
+ *           whitelisted top-level fields (customDomain, serviceName, size;
+ *           snake_case aliases also accepted).
  *       (2) cosmos_tx / cosmos_estimate_fee → preserve {module,
- *           subcommand, gas_multiplier, args[]} verbatim — billing-module
- *           CLI args carry no secrets.
- *       (3) Known-safe tools (lease module, fred provider, cosmwasm,
- *           read-only chain queries, faucet) → deep-redact-by-key:
- *           whitelisted shapes preserved, SUSPECT_KEY_PATTERN matches
- *           replaced with `<redacted>` as defense in depth.
- *       (4) Unknown tool → best-effort walk: redact suspect keys + any
+ *           subcommand, gas_multiplier (when set), args[]} verbatim —
+ *           billing-module CLI args carry no secrets.
+ *       (3) update_app → reduce the manifest field (canonical Fred-
+ *           rendered string with embedded env values) via the same
+ *           summarize-spec output; preserve lease_uuid.
+ *       (4) Known-safe tools (lease module, fred provider tools other
+ *           than update_app, cosmwasm, read-only chain queries,
+ *           faucet) → deep-walk: every field passes through except
+ *           SUSPECT_KEY_PATTERN matches, which are replaced with
+ *           `<redacted>` as defense in depth.
+ *       (5) Unknown tool → best-effort walk: redact suspect keys + any
  *           string longer than 256 chars. Audit-only; not a security
  *           boundary (see deepRedactByKeyAndLongStrings).
  *   - validateRecord(record) — throws if any key in the record matches the
@@ -187,12 +192,18 @@ function deepRedactByKeyAndLongStrings(value) {
 // args carry lease UUIDs / FQDNs / amounts (all whitelisted by the ticket as
 // captured), cosmos_query is read-only, fred provider tools take lease UUIDs
 // and sku names. None of these accept user-supplied secrets.
+//
+// `mcp__manifest-fred__update_app` is intentionally NOT in this list: it
+// takes `manifest: <canonical-Fred-rendered-JSON>` which embeds the user's
+// env values verbatim. The `manifest` key doesn't match
+// SUSPECT_KEY_PATTERN, so `deepRedactByKey` would pass it through whole.
+// `update_app` has its own branch below that summarizes the manifest the
+// same way the deploy_app branch summarizes its spec.
 const SAFE_TOOL_PREFIXES = [
   'mcp__manifest-lease__',
 ];
 const SAFE_TOOLS = new Set([
   'mcp__manifest-cosmwasm__convert_mfx_to_pwr',
-  'mcp__manifest-fred__update_app',
   'mcp__manifest-fred__restart_app',
   'mcp__manifest-fred__app_status',
   'mcp__manifest-fred__app_diagnostics',
@@ -234,13 +245,51 @@ function redactArgs(toolName, rawArgs) {
     // directly), but the wrapper shape is supported defensively.
     const spec = rawArgs.spec && typeof rawArgs.spec === 'object' ? rawArgs.spec : rawArgs;
     const out = { summary: summarizeSpec(spec) };
-    // Whitelisted passthrough fields. Read from `spec` first, then fall
-    // back to `rawArgs` so a wrapper-shape caller that puts these at the
-    // top level (e.g. `{ spec: {...}, customDomain: 'X' }`) doesn't
-    // silently lose audit data.
-    for (const key of ['customDomain', 'serviceName', 'size']) {
-      if (typeof spec[key] === 'string') out[key] = spec[key];
-      else if (typeof rawArgs[key] === 'string') out[key] = rawArgs[key];
+    // Whitelisted passthrough fields. The SPEC stores camelCase
+    // (mirroring the underlying TypeScript signature) but the on-wire
+    // deploy_app call uses snake_case — accept either alias so the
+    // audit field is present regardless of which shape the caller
+    // passed. Output key is camelCase (matches SPEC + the header
+    // schema). Search order: spec.camel, spec.snake, rawArgs.camel,
+    // rawArgs.snake.
+    const passthrough = [
+      { out: 'customDomain', aliases: ['customDomain', 'custom_domain'] },
+      { out: 'serviceName', aliases: ['serviceName', 'service_name'] },
+      { out: 'size', aliases: ['size'] },
+    ];
+    for (const { out: outKey, aliases } of passthrough) {
+      for (const source of [spec, rawArgs]) {
+        let found;
+        for (const a of aliases) {
+          if (typeof source[a] === 'string') { found = source[a]; break; }
+        }
+        if (found !== undefined) { out[outKey] = found; break; }
+      }
+    }
+    return out;
+  }
+
+  // update_app uploads the canonical Fred-rendered manifest_json string
+  // (with embedded env values) as the `manifest` field. Without an
+  // explicit branch, `deepRedactByKey` (the safe-tool path) would pass
+  // `manifest` through verbatim because the key name doesn't match
+  // SUSPECT_KEY_PATTERN. Reduce the manifest via the same in-process
+  // summarizer used for deploy_app's spec so env values stay keys-only.
+  if (toolName === 'mcp__manifest-fred__update_app') {
+    const out = {};
+    if (typeof rawArgs.lease_uuid === 'string') out.lease_uuid = rawArgs.lease_uuid;
+    if (typeof rawArgs.manifest === 'string') {
+      try {
+        const parsed = JSON.parse(rawArgs.manifest);
+        out.manifest_summary = summarizeSpec(parsed);
+      } catch {
+        // Non-JSON manifest — shouldn't happen for a Fred-rendered
+        // string, but stay defensive. Drop the field rather than
+        // leak its bytes.
+        out.manifest_summary = null;
+      }
+    } else if (rawArgs.manifest && typeof rawArgs.manifest === 'object') {
+      out.manifest_summary = summarizeSpec(rawArgs.manifest);
     }
     return out;
   }

@@ -150,3 +150,35 @@ test('does NOT export MANIFEST_SESSION_ID when the grep+sed fallback encounters 
     assert.match(r.stdout, /cosmos_estimate_fee/);
   });
 });
+
+test('skips stdin read entirely when CLAUDE_ENV_FILE is not set', () => {
+  // Regression for the stdin-gating change: when CLAUDE_ENV_FILE is
+  // unset (e.g. CI policy-syntax check `bash session-start.sh`),
+  // HOOK_PAYLOAD is never used downstream — so we should NOT cat stdin
+  // at all, avoiding both wasted work and a hang risk on an open-but-
+  // unflushed pipe. Test by passing a payload that WOULD trigger the
+  // session_id extraction; assert the hook emits policy and exits 0
+  // without consuming stdin (we can't directly observe "didn't read";
+  // we approximate by asserting the script completes promptly).
+  const data = mkdtempSync(join(tmpdir(), 'session-start-data-'));
+  const env = {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME || '/tmp',
+    CLAUDE_PLUGIN_ROOT: data,
+    CLAUDE_PLUGIN_DATA: data,
+    // Deliberately NO CLAUDE_ENV_FILE.
+  };
+  try {
+    const bashPath = ['/bin/bash', '/usr/bin/bash'].find((p) => existsSync(p)) || 'bash';
+    const r = spawnSync(bashPath, [SCRIPT], {
+      input: '{"session_id":"would-be-extracted","cwd":"/x"}',
+      encoding: 'utf8',
+      env,
+      timeout: 5000,
+    });
+    assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+    assert.match(r.stdout, /cosmos_estimate_fee/);
+  } finally {
+    rmSync(data, { recursive: true, force: true });
+  }
+});

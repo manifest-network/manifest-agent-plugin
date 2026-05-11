@@ -242,12 +242,12 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "skill": "manage-domain",
   "active_chain": "<activeChain from Step 0>",
   "signer_address": "<address from Step 0>",
-  "intent": "<the user's request, in their words, max ~240 chars>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
   "plan_summary": "<set|clear> domain on lease <LEASE_UUID>, service=<SERVICE_NAME or 'single-item'>",
   "tool_calls": [
     {
       "tool": "mcp__manifest-chain__cosmos_estimate_fee",
-      "args_redacted": { "module": "billing", "subcommand": "set-item-custom-domain", "args": "<verbatim SET_DOMAIN_ARGS>" },
+      "args_redacted": { "module": "billing", "subcommand": "set-item-custom-domain", "args": ["<LEASE_UUID>", "<FQDN or omitted on clear>", "--service-name", "<SERVICE_NAME if stacks>", "--clear (clear-mode only)"] },
       "outcome": "ok",
       "result_summary": { "fee_human": "<humanized fee from billing-tx-confirm step>" }
     },

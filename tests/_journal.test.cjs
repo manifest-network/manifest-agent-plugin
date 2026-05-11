@@ -125,6 +125,63 @@ test('redactArgs(build_manifest_preview, ...) accepts the {spec: ...} call shape
   assert.deepEqual(out.summary.images, ['nginx:1.27']);
 });
 
+test('redactArgs(deploy_app) accepts snake_case aliases for passthrough fields', () => {
+  // The actual MCP on-wire call uses snake_case (custom_domain,
+  // service_name) per deploy-app SKILL.md Step 8 — agent splats those
+  // into the deploy_app args. The SPEC stores camelCase. Both shapes
+  // should produce the same canonical-camelCase output to keep journal
+  // records comparable regardless of which way the caller built the
+  // tool_calls entry.
+  const out = _journal.redactArgs('mcp__manifest-fred__deploy_app', {
+    image: 'nginx:1.27',
+    port: 80,
+    custom_domain: 'app.example.com',
+    service_name: 'web',
+    size: 'small',
+  });
+  assert.equal(out.customDomain, 'app.example.com');
+  assert.equal(out.serviceName, 'web');
+  assert.equal(out.size, 'small');
+});
+
+test('redactArgs(update_app) reduces the manifest field to a summary (env values absent)', () => {
+  // update_app takes the canonical Fred-rendered manifest_json string,
+  // which embeds env values verbatim. The dedicated branch must reduce
+  // it via summarizeSpec so env values stay keys-only — same posture as
+  // deploy_app/build_manifest_preview.
+  const SECRET = 'super-secret-db-password';
+  const manifestJson = JSON.stringify({
+    services: {
+      web: {
+        image: 'ghcr.io/me/web:v2',
+        ports: { '80': {} },
+        env: { DATABASE_URL: `postgres://user:${SECRET}@db/app` },
+      },
+    },
+  });
+  const out = _journal.redactArgs('mcp__manifest-fred__update_app', {
+    lease_uuid: '11111111-1111-4111-8111-111111111111',
+    manifest: manifestJson,
+  });
+  const json = JSON.stringify(out);
+  assert.ok(!json.includes(SECRET), 'env value MUST NOT appear in update_app args_redacted');
+  assert.equal(out.lease_uuid, '11111111-1111-4111-8111-111111111111');
+  assert.equal(out.manifest_summary.format, 'stack');
+  assert.deepEqual(out.manifest_summary.env_keys, ['DATABASE_URL']);
+  // Raw `manifest` field must NOT appear in the output.
+  assert.equal(out.manifest, undefined);
+});
+
+test('redactArgs(update_app) handles non-JSON manifest defensively', () => {
+  const out = _journal.redactArgs('mcp__manifest-fred__update_app', {
+    lease_uuid: '11111111-1111-4111-8111-111111111111',
+    manifest: 'not valid JSON',
+  });
+  assert.equal(out.lease_uuid, '11111111-1111-4111-8111-111111111111');
+  assert.equal(out.manifest_summary, null);
+  assert.equal(out.manifest, undefined);
+});
+
 test('redactArgs preserves wrapper-shape passthrough fields at the top level', () => {
   // Defensive shape: caller wraps the spec and puts customDomain/etc. at
   // the wrapper level rather than inside spec. Without the rawArgs

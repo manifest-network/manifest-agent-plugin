@@ -6,41 +6,45 @@
 #      into every Claude session that uses the plugin. Plugin CLAUDE.md
 #      files are developer docs and do NOT reach runtime sessions — this
 #      heredoc is the canonical source of the runtime-facing policy.
-#   2. Export MANIFEST_PLUGIN_ROOT and MANIFEST_PLUGIN_DATA via
-#      CLAUDE_ENV_FILE so skills can locate plugin scripts and the
-#      runtime data directory from bash commands. MANIFEST_PLUGIN_DATA
-#      is Claude Code's persistent per-plugin data directory
+#   2. Export MANIFEST_PLUGIN_ROOT, MANIFEST_PLUGIN_DATA, and NODE_PATH
+#      via CLAUDE_ENV_FILE so skills can locate plugin scripts, the
+#      runtime data directory, and resolve plugin-installed Node
+#      dependencies from bash commands. MANIFEST_PLUGIN_DATA is Claude
+#      Code's persistent per-plugin data directory
 #      (~/.claude/plugins/data/<id>/) — survives plugin updates.
 #   3. Capture Claude Code's session_id from the SessionStart hook stdin
-#      payload and export it as MANIFEST_SESSION_ID. The operation
-#      journal (ENG-124) tags every record with this id so multiple
-#      records from one Claude Code session group together.
+#      payload and export it as MANIFEST_SESSION_ID (alongside the env
+#      file writes in (2)). The operation journal (ENG-124) tags every
+#      record with this id so records from one Claude Code session
+#      group together.
 #   4. Bootstrap npm dependencies on first run / when package.json
 #      changes (diff-check pattern from the docs). Removes the failure
 #      mode where a fresh user invokes /manifest-agent:deploy-app
 #      before /manifest-agent:init-agent and the MCP wrapper crashes
 #      with "binary not found".
 #
-# Ordering is deliberate: stdin is captured FIRST (before any other
-# command consumes it), then policy injection writes to stdout, then
-# env-file writes happen, then npm install. `set -euo pipefail` means
-# a failed write produces a non-zero exit Claude Code can surface,
-# rather than silently leaving the session in a half-enforced state.
+# Ordering is deliberate: stdin is captured first (gated on
+# CLAUDE_ENV_FILE since that's the only consumer), then policy
+# injection writes to stdout, then env-file writes happen, then npm
+# install. `set -euo pipefail` means a failed write produces a non-
+# zero exit Claude Code can surface, rather than silently leaving the
+# session in a half-enforced state.
 #
 # Edit the policy text below (not CLAUDE.md) if you need to change
 # runtime behavior.
 
 set -euo pipefail
 
-# Capture the SessionStart hook payload (a JSON object including
-# `session_id`, per Claude Code hook docs) before anything else reads
-# stdin. `cat` returns 0 even on EOF; the `|| true` is belt-and-
-# suspenders against `set -e` in degenerate cases (no stdin attached,
-# closed pipe). HOOK_PAYLOAD stays empty when no payload is sent —
-# e.g., when the script is invoked from `bash scripts/session-start.sh`
-# in CI for the policy syntax check.
+# HOOK_PAYLOAD is only used later inside the `if [ -n
+# "${CLAUDE_ENV_FILE:-}" ]` block to extract `session_id` for the
+# MANIFEST_SESSION_ID export. Gate the stdin read on the same condition
+# so we don't `cat` stdin in invocations that won't consume the payload
+# anyway (CI policy-syntax checks, ad-hoc shell test runs) — and so an
+# open-but-unflushed pipe in an unusual stdin setup can't hang the
+# hook before the policy heredoc emits. `cat || true` is belt-and-
+# suspenders against `set -e` propagating a closed-pipe error.
 HOOK_PAYLOAD=""
-if [ ! -t 0 ]; then
+if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ ! -t 0 ]; then
   HOOK_PAYLOAD=$(cat || true)
 fi
 

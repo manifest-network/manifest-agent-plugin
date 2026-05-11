@@ -196,7 +196,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "skill": "troubleshoot-deployment",
   "active_chain": "<activeChain from Step 0>",
   "signer_address": "<address from Step 0>",
-  "intent": "<the user's request, in their words, max ~240 chars>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
   "plan_summary": "close-lease cleanup on lease <LEASE_UUID>",
   "tool_calls": [
     {
