@@ -20,7 +20,7 @@
  *     skill:           string,        // skill name (no leading slash)
  *     active_chain:    string,        // "testnet" | "mainnet"
  *     signer_address:  string,        // bech32, e.g. "manifest1..."
- *     intent:          string,        // user's request, in their words (truncated by skill)
+ *     intent:          string,        // brief paraphrase of the user's request; skills MUST NOT echo verbatim user prose (may contain credentials — this field is stored unredacted)
  *     plan_summary:    string,        // structural summary, NOT the prose plan
  *     tool_calls:      Array<{
  *       tool:           string,        // fully-qualified MCP tool name (e.g. "mcp__manifest-fred__deploy_app")
