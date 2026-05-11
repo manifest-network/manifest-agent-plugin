@@ -227,7 +227,7 @@ function redactArgs(toolName, rawArgs) {
   // The per-tool branches below assume rawArgs is a plain object (they
   // index by key). None of today's MCP tools pass non-object rawArgs,
   // but the header docstring promises long-string redaction in the
-  // unknown-tool fallback (branch 4) — route any non-object input
+  // unknown-tool fallback (branch 5 in the header docstring) — route any non-object input
   // through that fallback so a hypothetical future tool with a top-level
   // string or array doesn't bypass the >256-char check.
   if (typeof rawArgs !== 'object' || Array.isArray(rawArgs)) {
