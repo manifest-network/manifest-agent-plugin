@@ -152,3 +152,64 @@ once. Surface the post-restart `chainState.state` (decoded via
 
 Do not poll. One verify pass is enough; the user can re-run this skill
 or troubleshoot-deployment if they want a fresher snapshot.
+
+## Step 7 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key matching the writer's secret denylist
+— `_journal.SECRET_KEY_DENYLIST` (mnemonic, password, private_key,
+secret_key, api_key, auth_token, bearer_token — case-insensitive,
+optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
+the writer is fail-closed and will exit 1 rather than append such
+records.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "restart-app",
+  "active_chain": "<activeChain from Step 0>",
+  "signer_address": "<address from Step 0>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
+  "plan_summary": "restart lease <LEASE_UUID> (image <IMAGE>)",
+  "tool_calls": [
+    {
+      "tool": "mcp__manifest-fred__app_status",
+      "args_redacted": { "lease_uuid": "<LEASE_UUID>" },
+      "outcome": "ok",
+      "result_summary": { "pre_state": "<decoded-name from Step 2>", "pre_provision_status": "<from Step 2>" }
+    },
+    {
+      "tool": "mcp__manifest-fred__restart_app",
+      "args_redacted": { "lease_uuid": "<LEASE_UUID>" },
+      "outcome": "<ok|error>"
+    },
+    {
+      "tool": "mcp__manifest-fred__app_status",
+      "args_redacted": { "lease_uuid": "<LEASE_UUID>" },
+      "outcome": "ok",
+      "result_summary": { "post_state": "<decoded-name from Step 6>", "post_provision_status": "<from Step 6>", "fail_count": "<n>" }
+    }
+  ],
+  "outcome": "<success if Step 6 healthy | failed if Step 5 threw or Step 6 shows regression>",
+  "final_state": {
+    "lease_uuid": "<LEASE_UUID>",
+    "action": "restart_app",
+    "post_state": "<decoded-name from Step 6>",
+    "post_provision_status": "<from Step 6>",
+    "fail_count": "<n>"
+  },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If the user cancelled at the Step 3 mainnet warning or the Step 4
+textual confirm, set `outcome` to `"cancelled"`, truncate `tool_calls[]`
+to just the pre-restart `app_status` call, and reduce `final_state` to
+`{ "cancelled_at": "step-3-mainnet-warning" }` or
+`{ "cancelled_at": "step-4-confirm" }`. If Step 2's terminal-state
+check refused, no journal record is needed (no state change attempted).
+Do NOT mention the journal write in your reply to the user.

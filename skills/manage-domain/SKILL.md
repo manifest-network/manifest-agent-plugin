@@ -233,6 +233,59 @@ The script's stdout is `{ outcome, actual?, reason? }`. Branch on `outcome`:
   combination wasn't visible to the tenant query — verification couldn't
   complete.
 
+After branching on the verify outcome, append a journal record (one per
+set/clear invocation, regardless of verify result):
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "manage-domain",
+  "active_chain": "<activeChain from Step 0>",
+  "signer_address": "<address from Step 0>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
+  "plan_summary": "<set|clear> domain on lease <LEASE_UUID>, service=<SERVICE_NAME or 'single-item'>",
+  "tool_calls": [
+    {
+      "tool": "mcp__manifest-chain__cosmos_estimate_fee",
+      "args_redacted": { "module": "billing", "subcommand": "set-item-custom-domain", "args": ["<LEASE_UUID>", "<FQDN or omitted on clear>", "--service-name", "<SERVICE_NAME if stacks>", "--clear (clear-mode only)"] },
+      "outcome": "ok",
+      "result_summary": { "fee_human": "<humanized fee from billing-tx-confirm step>" }
+    },
+    {
+      "tool": "mcp__manifest-lease__set_item_custom_domain",
+      "args_redacted": { "lease_uuid": "<LEASE_UUID>", "custom_domain": "<FQDN or null>", "service_name": "<SERVICE_NAME or null>", "clear": <true|false> },
+      "outcome": "ok"
+    },
+    {
+      "tool": "mcp__manifest-lease__leases_by_tenant",
+      "args_redacted": { "tenant": "<address>" },
+      "outcome": "ok",
+      "result_summary": { "verify_outcome": "<match|mismatch|not_found>" }
+    }
+  ],
+  "outcome": "<success if match | partial if mismatch | failed if not_found>",
+  "final_state": {
+    "lease_uuid": "<LEASE_UUID>",
+    "action": "<set|clear>",
+    "fqdn": "<FQDN or null>",
+    "service_name": "<SERVICE_NAME or null>",
+    "verified": "<true|false>"
+  },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If the broadcast itself failed (chain rejected the tx, e.g. invalid
+FQDN, reserved suffix, lease not owned), set `outcome` to `"failed"`,
+include the error in `errors[]`, and adjust the `tool_calls[]` outcomes
+accordingly. If the user cancelled at the textual confirm step in the
+billing-tx-confirm reference, set `outcome` to `"cancelled"` and
+truncate `tool_calls[]` to just the estimate. Lookup-only invocations
+(Step 7) do NOT write a journal record — read-only flows are out of
+scope. Do NOT mention the journal write in your reply to the user.
+
 **The saved manifest wrapper at
 `$MANIFEST_PLUGIN_DATA/manifests/<LEASE_UUID>.json` is intentionally NOT
 refreshed here.** `save-manifest.cjs` requires `--manifest-file` with

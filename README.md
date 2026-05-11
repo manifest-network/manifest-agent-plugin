@@ -301,6 +301,7 @@ For development installs (`claude --plugin-dir`), pull the latest commits in you
 | `/manifest-agent:list-releases [<lease-uuid>]` | Read-only — show the on-provider release/version history for a deployed lease as a Markdown table sorted newest first. Rolling back a release is out of scope |
 | `/manifest-agent:balance [<bech32-tenant>]` | Read-only — show wallet balances, credit balance, burn rate, and runway hours. Defaults to the agent's own address; pass a bech32 to query another tenant |
 | `/manifest-agent:list-providers [--all]` | Read-only — list registered providers on the active chain. Default surfaces active providers only; `--all` includes inactive entries |
+| `/manifest-agent:journal` | Read-only audit-trail query. Filter by date / skill / lease UUID / outcome / signer. Markdown or JSONL output. Records are written by every state-changing skill at the end of each invocation |
 
 ## MCP servers
 

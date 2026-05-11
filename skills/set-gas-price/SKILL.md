@@ -101,3 +101,38 @@ Parse the JSON output to confirm the update.
 Tell the user:
 1. The new gas settings
 2. MCP servers need to be restarted to use the new settings
+
+## Step 6 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key matching the writer's secret denylist
+— `_journal.SECRET_KEY_DENYLIST` (mnemonic, password, private_key,
+secret_key, api_key, auth_token, bearer_token — case-insensitive,
+optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
+the writer is fail-closed and will exit 1 rather than append such
+records.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "set-gas-price",
+  "active_chain": "<activeChain from Step 0 status>",
+  "signer_address": "<address from Step 0 status>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
+  "plan_summary": "<short structural summary, e.g. 'change gas_token MFX -> PWR'>",
+  "tool_calls": [],
+  "outcome": "success",
+  "final_state": { "gas_token": "<symbol or null>", "gas_multiplier": "<number or null>" },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+Substitute the bracketed values inline before running the heredoc; no
+`<...>` placeholders should remain. If the user cancelled mid-flow (e.g.
+in Step 1), set `outcome` to `"cancelled"` and adjust `final_state`
+accordingly. Do NOT mention the journal write in your reply to the user
+— it's an internal audit trail.

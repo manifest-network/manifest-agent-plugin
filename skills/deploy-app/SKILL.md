@@ -504,6 +504,9 @@ If the script reports `Ingress: (none — service is internal or no FQDN
 reported)`, just print that as-is. The user knows what an internal-only
 service is; do not narrate around it.
 
+After printing the success block, continue to Step 12 with
+`JOURNAL_OUTCOME = "success"` and the success `final_state` shape.
+
 ## Step 11 — Failure
 
 Three sub-cases.
@@ -517,6 +520,13 @@ and the three recovery paths (retry set-domain + upload / salvage without
 domain / cancel-or-close, with PENDING-vs-ACTIVE branching for the
 correct chain primitive).
 
+After the recovery branch resolves, continue to Step 12 with
+`JOURNAL_OUTCOME = "partial"` and a `final_state` reflecting which path
+the user picked (retry / salvage / cancel) plus the chosen lease state.
+Track the user's pick as `RECOVERY_ACTION` (one of `retry-set-domain`,
+`salvage-without-domain`, `cancel-or-close`) and add it to
+`recovery_actions[]` in the journal record.
+
 ### When the broadcast created a lease (`LEASE_UUID` present)
 
 `Read` `skills/deploy-app/references/troubleshoot-after-deploy-failure.md`
@@ -526,9 +536,89 @@ diagnostic + cleanup flow (parallel `app_status` / `app_diagnostics` /
 on-chain verification with `terminal`-flag branching for
 `remove-manifest.cjs` cleanup).
 
+After the cleanup branch resolves, continue to Step 12 with
+`JOURNAL_OUTCOME = "failed"` and a `final_state` carrying `lease_uuid`
+and the user's close-or-keep choice.
+
 ### When no lease was created (`LEASE_UUID` absent)
 
 The broadcast failed before any lease was created (most commonly: registry
 rejected at upload time, insufficient gas, network error). Surface the
-`error_summary` from the classify-deploy-response output verbatim and stop.
-No cleanup needed.
+`error_summary` from the classify-deploy-response output verbatim. No
+cleanup needed.
+
+After surfacing the error, continue to Step 12 with
+`JOURNAL_OUTCOME = "failed"` and a minimal `final_state` (no lease_uuid).
+
+## Step 12 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key matching the writer's secret denylist
+— `_journal.SECRET_KEY_DENYLIST` (mnemonic, password, private_key,
+secret_key, api_key, auth_token, bearer_token — case-insensitive,
+optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
+the writer is fail-closed and will exit 1 rather than append such
+records. Do NOT embed `MANIFEST_JSON` or any spec env values; the
+redaction discipline (env keys-only, never values) is mandatory in
+`args_redacted` for `build_manifest_preview` and `deploy_app` — the
+rules live in `scripts/_journal.cjs#redactArgs`.
+
+`tool_calls[]` MUST enumerate every MCP tool call this skill made, in
+order. For each entry, set `outcome` to `"ok"` or `"error"` and use the
+fully-qualified MCP tool name (the same string that fires in chat) so
+the journal stays grep-friendly. The critical entries (omit any not
+used on the path you took):
+
+- `mcp__manifest-fred__build_manifest_preview` (Step 3)
+- `mcp__manifest-fred__check_deployment_readiness` (Step 5)
+- `mcp__manifest-chain__cosmos_estimate_fee` for `create-lease` (Step 6a)
+- `mcp__manifest-chain__cosmos_estimate_fee` for `set-item-custom-domain` (Step 6a-bis, when custom domain is set)
+- `mcp__manifest-fred__deploy_app` (Step 8)
+- `mcp__manifest-fred__wait_for_app_ready` (Step 9, only when classify said `needs_wait`)
+- `mcp__manifest-fred__app_status` (Step 9 needs_wait branch, or Step 11 has-lease branch)
+- `mcp__manifest-fred__app_diagnostics`, `mcp__manifest-fred__get_logs` (Step 11 has-lease branch)
+- `mcp__manifest-chain__cosmos_estimate_fee` for `close-lease` + `mcp__manifest-lease__close_lease` (Step 11 cleanup)
+- `mcp__manifest-fred__update_app` (Step 11 partial salvage / retry branch)
+- `mcp__manifest-lease__set_item_custom_domain` (Step 11 partial retry branch)
+
+Each `args_redacted` follows the per-tool reduction in
+`scripts/_journal.cjs#redactArgs`:
+- `deploy_app` / `build_manifest_preview` → `{ summary: { format, service_count, port_count, env_count, env_keys, images }, customDomain?, serviceName?, size? }`. Env values MUST NOT appear.
+- `cosmos_estimate_fee` → `{ module, subcommand, args: [...], gas_multiplier }` verbatim (billing args carry no secrets).
+- Lease-module / fred provider tools → deep-redact-by-key: top-level fields like `lease_uuid`, `fqdn`, `service_name`, `sku name`, `amount` are preserved verbatim, but any nested key matching `MNEMONIC|PASSWORD|TOKEN|SECRET|API[_-]?KEY|PRIVATE[_-]?KEY` (case-insensitive) is replaced with `<redacted>`. None of today's lease/fred tools accept such keys, so the practical effect is a pass-through; the deep-redact is defense in depth for future tool surface.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "deploy-app",
+  "active_chain": "<activeChain from Step 0>",
+  "signer_address": "<address from Step 0>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
+  "plan_summary": "deploy <format> spec, <service_count> services, image=<primary image>, size=<SIZE>, custom_domain=<fqdn|null>",
+  "tool_calls": [],
+  "outcome": "<JOURNAL_OUTCOME>",
+  "final_state": {},
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+Populate `tool_calls[]` per the rules above (see `scripts/_journal.cjs#redactArgs`). `final_state` shapes are per-branch (see table below). `errors[]` is an array of `{ class, message, mcp_error_code? }` objects — empty when the run succeeded cleanly. `recovery_actions[]` is an array of strings like `"retry-set-domain"`, `"salvage-without-domain"`, `"cancel-or-close"` for the partial branch — empty for the other branches.
+
+`final_state` shapes by branch:
+
+- **success** (Step 10): `{ "lease_uuid": "<LEASE_UUID>", "image": "<IMAGE>", "size": "<SIZE>", "chain_id": "<CHAIN_ID>", "format": "<single|stack>", "meta_hash_hex": "<META_HASH>", "custom_domain": "<fqdn or null>", "custom_domain_service_name": "<service or null>", "provider_uuid": "<DEPLOY_RESPONSE.provider_uuid or null>", "url": "<first url from format-success.cjs output, or null>" }`
+- **partial** (Step 11 partial-success): `{ "lease_uuid": "<LEASE_UUID>", "what_succeeded": "create-lease", "what_failed": "<set-domain|upload>", "decoded_state": "<DECODED_STATE>", "recovery_choice": "<retry-set-domain|salvage-without-domain|cancel-or-close>" }`
+- **failed with lease** (Step 11 has-lease): `{ "lease_uuid": "<LEASE_UUID>", "close_choice": "<close|keep>", "verified_terminal": "<true|false>" }`
+- **failed no lease** (Step 11 no-lease): `{ "error_summary": "<error_summary from classify-deploy-response>" }`
+
+If the user cancelled at the textual confirm in Step 7 (or earlier in
+Step 1 mainnet warning, Step 4 intent-recap Abort), set `outcome` to
+`"cancelled"`, truncate `tool_calls[]` to whatever ran before the
+cancellation, and set `final_state` to a small object with at least the
+cancelled-step name (e.g. `{ "cancelled_at": "step-7-confirm" }`). Do
+NOT mention the journal write in your reply to the user — it's an
+internal audit trail.

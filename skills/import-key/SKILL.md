@@ -78,6 +78,40 @@ Tell the user:
 2. The keyfile location
 3. That MCP servers need to be restarted to pick up the new key
 
+## Step 4 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key matching the writer's secret denylist
+— `_journal.SECRET_KEY_DENYLIST` (mnemonic, password, private_key,
+secret_key, api_key, auth_token, bearer_token — case-insensitive,
+optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
+the writer is fail-closed and will exit 1 rather than append such
+records. This is the defense in depth for this skill.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "import-key",
+  "active_chain": "<activeChain from Step 0>",
+  "signer_address": "<address parsed from write-config output>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
+  "plan_summary": "imported key on <activeChain>",
+  "tool_calls": [],
+  "outcome": "success",
+  "final_state": {
+    "address": "<address>",
+    "active_chain": "<activeChain>"
+  },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+Do NOT mention the journal write in your reply to the user.
+
 ## Security notes
 
 - The mnemonic NEVER appears in this conversation. The user creates a file

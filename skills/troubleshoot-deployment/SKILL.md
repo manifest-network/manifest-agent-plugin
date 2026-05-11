@@ -177,3 +177,54 @@ prompt — that's expected.
 
 After the broadcast returns, follow Step 5a (close-lease verify) of the
 same reference for the on-chain confirmation + saved-manifest cleanup.
+
+## Step 7 — Record this run in the journal (close_lease branch only)
+
+If `close_lease` actually fired (Step 6), append one record to the
+operation journal at `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`.
+The writer auto-fills `timestamp_iso`, `timestamp_unix`, `schema_version`,
+and `session_id` — omit them. Do NOT include any key matching the
+writer's secret denylist — `_journal.SECRET_KEY_DENYLIST` (mnemonic,
+password, private_key, secret_key, api_key, auth_token, bearer_token —
+case-insensitive, optional `_`/`-` separators; canonical regex in
+`scripts/_journal.cjs`); the writer is fail-closed and will exit 1
+rather than append such records.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "troubleshoot-deployment",
+  "active_chain": "<activeChain from Step 0>",
+  "signer_address": "<address from Step 0>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
+  "plan_summary": "close-lease cleanup on lease <LEASE_UUID>",
+  "tool_calls": [
+    {
+      "tool": "mcp__manifest-chain__cosmos_estimate_fee",
+      "args_redacted": { "module": "billing", "subcommand": "close-lease", "args": ["<LEASE_UUID>"] },
+      "outcome": "ok",
+      "result_summary": { "fee_human": "<humanized fee>" }
+    },
+    {
+      "tool": "mcp__manifest-lease__close_lease",
+      "args_redacted": { "lease_uuid": "<LEASE_UUID>" },
+      "outcome": "<ok|error>"
+    }
+  ],
+  "outcome": "<success if verify passed | failed if broadcast or verify errored>",
+  "final_state": {
+    "lease_uuid": "<LEASE_UUID>",
+    "action": "close_lease",
+    "verified": "<true|false>"
+  },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If the user cancelled at the textual confirm, set `outcome` to
+`"cancelled"` and truncate `tool_calls[]` to just the estimate. If the
+user did NOT pick close_lease in Step 6 (read-only flow), do NOT write a
+journal record — Steps 0–5 are diagnostic and out of scope. Do NOT
+mention the journal write in your reply to the user.

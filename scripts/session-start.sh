@@ -1,32 +1,52 @@
 #!/usr/bin/env bash
 # SessionStart hook for the manifest-agent plugin.
 #
-# Three responsibilities:
+# Four responsibilities:
 #   1. Emit the runtime transaction policy on stdout so it is injected
 #      into every Claude session that uses the plugin. Plugin CLAUDE.md
 #      files are developer docs and do NOT reach runtime sessions — this
 #      heredoc is the canonical source of the runtime-facing policy.
-#   2. Export MANIFEST_PLUGIN_ROOT and MANIFEST_PLUGIN_DATA via
-#      CLAUDE_ENV_FILE so skills can locate plugin scripts and the
-#      runtime data directory from bash commands. MANIFEST_PLUGIN_DATA
-#      is Claude Code's persistent per-plugin data directory
+#   2. Export MANIFEST_PLUGIN_ROOT, MANIFEST_PLUGIN_DATA, and NODE_PATH
+#      via CLAUDE_ENV_FILE so skills can locate plugin scripts, the
+#      runtime data directory, and resolve plugin-installed Node
+#      dependencies from bash commands. MANIFEST_PLUGIN_DATA is Claude
+#      Code's persistent per-plugin data directory
 #      (~/.claude/plugins/data/<id>/) — survives plugin updates.
-#   3. Bootstrap npm dependencies on first run / when package.json
+#   3. Capture Claude Code's session_id from the SessionStart hook stdin
+#      payload and export it as MANIFEST_SESSION_ID (alongside the env
+#      file writes in (2)). The operation journal (ENG-124) tags every
+#      record with this id so records from one Claude Code session
+#      group together.
+#   4. Bootstrap npm dependencies on first run / when package.json
 #      changes (diff-check pattern from the docs). Removes the failure
 #      mode where a fresh user invokes /manifest-agent:deploy-app
 #      before /manifest-agent:init-agent and the MCP wrapper crashes
 #      with "binary not found".
 #
-# Ordering is deliberate: policy injection runs first so it is locked
-# into the session regardless of what happens with the env-file write
-# or npm install. `set -euo pipefail` means a failed write produces a
-# non-zero exit Claude Code can surface, rather than silently leaving
-# the session in a half-enforced state.
+# Ordering is deliberate: stdin is captured first (gated on
+# CLAUDE_ENV_FILE since that's the only consumer), then policy
+# injection writes to stdout, then env-file writes happen, then npm
+# install. `set -euo pipefail` means a failed write produces a non-
+# zero exit Claude Code can surface, rather than silently leaving the
+# session in a half-enforced state.
 #
 # Edit the policy text below (not CLAUDE.md) if you need to change
 # runtime behavior.
 
 set -euo pipefail
+
+# HOOK_PAYLOAD is only used later inside the `if [ -n
+# "${CLAUDE_ENV_FILE:-}" ]` block to extract `session_id` for the
+# MANIFEST_SESSION_ID export. Gate the stdin read on the same condition
+# so we don't `cat` stdin in invocations that won't consume the payload
+# anyway (CI policy-syntax checks, ad-hoc shell test runs) — and so an
+# open-but-unflushed pipe in an unusual stdin setup can't hang the
+# hook before the policy heredoc emits. `cat || true` is belt-and-
+# suspenders against `set -e` propagating a closed-pipe error.
+HOOK_PAYLOAD=""
+if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ ! -t 0 ]; then
+  HOOK_PAYLOAD=$(cat || true)
+fi
 
 cat <<'POLICY'
 # manifest-agent runtime transaction policy
@@ -173,6 +193,36 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   # scripts, which need exactly this resolution path. Hoisting kills the
   # 9-site duplication that was previously prefixed onto each invocation.
   printf 'export NODE_PATH=%q\n' "${CLAUDE_PLUGIN_DATA}/node_modules" >> "$CLAUDE_ENV_FILE"
+
+  # Extract session_id from the captured hook payload. Use jq when
+  # available, otherwise fall back to a tolerant grep+sed. Empty
+  # SESSION_ID just skips the export — _journal.cjs treats a missing
+  # MANIFEST_SESSION_ID as a null session id in the journal record.
+  SESSION_ID=""
+  if [ -n "$HOOK_PAYLOAD" ]; then
+    if command -v jq >/dev/null 2>&1; then
+      SESSION_ID=$(printf '%s' "$HOOK_PAYLOAD" | jq -r '.session_id // empty' 2>/dev/null || true)
+    else
+      # `|| true` is required because `set -o pipefail` is active above:
+      # if the payload doesn't contain `session_id`, grep exits 1, the
+      # pipeline exits 1, and `set -e` would abort the hook. By the time
+      # we reach this block, the policy heredoc has already been emitted
+      # to stdout, so the failure mode is aborting the env-file writes
+      # (MANIFEST_PLUGIN_ROOT/DATA/NODE_PATH/SESSION_ID) and the npm
+      # bootstrap that follow — leaving the session with the runtime
+      # policy injected but no env vars exported, which is a degraded
+      # state. Failing soft (empty SESSION_ID) is the right posture:
+      # the journal records will simply carry `session_id: null` for
+      # that session and the rest of the hook completes normally.
+      SESSION_ID=$({ printf '%s' "$HOOK_PAYLOAD" \
+        | grep -oE '"session_id"[[:space:]]*:[[:space:]]*"[^"]+"' \
+        | head -n1 \
+        | sed -E 's/.*"session_id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'; } || true)
+    fi
+  fi
+  if [ -n "$SESSION_ID" ]; then
+    printf 'export MANIFEST_SESSION_ID=%q\n' "$SESSION_ID" >> "$CLAUDE_ENV_FILE"
+  fi
 fi
 
 # Bootstrap deps when package.json differs (or on first run). Pattern from

@@ -84,3 +84,37 @@ Tell the user:
 3. MCP servers need to be restarted to connect to the new chain
 4. Their agent address remains the same (same key works on both chains, but
    balances differ)
+
+## Step 6 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key matching the writer's secret denylist
+— `_journal.SECRET_KEY_DENYLIST` (mnemonic, password, private_key,
+secret_key, api_key, auth_token, bearer_token — case-insensitive,
+optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
+the writer is fail-closed and will exit 1 rather than append such
+records.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "switch-chain",
+  "active_chain": "<new active chain — testnet or mainnet>",
+  "signer_address": "<address from Step 0>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
+  "plan_summary": "<old chain> -> <new chain>",
+  "tool_calls": [],
+  "outcome": "success",
+  "final_state": { "active_chain": "<new chain>", "chain_id": "<chain ID from update-config output>" },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If the user cancelled (Step 1 "already on chain" early-out, or Step 2
+mainnet decline), set `outcome` to `"cancelled"` and adjust
+`final_state`. Do NOT mention the journal write in your reply to the
+user — it's an internal audit trail.

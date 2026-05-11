@@ -12,11 +12,14 @@ A Claude Code plugin (`manifest-agent`) that bootstraps an autonomous agent for 
 
 ```
 Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
-├── scripts/*.cjs                ├── config.json        (0600, has key password)
-├── skills/*/SKILL.md            ├── keys/agent-*.json  (0600, encrypted wallets)
+├── scripts/*.cjs                ├── config.json                  (0600, has key password)
+├── skills/*/SKILL.md            ├── keys/agent-*.json            (0600, encrypted wallets)
 ├── hooks/hooks.json             ├── chains/{mainnet,testnet}.json
-├── .mcp.json                    ├── node_modules/      (deps installed here)
-└── package.json                 └── package.json       (copied from plugin root)
+├── .mcp.json                    ├── manifests/<lease-uuid>.json  (0600, post-deploy records)
+└── package.json                 ├── manifests-drafts/*.json      (0600, user-managed drafts)
+                                 ├── journal/<YYYY-MM-DD>.jsonl   (0600, append-only audit trail)
+                                 ├── node_modules/                (deps installed here)
+                                 └── package.json                 (copied from plugin root)
 ```
 
 **Data flow**: Skills run scripts → scripts write to `$MANIFEST_PLUGIN_DATA` → MCP wrapper reads `config.json` at startup → spawns MCP binary with computed env vars.
@@ -59,6 +62,7 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **list-releases** — Read-only call to `app_releases`; renders the version history via `render-releases.cjs` as a Markdown table sorted newest first. True rollback (re-deploying a prior release) is intentionally out of scope — track separately if/when needed.
 - **balance** — Read-only call to `credit_balance`; renders wallet balances + credit account state + burn rate + runway hours via `render-balance.cjs` (humanizing denoms via `humanize-denom.cjs`). Optional `$ARGUMENTS` is a bech32 tenant address; default is the agent's own address.
 - **list-providers** — Read-only call to `get_providers`; renders the provider table via `render-providers.cjs`. Optional `--all` argument flips `active_only` to false (default surfaces only active providers).
+- **journal** — Read-only audit-trail query over `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. Filter by date / skill / lease UUID / outcome / signer. Markdown or JSONL output. The journal is written by every state-changing skill at the end of each invocation; this skill is the canonical reader.
 
 ### `references/` files and cross-skill loading
 
@@ -106,6 +110,8 @@ Use `grep -rn '<script>.cjs' skills/ scripts/ references/` if you need to locate
 - **`humanize-fee.cjs`** — Renders a `cosmos_estimate_fee` result as a human-readable string (e.g. `0.0023 MFX`). Flags: `--chain-data-file`, `--fee-json`.
 - **`import-key.cjs`** — Non-interactive mnemonic import. Reads mnemonic from stdin (one line, space-separated). Generates a random 32-byte password internally; emits `{ address, keyfile, password, agentId }` JSON on stdout. Flags: `--prefix`, `--output`.
 - **`inspect-image.cjs`** — Inspects an OCI image via the Distribution API (extracts ports, env defaults, digest). Flags: `--image`.
+- **`journal-read.cjs`** — Read-only query over the operation journal. Flags: `--date`, `--since`/`--until` (inclusive range), `--skill`, `--lease`, `--outcome`, `--signer`, `--format markdown|jsonl` (default markdown), `--limit`. Tolerates a torn final line silently (power-loss safety); earlier unparseable lines log to stderr but don't abort. Default scope is today UTC.
+- **`journal-write.cjs`** — Append a JSON record (read on stdin) to today's `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl` (UTC). Auto-fills `timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` (from `$MANIFEST_SESSION_ID`) when absent. Fail-closed: refuses (exit 1) when any key matches `_journal.SECRET_KEY_DENYLIST` (canonical list lives in `scripts/_journal.cjs`; covers `mnemonic`, `password`, `private_key`, `secret_key`, `api_key`, `auth_token`, `bearer_token` variants). Flag: `--dry-run`.
 - **`list-saved-manifests.cjs`** — Lists saved post-deploy wrappers with redacted non-sensitive fields (never `manifest_json`).
 - **`merge-env.cjs`** — Reads dotenv-format from stdin and merges it into `spec.services[<name>].env` (or top-level `spec.env`) in place. Outputs only the merged keys, never values. Flags: `--spec-file`, `--service-name`.
 - **`remove-manifest.cjs`** — Unlinks a saved wrapper after `close_lease`. No-op if missing. Flags: `--lease-uuid`.
@@ -140,6 +146,7 @@ These are conceptually renderers that other renderers compose, so they live with
 - **`_gas-price.cjs`** — Composes a Cosmos gas-price string (`<amount><denom>`) by symbol lookup in chain registry data. Exports `composeGasPrice`.
 - **`_https-json.cjs`** — Shared HTTPS GET helper with SSRF guard (via `request-filtering-agent`), 15 s timeout, 5 MB body cap. Exports `httpsGet`.
 - **`_io.cjs`** — Shared I/O primitives. Exports `getDataDir` (resolves `$MANIFEST_PLUGIN_DATA`, errors if missing), `atomicWrite` (write-tmp-then-rename with mode preservation), `readJsonFile`.
+- **`_journal.cjs`** — Operation-journal helpers. Exports `SCHEMA_VERSION` (1), `MAX_RECORD_BYTES` (4096 — target single-`write(2)` size that Linux ext4/xfs serialize via the inode mutex; best-effort, not a POSIX guarantee — see the helper's header for the full concurrency model), `SECRET_KEY_DENYLIST` (canonical regex covering `mnemonic`, `password`, `private_key`, `secret_key`, `api_key`, `auth_token`, `bearer_token` variants), `SUSPECT_KEY_PATTERN` (broader pattern used in args-redacted walks), `appendRecord(record)` (validates + appends; oversized records replaced with a `journal_truncated` marker), `redactArgs(toolName, rawArgs)` (per-tool reduction — spec → summary for `deploy_app`/`build_manifest_preview`, manifest → summary for `update_app`, verbatim CLI args for `cosmos_tx`/`cosmos_estimate_fee`, deep-walk for other known-safe tools, defensive walk for unknown tools; non-object rawArgs route through the unknown-tool fallback), `validateRecord(record)` (fail-closed: throws if any key in the tree matches `SECRET_KEY_DENYLIST`, also rejects non-object roots including arrays), `todayUtcDate`, `journalDir`, `journalFilePath`. Used by `journal-write.cjs`/`journal-read.cjs` and any future sibling that needs to write directly without shelling out.
 - **`_lease-items.cjs`** — Shape decoders for lease responses. Exports `pickLeasesArray`, `normalizeItem`, `findLease`.
 - **`_lease-state.cjs`** — Canonical `LeaseState` enum table + decode/isTerminal helpers. Exports `STATES`, `TERMINAL_STATES`, `decode`, `isTerminal`.
 - **`_spec.cjs`** — Spec inspection (single-service vs services-map detection, normalization). Exports `isStack`, `firstImage`, `normalizeServices`.
@@ -147,7 +154,7 @@ These are conceptually renderers that other renderers compose, so they live with
 
 ### Hook scripts
 
-- **`session-start.sh`** — SessionStart hook. (1) Emits the runtime transaction policy heredoc on stdout (canonical source of the runtime-facing policy; CLAUDE.md is dev-only). (2) Exports `MANIFEST_PLUGIN_ROOT`, `MANIFEST_PLUGIN_DATA`, `NODE_PATH` via `CLAUDE_ENV_FILE`. (3) Bootstraps `npm install --omit=dev` when `package.json` differs between plugin root and `$MANIFEST_PLUGIN_DATA`. Failure log at `$MANIFEST_PLUGIN_DATA/.last-install.log`.
+- **`session-start.sh`** — SessionStart hook. (1) Captures the hook payload from stdin so step (3) can extract `session_id`. (2) Emits the runtime transaction policy heredoc on stdout (canonical source of the runtime-facing policy; CLAUDE.md is dev-only). (3) Exports `MANIFEST_PLUGIN_ROOT`, `MANIFEST_PLUGIN_DATA`, `NODE_PATH` via `CLAUDE_ENV_FILE`, and `MANIFEST_SESSION_ID` when the hook payload's `session_id` field is parseable (jq if available, grep+sed fallback otherwise; absent → field omitted, journal records carry `session_id: null`). (4) Bootstraps `npm install --omit=dev` when `package.json` differs between plugin root and `$MANIFEST_PLUGIN_DATA`. Failure log at `$MANIFEST_PLUGIN_DATA/.last-install.log`.
 - **`pre-tool-use.sh`** — PreToolUse hook. Emits `{hookSpecificOutput.permissionDecision: "ask"}` for every broadcast tool in the matcher (see "Tools gated by the PreToolUse hook" below). Fail-closed: any error in the trap emits `deny` instead. Cannot verify the agent showed a fee summary first — that's the runtime policy's job.
 
 ## config.json → MCP env var mapping
@@ -270,6 +277,26 @@ When changing the wrapper shape, bump `schema_version` and update both writers a
 - **Tests**: `tests/summarize-manifest.test.cjs` is the canonical place to add a fixture asserting the new shape AND a v(N-1) fixture asserting backward read compatibility.
 
 There is no migration step — the wrapper is a record, not a config file. A v2 wrapper stays v2 on disk forever; v3 wrappers are written for new deploys only.
+
+## Operation journal
+
+Every state-changing skill appends one record per invocation to `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl` (UTC, mode `0600`, parent dir `0700`). Records capture intent, plan summary, tool calls (`args_redacted` per `_journal.cjs#redactArgs`), outcome, errors, recovery actions, and final state. Schema docstring lives at the top of `_journal.cjs`. The skill `/manifest-agent:journal` is the canonical reader.
+
+**Writing**: skills pipe a JSON record to `journal-write.cjs`. The writer auto-fills `timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` (from `$MANIFEST_SESSION_ID`); runs `validateRecord` (fail-closed against `SECRET_KEY_DENYLIST` — see below); appends one line via `fs.appendFileSync(... { flag: 'a' })`. Concurrency story: on Linux ext4 / xfs the inode mutex serializes concurrent `write(2)` calls to a regular file, so a record under `MAX_RECORD_BYTES` (4 KiB) appends without interleaving in practice — best-effort, not a POSIX guarantee (`PIPE_BUF` formally applies to pipes / FIFOs only). Records exceeding 4 KiB are replaced with a smaller `journal_truncated` marker so realistic concurrent writes stay in the single-`write(2)` regime and the daily file never carries a torn line.
+
+**Redaction discipline** — same posture as `summarize-manifest.cjs`:
+- Env maps render as sorted keys, never values.
+- The writer is fail-closed (NOT strip-and-continue): any key in the record tree matching `_journal.SECRET_KEY_DENYLIST` (`mnemonic`, `password`, `private_key`, `secret_key`, `api_key`, `auth_token`, `bearer_token`, all with optional `_`/`-` separators) makes `journal-write.cjs` exit 1 and refuse to append. Skills must redact via `_journal.redactArgs` before piping.
+- `manifest_json` is reduced via the in-process equivalent of `summarize-spec.cjs`, never embedded raw.
+- Lease UUIDs, addresses, image refs, custom domains, gas-token symbols ARE captured (legitimate non-sensitive blockchain identifiers).
+
+**Skills that DON'T write a record**: `manage-domain` lookup sub-flow (read-only), `troubleshoot-deployment` when `close_lease` doesn't fire (read-only). The `/manifest-agent:journal` query skill is also read-only and writes nothing.
+
+**Failure-path records**: `deploy-app` writes a record at every terminal point — Step 10 success, Step 11 partial-success, Step 11 has-lease failure, Step 11 no-lease failure. Cancelled flows (user declined at any confirm gate) get a record with `outcome: "cancelled"` and a small `final_state.cancelled_at`.
+
+**Schema versioning**: bump `_journal.cjs#SCHEMA_VERSION` when the record shape changes. Readers (`journal-read.cjs`) treat unknown-newer schema versions as opaque records — they're surfaced verbatim in JSONL mode and rendered with whatever fields they happen to carry in markdown mode. There is no migration; old records stay on disk in their original schema forever.
+
+**Out of scope by design**: encryption at rest (mode `0600` + parent `0700` is the same posture as saved manifest wrappers), vector store / embeddings / retrieval (JSONL is the substrate; indexing layers slot on top later without changing the writer), cross-host sync (the journal is per-machine).
 
 ## Fred manifest schema
 

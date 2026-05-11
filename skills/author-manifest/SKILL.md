@@ -484,3 +484,58 @@ version-control as-is.
 
 The image registry will be checked by the provider at deploy-time. If it's
 rejected, `deploy_app` will fail with a clear error.
+
+## Step 10 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key matching the writer's secret denylist
+— `_journal.SECRET_KEY_DENYLIST` (mnemonic, password, private_key,
+secret_key, api_key, auth_token, bearer_token — case-insensitive,
+optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
+the writer is fail-closed and will exit 1 rather than append such
+records. Do NOT embed the spec's env values; `tool_calls[].args_redacted`
+for `build_manifest_preview` MUST follow the env-keys-only convention
+(see `scripts/_journal.cjs#redactArgs`).
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "author-manifest",
+  "active_chain": "<activeChain from Step 0>",
+  "signer_address": "<address from Step 0>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
+  "plan_summary": "author <SHAPE> spec, <service_count> services, image=<primary image>",
+  "tool_calls": [
+    {
+      "tool": "mcp__manifest-fred__build_manifest_preview",
+      "args_redacted": {
+        "summary": { "format": "<single|stack>", "service_count": <N>, "port_count": <N>, "env_count": <N>, "env_keys": ["<KEY1>", "<KEY2>"], "images": ["<image1>"] },
+        "customDomain": "<fqdn or null>",
+        "serviceName": "<service or null>"
+      },
+      "outcome": "ok",
+      "result_summary": { "meta_hash_hex": "<META_HASH>", "format": "<format>", "valid": true }
+    }
+  ],
+  "outcome": "success",
+  "final_state": {
+    "saved_path": "<SAVED_PATH>",
+    "meta_hash_hex": "<META_HASH>",
+    "format": "<single|stack>",
+    "custom_domain": "<fqdn or null>",
+    "custom_domain_service_name": "<service or null>"
+  },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If the user cancelled mid-flow (e.g. aborted at the inspect-image fail
+prompt or chose Skip on every env mode), set `outcome` to `"cancelled"`
+and reduce `final_state` accordingly. If validation in Step 7 looped
+multiple times before succeeding, only the FINAL successful preview goes
+in `tool_calls[]` (the validation loop is implementation detail). Do
+NOT mention the journal write in your reply to the user.
