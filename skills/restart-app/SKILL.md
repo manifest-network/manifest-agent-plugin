@@ -136,19 +136,51 @@ automatically.
 ## Step 6 — Post-restart verification
 
 Re-call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`
-once. Surface the post-restart `chainState.state` (decoded via
-`decode-lease-state.cjs --json`), `provision_status`, and `fail_count`.
+once. Capture the response; extract `chainState.state` (integer) as
+`STATE_INT`, plus `provision_status` and `fail_count` for the
+provider-side narrative (the driver doesn't handle those — see below).
 
-- If the state is still ACTIVE and `provision_status` looks healthy
-  (`provisioned`, `running`, etc.), tell the user the restart was
-  accepted and the provider is bringing the container back up. TLS /
-  ingress can take a few seconds to settle.
-- If `provision_status` reports a failure or the lease state regressed,
-  tell the user the restart request was sent to the provider but the
-  post-restart status shows `<provision_status>` (and `fail_count: <n>`);
-  suggest
+The structural state check goes through the shared verify-recover
+driver (`scripts/verify-recover.cjs`; see `references/verify-recover.md`
+for the spec contract). `Read` `references/verify-recover.md` if you
+haven't yet. Build the envelope and run:
+
+```bash
+echo '{
+  "spec": {
+    "verifier": { "script": "decode-lease-state.cjs",
+                  "args": ["--state", "{{state_int}}", "--json"],
+                  "stdin_source": null },
+    "success": { "field": "name", "values": ["LEASE_STATE_ACTIVE"] },
+    "branches": {
+      "other": { "branch_id": "restart-state-not-active",
+                 "journal_action_tag": "restart-post-verify-not-active",
+                 "user_message": "Restart was sent but lease state is now `{{name}}`. Run `/manifest-agent:troubleshoot-deployment {{lease_uuid}}` for a full diagnostics report." }
+    }
+  },
+  "payloads": {},
+  "context": { "state_int": "<STATE_INT>", "lease_uuid": "<LEASE_UUID>" }
+}' | node "$MANIFEST_PLUGIN_ROOT/scripts/verify-recover.cjs"
+```
+
+Capture the driver's stdout as `VERIFY_RESULT`. Branch on
+`VERIFY_RESULT.result`:
+
+- **`success`** (state is ACTIVE): surface `provision_status` and
+  `fail_count` from the `app_status` response in plain prose. If
+  `provision_status` looks healthy (`provisioned`, `running`, etc.),
+  tell the user the restart was accepted and the provider is bringing
+  the container back up. TLS / ingress can take a few seconds to
+  settle. If `provision_status` itself reports a failure even while
+  the chain state is ACTIVE, tell the user the chain registered the
+  restart but the provider reports `<provision_status>` (and
+  `fail_count: <n>`); suggest
   `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` for a full
-  status + diagnostics + logs report.
+  report.
+- **`failure`** (branch_id `restart-state-not-active`): print
+  `VERIFY_RESULT.user_message` verbatim. The chain state has regressed
+  (closed, insufficient funds, etc.) — the driver's message already
+  points the user at troubleshoot-deployment.
 
 Do not poll. One verify pass is enough; the user can re-run this skill
 or troubleshoot-deployment if they want a fresher snapshot.
@@ -189,19 +221,19 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "tool": "mcp__manifest-fred__app_status",
       "args_redacted": { "lease_uuid": "<LEASE_UUID>" },
       "outcome": "ok",
-      "result_summary": { "post_state": "<decoded-name from Step 6>", "post_provision_status": "<from Step 6>", "fail_count": "<n>" }
+      "result_summary": { "post_state": "<VERIFY_RESULT.verifier_outcome — decoded state name>", "post_provision_status": "<from Step 6 app_status response>", "fail_count": "<n>" }
     }
   ],
-  "outcome": "<success if Step 6 healthy | failed if Step 5 threw or Step 6 shows regression>",
+  "outcome": "<'success' if Step 5 broadcast did not throw AND VERIFY_RESULT.result === 'success'; otherwise 'failed'>",
   "final_state": {
     "lease_uuid": "<LEASE_UUID>",
     "action": "restart_app",
-    "post_state": "<decoded-name from Step 6>",
+    "post_state": "<VERIFY_RESULT.verifier_outcome — decoded state name>",
     "post_provision_status": "<from Step 6>",
     "fail_count": "<n>"
   },
   "errors": [],
-  "recovery_actions": []
+  "recovery_actions": <VERIFY_RESULT.journal_action_tags>
 }
 JOURNAL_EOF
 ```

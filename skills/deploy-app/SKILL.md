@@ -606,7 +606,12 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
 JOURNAL_EOF
 ```
 
-Populate `tool_calls[]` per the rules above (see `scripts/_journal.cjs#redactArgs`). `final_state` shapes are per-branch (see table below). `errors[]` is an array of `{ class, message, mcp_error_code? }` objects — empty when the run succeeded cleanly. `recovery_actions[]` is an array of strings like `"retry-set-domain"`, `"salvage-without-domain"`, `"cancel-or-close"` for the partial branch — empty for the other branches.
+Populate `tool_calls[]` per the rules above (see `scripts/_journal.cjs#redactArgs`). `final_state` shapes are per-branch (see table below). `errors[]` is an array of `{ class, message, mcp_error_code? }` objects — empty when the run succeeded cleanly. `recovery_actions[]` is an array of strings:
+
+- **success** (Step 10): `[]`.
+- **partial** (Step 11 partial-success): `[RECOVERY_ACTION, ...VERIFY_TAGS]` where `RECOVERY_ACTION` is the user's pick (`"retry-set-domain"`, `"salvage-without-domain"`, `"cancel-or-close"`) and `VERIFY_TAGS` is `RETRY_VERIFY_RESULT.journal_action_tags` (when the retry leg fired) and/or `CLEANUP_VERIFY_RESULT.journal_action_tags` (when the Cancel/Close leg fired) from `scripts/verify-recover.cjs` per `references/verify-recover.md`. Tags concatenate in fire order; empty when the leg succeeded.
+- **failed with lease** (Step 11 has-lease): `CLEANUP_VERIFY_RESULT.journal_action_tags` if cleanup was attempted via the close-lease verify spine in `references/billing-tx-confirm.md` Step 5a; `[]` if the user picked `keep`.
+- **failed no lease** (Step 11 no-lease): `[]`.
 
 `final_state` shapes by branch:
 
