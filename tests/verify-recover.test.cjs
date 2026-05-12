@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 const { mkdtempSync, writeFileSync, chmodSync, rmSync } = require('node:fs');
 const { join } = require('node:path');
 const { tmpdir } = require('node:os');
-const { runScript } = require('./_subprocess.cjs');
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 const LEASE_VERIFIER = 'verify-domain-state.cjs';
@@ -398,7 +397,7 @@ console.log(JSON.stringify({ outcome: 'ok', api_key: 'should-be-stripped', passw
       },
       payloads: {},
       context: {},
-    }, { VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
+    }, { NODE_ENV: 'test', VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
     assert.equal(r.status, 0);
     assert.equal(r.json.result, 'success');
     // Denylisted keys MUST be stripped before emit.
@@ -425,7 +424,7 @@ console.log(JSON.stringify(['array', 'not', 'object']));
       },
       payloads: {},
       context: {},
-    }, { VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
+    }, { NODE_ENV: 'test', VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
     assert.equal(r.status, 1);
     assert.match(r.stderr, /must be a JSON object \(got array\)/);
   });
@@ -444,7 +443,7 @@ console.log('null');
       },
       payloads: {},
       context: {},
-    }, { VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
+    }, { NODE_ENV: 'test', VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
     assert.equal(r.status, 1);
     assert.match(r.stderr, /must be a JSON object/);
   });
@@ -463,7 +462,7 @@ console.log(JSON.stringify('a scalar'));
       },
       payloads: {},
       context: {},
-    }, { VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
+    }, { NODE_ENV: 'test', VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
     assert.equal(r.status, 1);
     assert.match(r.stderr, /must be a JSON object/);
   });
@@ -482,7 +481,7 @@ test('case 18d: verifier produces empty stdout → exit 1', () => {
       },
       payloads: {},
       context: {},
-    }, { VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
+    }, { NODE_ENV: 'test', VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
     assert.equal(r.status, 1);
     assert.match(r.stderr, /produced no stdout/);
   });
@@ -512,4 +511,100 @@ test('spec.success.values not an array → exit 1', () => {
   const r = drive({ spec: { verifier: { script: 'verify-domain-state.cjs', args: [], stdin_source: null }, success: { field: 'outcome', values: 'match' } } });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /success\.values must be an array/);
+});
+
+// ------------------------------ C2: missing success.field key ------------------------------
+
+test('case 19: verifier stdout missing success.field key → exit 1 (no silent unclassified routing)', () => {
+  // Verifier emits a valid JSON object but the spec.success.field key
+  // ("outcome") is missing entirely. Without the hasOwnProperty check the
+  // driver would compute `outcome = undefined`, fall into the failure
+  // path, match `branches.other` (or synthesize `unclassified`), and exit
+  // 0 — silently classifying a drifted verifier output as a recovery
+  // branch. The check forces exit 1 so the drift surfaces.
+  const content = `#!/usr/bin/env node
+console.log(JSON.stringify({ unrelated: 'shape drift', actual: 'whatever' }));
+`;
+  withFixtureDir(content, (dir) => {
+    const r = drive({
+      spec: {
+        verifier: { script: 'fixture-verifier.cjs', args: [], stdin_source: null },
+        success: { field: 'outcome', values: ['ok'] },
+        branches: {
+          other: { branch_id: 'should-not-match', journal_action_tag: 'should-not-fire', user_message: 'should not see this' },
+        },
+      },
+      payloads: {},
+      context: {},
+    }, { NODE_ENV: 'test', VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /missing required field 'outcome'/);
+  });
+});
+
+// ------------------------------ C1: env-var override gating ------------------------------
+
+test('case 20: VERIFY_RECOVER_TEST_SCRIPTS_DIR ignored when NODE_ENV !== "test"', () => {
+  // Fixture verifier in tmpdir. Without NODE_ENV=test the override must
+  // be silently ignored, so the driver looks for 'fixture-verifier.cjs'
+  // inside the production scripts/ directory — where it does NOT exist —
+  // and fails with the realpath-resolution error from sanitizeScriptName.
+  // (Not the "must be a bare filename" error, since the filename itself is
+  // valid; the failure mode is "cannot resolve" because the file isn't in
+  // scripts/.)
+  const content = `#!/usr/bin/env node
+console.log(JSON.stringify({ outcome: 'ok' }));
+`;
+  withFixtureDir(content, (dir) => {
+    const r = drive({
+      spec: {
+        verifier: { script: 'fixture-verifier.cjs', args: [], stdin_source: null },
+        success: { field: 'outcome', values: ['ok'] },
+        branches: {},
+      },
+      payloads: {},
+      context: {},
+    }, {
+      // NOTE: deliberately NO NODE_ENV=test here; the override must be ignored.
+      NODE_ENV: 'production',
+      VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir,
+    });
+    assert.equal(r.status, 1);
+    // The driver should have looked in the production scripts/ dir, found
+    // no 'fixture-verifier.cjs' there, and failed at realpath resolution.
+    assert.match(r.stderr, /could not be resolved|symlink escape/);
+  });
+});
+
+test('case 21: VERIFY_RECOVER_TEST_SCRIPTS_DIR ignored when NODE_ENV is unset', () => {
+  // Same as case 20 but NODE_ENV is unset entirely (the most common
+  // production posture). The override must still be ignored.
+  const content = `#!/usr/bin/env node
+console.log(JSON.stringify({ outcome: 'ok' }));
+`;
+  withFixtureDir(content, (dir) => {
+    // Strip NODE_ENV from the spawned child's env so the gate sees
+    // `process.env.NODE_ENV === undefined`. Cannot do this via the env
+    // spread used elsewhere because that inherits process.env.
+    const { spawnSync } = require('node:child_process');
+    const { join: joinPath } = require('node:path');
+    const SCRIPTS_DIR = joinPath(__dirname, '..', 'scripts');
+    const childEnv = { ...process.env, VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir };
+    delete childEnv.NODE_ENV;
+    const res = spawnSync(process.execPath, [joinPath(SCRIPTS_DIR, 'verify-recover.cjs')], {
+      input: JSON.stringify({
+        spec: {
+          verifier: { script: 'fixture-verifier.cjs', args: [], stdin_source: null },
+          success: { field: 'outcome', values: ['ok'] },
+          branches: {},
+        },
+        payloads: {},
+        context: {},
+      }),
+      encoding: 'utf8',
+      env: childEnv,
+    });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /could not be resolved|symlink escape/);
+  });
 });

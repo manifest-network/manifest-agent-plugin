@@ -74,10 +74,18 @@ const { SECRET_KEY_DENYLIST } = require('./_journal.cjs');
 // `scripts/`). The env-var override exists ONLY so tests can point the
 // driver at a temp directory carrying a fixture verifier (e.g. to exercise
 // the denylist-stripping and non-object-stdout paths against contrived
-// outputs that no production verifier emits). Skills must NEVER set this.
-// If set, the value must point at an existing directory; the same realpath
-// invariant applies as in `sanitizeScriptName` below.
-const SCRIPTS_DIR = process.env.VERIFY_RECOVER_TEST_SCRIPTS_DIR || __dirname;
+// outputs that no production verifier emits).
+//
+// Hard-gate: the override is honored ONLY when `NODE_ENV === 'test'`. Any
+// other value (including unset / production) silently ignores it. This
+// closes the gap between the comment's "test-only" claim and the runtime —
+// a user (or attacker, or an errant config) that sets
+// `VERIFY_RECOVER_TEST_SCRIPTS_DIR` outside a test run cannot redirect the
+// verifier-resolution root. Tests pass `NODE_ENV: 'test'` alongside the
+// override in their `spawnSync` env block (see `withFixtureDir` in
+// `tests/verify-recover.test.cjs`).
+const TEST_OVERRIDE = process.env.NODE_ENV === 'test' ? process.env.VERIFY_RECOVER_TEST_SCRIPTS_DIR : undefined;
+const SCRIPTS_DIR = TEST_OVERRIDE || __dirname;
 const SCRIPTS_DIR_REAL = realpathSync(SCRIPTS_DIR);
 
 function failDriver(msg) {
@@ -223,6 +231,15 @@ function selectBranch(outcome, branches) {
   }
   if (!verifierOut || typeof verifierOut !== 'object' || Array.isArray(verifierOut)) {
     failDriver(`verifier '${spec.verifier.script}' stdout must be a JSON object (got ${Array.isArray(verifierOut) ? 'array' : verifierOut === null ? 'null' : typeof verifierOut})`);
+  }
+  // The success.field key MUST be present in the verifier's stdout. If
+  // absent, `outcome` would be `undefined` and the driver would silently
+  // route through `branches.other` (or synthesize `unclassified`), exiting
+  // 0 — the exact silent-misclassification mode the non-object check above
+  // exists to prevent. Treat "field missing" the same way: fail loudly so a
+  // future verifier-output drift can't masquerade as a recovery branch.
+  if (!Object.prototype.hasOwnProperty.call(verifierOut, spec.success.field)) {
+    failDriver(`verifier '${spec.verifier.script}' stdout missing required field '${spec.success.field}' (driver cannot classify an outcome that isn't present)`);
   }
 
   // ---------------- Classify ----------------

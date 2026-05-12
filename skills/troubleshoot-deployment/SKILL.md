@@ -177,6 +177,8 @@ prompt — that's expected.
 
 After the broadcast returns, follow Step 5a (close-lease verify) of the
 same reference for the on-chain confirmation + saved-manifest cleanup.
+Capture the driver's stdout as `VERIFY_RESULT` — Step 7 splices its
+`journal_action_tags` into the journal record's `recovery_actions[]`.
 
 ## Step 7 — Record this run in the journal (close_lease branch only)
 
@@ -211,14 +213,14 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "outcome": "<ok|error>"
     }
   ],
-  "outcome": "<success if verify passed | failed if broadcast or verify errored>",
+  "outcome": "<'success' if Step 6 broadcast did not throw AND VERIFY_RESULT.result === 'success'; otherwise 'failed' — see references/verify-recover.md mapping table>",
   "final_state": {
     "lease_uuid": "<LEASE_UUID>",
     "action": "close_lease",
-    "verified": "<true|false>"
+    "verified": "<true if VERIFY_RESULT.result === 'success', else false>"
   },
   "errors": [],
-  "recovery_actions": []
+  "recovery_actions": <VERIFY_RESULT.journal_action_tags>
 }
 JOURNAL_EOF
 ```
