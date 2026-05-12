@@ -114,7 +114,9 @@ Key rules:
 The driver emits a single-line JSON object on stdout. Exit code 0 on any
 classification; exit code 1 only on driver-internal errors (bad spec,
 missing payload key, verifier crash, non-object verifier stdout,
-verifier stdout missing the `success.field` key, path traversal).
+verifier stdout missing the `success.field` key, path traversal,
+verifier exceeded the 30-second timeout (ETIMEDOUT) or the 1-MiB stdout
+cap (ENOBUFS)).
 
 ```json
 {

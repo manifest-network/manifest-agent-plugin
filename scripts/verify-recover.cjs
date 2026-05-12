@@ -46,7 +46,8 @@
  *   1 — driver-internal error: bad spec JSON, missing payload key, path
  *       traversal on `verifier.script`, verifier subprocess crashed
  *       (non-zero exit), verifier stdout not a JSON object, verifier
- *       stdout missing the `success.field` key.
+ *       stdout missing the `success.field` key, verifier exceeded the
+ *       30-second timeout (ETIMEDOUT) or 1-MiB stdout cap (ENOBUFS).
  *
  * Security notes:
  *   - `verifier.script` is sanitized in two layers. The string-pattern
@@ -103,6 +104,30 @@ try {
 } catch (err) {
   failDriver(`SCRIPTS_DIR '${SCRIPTS_DIR}' could not be resolved: ${err.message}`);
 }
+
+// Verifier-spawn operational caps. The driver is a shared chokepoint across
+// every state-changing skill, so a hung or unexpectedly chatty verifier must
+// not be able to block the skill turn indefinitely or exhaust memory. Caps:
+//
+//   - `timeout`     30 s. Production verifiers emit a JSON object in <10 ms;
+//                   30 s is generous enough to absorb a slow Node startup or
+//                   a delayed read on a stdin-consuming verifier while still
+//                   bounding worst-case skill latency.
+//   - `maxBuffer`   1 MiB. Verifier outputs are structurally small JSON
+//                   (status / decoded enum / equality check). 1 MiB allows
+//                   for an unexpectedly verbose verifier without risking
+//                   OOM on the driver process.
+//
+// Both are honored as `NODE_ENV === 'test'` env-var overrides
+// (`VERIFY_RECOVER_TEST_TIMEOUT_MS`, `VERIFY_RECOVER_TEST_MAX_BUFFER`) so
+// the tests can exercise the timeout and ENOBUFS paths without 30-second
+// or 1-MiB-allocation costs. Production never sets these.
+const VERIFIER_TIMEOUT_MS = (process.env.NODE_ENV === 'test' && process.env.VERIFY_RECOVER_TEST_TIMEOUT_MS)
+  ? Number(process.env.VERIFY_RECOVER_TEST_TIMEOUT_MS)
+  : 30_000;
+const VERIFIER_MAX_BUFFER = (process.env.NODE_ENV === 'test' && process.env.VERIFY_RECOVER_TEST_MAX_BUFFER)
+  ? Number(process.env.VERIFY_RECOVER_TEST_MAX_BUFFER)
+  : 1024 * 1024;
 
 function readStdin() {
   return readFileSync(0, 'utf8');
@@ -266,9 +291,17 @@ function selectBranch(outcome, branches) {
     input: verifierStdin,
     encoding: 'utf8',
     shell: false,
+    timeout: VERIFIER_TIMEOUT_MS,
+    maxBuffer: VERIFIER_MAX_BUFFER,
   });
   if (res.error) {
-    failDriver(`failed to spawn verifier '${spec.verifier.script}': ${res.error.message}`);
+    // `res.error` covers multiple failure modes now that timeout/maxBuffer
+    // are set: ENOENT/EACCES (true spawn failure), ETIMEDOUT (verifier
+    // exceeded `VERIFIER_TIMEOUT_MS`), ENOBUFS (verifier stdout/stderr
+    // exceeded `VERIFIER_MAX_BUFFER`). Surface the code so callers can
+    // triage without parsing the message.
+    const code = res.error.code ? ` (code: ${res.error.code})` : '';
+    failDriver(`verifier '${spec.verifier.script}' subprocess error${code}: ${res.error.message}`);
   }
   if (res.status !== 0) {
     if (res.stderr) process.stderr.write(res.stderr);

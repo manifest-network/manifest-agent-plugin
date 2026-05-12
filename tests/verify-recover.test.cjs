@@ -608,6 +608,71 @@ test('case 18d: verifier produces empty stdout → exit 1', () => {
   });
 });
 
+// ------------------------------ Cases 22–23: operational caps ------------------------------
+// `VERIFY_RECOVER_TEST_TIMEOUT_MS` and `VERIFY_RECOVER_TEST_MAX_BUFFER` env-var
+// overrides (gated on NODE_ENV=test) let us exercise the timeout and ENOBUFS
+// paths without 30-second waits or 1-MiB allocations. Production uses the
+// hard-coded defaults.
+
+test('case 22: verifier exceeds VERIFIER_TIMEOUT_MS → exit 1 (ETIMEDOUT)', () => {
+  // Fixture verifier sleeps via a synchronous busy wait (setTimeout would let
+  // the spawnSync timeout fire cleanly, which is what we want to assert).
+  // Override timeout to 250 ms; fixture sleeps for 1500 ms.
+  const content = `#!/usr/bin/env node
+const start = Date.now();
+while (Date.now() - start < 1500) { /* spin */ }
+console.log(JSON.stringify({ outcome: 'ok' }));
+`;
+  withFixtureDir(content, (dir) => {
+    const r = drive({
+      spec: {
+        verifier: { script: 'fixture-verifier.cjs', args: [], stdin_source: null },
+        success: { field: 'outcome', values: ['ok'] },
+        branches: {},
+      },
+      payloads: {},
+      context: {},
+    }, {
+      NODE_ENV: 'test',
+      VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir,
+      VERIFY_RECOVER_TEST_TIMEOUT_MS: '250',
+    });
+    assert.equal(r.status, 1);
+    // spawnSync surfaces timeout as `res.error` with ETIMEDOUT-shaped code.
+    // The driver's new wording is "verifier '…' subprocess error (code: …): …".
+    assert.match(r.stderr, /subprocess error/);
+    // Either ETIMEDOUT (newer Node) or SIGTERM (older Node killing the child)
+    // is acceptable evidence the timeout fired.
+    assert.match(r.stderr, /ETIMEDOUT|SIGTERM|killed/i);
+  });
+});
+
+test('case 23: verifier stdout exceeds VERIFIER_MAX_BUFFER → exit 1 (ENOBUFS)', () => {
+  // Override maxBuffer to 1 KiB; fixture emits ~4 KiB.
+  const content = `#!/usr/bin/env node
+const pad = 'x'.repeat(4096);
+console.log(JSON.stringify({ outcome: 'ok', pad }));
+`;
+  withFixtureDir(content, (dir) => {
+    const r = drive({
+      spec: {
+        verifier: { script: 'fixture-verifier.cjs', args: [], stdin_source: null },
+        success: { field: 'outcome', values: ['ok'] },
+        branches: {},
+      },
+      payloads: {},
+      context: {},
+    }, {
+      NODE_ENV: 'test',
+      VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir,
+      VERIFY_RECOVER_TEST_MAX_BUFFER: '1024',
+    });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /subprocess error/);
+    assert.match(r.stderr, /ENOBUFS|maxBuffer/i);
+  });
+});
+
 // ------------------------------ Spec-shape guards ------------------------------
 
 test('spec missing → exit 1', () => {
