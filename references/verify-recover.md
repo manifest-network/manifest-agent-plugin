@@ -130,10 +130,21 @@ cap (ENOBUFS)).
 ```
 
 `diagnostic_delta` is the raw verifier stdout MINUS the `success.field`
-key, with any key matching the journal's `SECRET_KEY_DENYLIST` stripped
-(belt-and-braces — production verifiers don't emit such keys, but the
+key, with three categories of keys recursively stripped at every depth:
+
+- Keys matching the journal's `SECRET_KEY_DENYLIST` (mnemonic, password,
+  private_key, secret_key, api_key, auth_token, bearer_token — case-
+  insensitive, optional `_`/`-` separators).
+- The three constructor-related keys (`__proto__`, `constructor`,
+  `prototype`) — prototype-pollution defense, since `JSON.parse`
+  materializes `__proto__` as an own property and a bare `out[k] = …`
+  assignment would re-set the prototype of the local object.
+
+Belt-and-braces — production verifiers don't emit such keys, but the
 driver strips defensively so a future drift in verifier output can't
-poison the journal record).
+poison the journal record OR the local `diagnostic_delta` object that
+skill prose consumes downstream. Consumers should not rely on any of
+these keys being present in the emitted output.
 
 ## How to splice `recovery_actions[]`
 
