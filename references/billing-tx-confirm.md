@@ -118,41 +118,63 @@ follow.
 Used by both close-lease call sites
 (troubleshoot-deployment Step 6, deploy-app's
 troubleshoot-after-deploy-failure.md cleanup). Both walk the same
-sequence — pinning it here keeps them in sync.
+sequence — pinning it here keeps them in sync. Both go through the
+shared verify-and-recover driver (see `references/verify-recover.md` for
+the full spec/output contract).
 
 1. Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
-2. Decode `chainState.state` via the JSON mode (which exposes a
-   `terminal` flag — both `LEASE_STATE_CLOSED` and
-   `LEASE_STATE_INSUFFICIENT_FUNDS` count as terminal because the chain
-   may transition through INSUFFICIENT_FUNDS on a successful close-lease
-   before settling on CLOSED):
+   Capture the response; extract `chainState.state` (integer) as
+   `STATE_INT`. If `app_status` itself errors out: surface the error
+   and tell the user the tx was sent but verification failed; do NOT
+   remove the local manifest record; skip the rest of this step.
+
+2. `Read` `references/verify-recover.md` if you haven't yet — the
+   driver contract is shared with three other consumers.
+
+3. Build the verify-recover envelope and pipe to the driver:
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <state-int> --json
+   echo '{
+     "spec": {
+       "verifier": { "script": "decode-lease-state.cjs",
+                     "args": ["--state", "{{state_int}}", "--json"],
+                     "stdin_source": null },
+       "success": { "field": "terminal", "values": [true] },
+       "branches": {
+         "other": { "branch_id": "close-not-yet-terminal",
+                    "journal_action_tag": "close-lease-verify-pending",
+                    "user_message": "close_lease tx accepted but lease state is still `{{name}}`; chain may need ~30s. Re-run `/manifest-agent:troubleshoot-deployment {{lease_uuid}}` in ~30s to recheck. Local saved manifest record NOT removed yet." }
+       }
+     },
+     "payloads": {},
+     "context": { "state_int": "<STATE_INT>", "lease_uuid": "<LEASE_UUID>" }
+   }' | node "$MANIFEST_PLUGIN_ROOT/scripts/verify-recover.cjs"
    ```
-3. Branch on `terminal`:
-   - **`terminal: true`** → cleanup. Run:
+
+   Both `LEASE_STATE_CLOSED` (4) and `LEASE_STATE_INSUFFICIENT_FUNDS` (3)
+   count as terminal — the chain may transition through
+   INSUFFICIENT_FUNDS on a successful close-lease before settling on
+   CLOSED. `decode-lease-state.cjs --json` returns `terminal: true` for
+   both. Capture the driver's stdout as `VERIFY_RESULT`.
+
+4. Branch on `VERIFY_RESULT.result`:
+   - **`success`** → cleanup. Run:
      ```bash
      node "$MANIFEST_PLUGIN_ROOT/scripts/remove-manifest.cjs" --lease-uuid "$LEASE_UUID"
      ```
-     (no-op if the saved manifest record is already gone). Tell the user
-     "Lease is terminal on-chain (`<decoded-name>`). Removed local saved
+     (no-op if the saved manifest record is already gone). Tell the
+     user "Lease is terminal on-chain
+     (`<VERIFY_RESULT.diagnostic_delta.name>`). Removed local saved
      manifest record."
-   - **`terminal: false`** (still `LEASE_STATE_ACTIVE`, `LEASE_STATE_PENDING`,
-     etc.) → tell the user: "close_lease tx accepted but lease state is
-     still `<decoded-name>`; chain may need a moment to settle. Re-run
-     `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` in ~30s to
-     recheck. Local saved manifest record NOT removed yet."
-   - If `app_status` itself errors out: surface the error and tell the
-     user the tx was sent but verification failed. Do NOT remove the
-     local manifest record.
+   - **`failure`** (branch_id `close-not-yet-terminal`) → print
+     `VERIFY_RESULT.user_message` verbatim. Do NOT run
+     `remove-manifest.cjs`.
 
 #### 5b — Custom-domain verify (set/clear consumers)
 
-Used by manage-domain Step 6. Goes through `verify-domain-state.cjs`
-which wraps `extract-lease-items.cjs` and the equality check; the
-call site supplies `--expected` (`"$FQDN"` for set, `""` for clear)
-and branches on `outcome` (`match` / `mismatch` / `not_found`).
-This step is call-site-specific because the verify primitive
-(`leases_by_tenant` + customDomain compare) differs from the
-close-lease primitive above. See manage-domain Step 6 for the
-canonical caller.
+Used by manage-domain Step 6. The verify also goes through the shared
+verify-recover driver (`scripts/verify-recover.cjs`), but with a
+different verifier (`verify-domain-state.cjs` instead of
+`decode-lease-state.cjs`) and `success.field`/`branches` tuned for the
+customDomain equality check rather than the terminal-state check. See
+`references/verify-recover.md` for the shared spec contract; see
+`skills/manage-domain/SKILL.md` Step 6 for the canonical caller.

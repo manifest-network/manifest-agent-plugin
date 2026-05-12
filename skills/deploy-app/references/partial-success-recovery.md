@@ -78,11 +78,45 @@ The three recovery paths and what they do:
    (using `LEASE_UUID` directly — the lease exists, so no
    representative-lease query is needed) → textual confirm via
    `AskUserQuestion` with action + humanized fee →
-   `mcp__manifest-lease__set_item_custom_domain` → verify on-chain via
-   `leases_by_tenant` (pipe through `extract-lease-items.cjs`). The
-   retry MUST re-run `cosmos_estimate_fee` per runtime policy.
-   **Single retry only** — on second failure, surface BOTH failures
-   and re-offer options 2 and 3.
+   `mcp__manifest-lease__set_item_custom_domain`. The retry MUST re-run
+   `cosmos_estimate_fee` per runtime policy.
+
+   After the broadcast returns, verify on-chain via the shared
+   verify-recover driver (`scripts/verify-recover.cjs`; see
+   `references/verify-recover.md`). `Read` that reference if you
+   haven't yet. Re-query
+   `mcp__manifest-lease__leases_by_tenant({ tenant: <signer address> })`
+   to get the post-broadcast tenant payload, then run:
+
+   ```bash
+   echo '{
+     "spec": {
+       "verifier": { "script": "verify-domain-state.cjs",
+                     "args": ["--lease-uuid", "{{lease_uuid}}",
+                              <stacks-only: "--service-name", "{{service_name}}",>
+                              "--expected", "{{expected_fqdn}}"],
+                     "stdin_source": "leases_by_tenant_response" },
+       "success": { "field": "outcome", "values": ["match"] },
+       "branches": {
+         "mismatch": { "branch_id": "domain-mismatch",
+                       "journal_action_tag": "domain-verification-mismatch",
+                       "user_message": "Tx accepted but chain shows `{{actual}}` instead of the expected value. Chain may need ~30s to settle." },
+         "not_found": { "branch_id": "domain-not-found",
+                        "journal_action_tag": "domain-verification-not-found",
+                        "user_message": "Lease + service combination wasn't visible to the tenant query: `{{reason}}`." }
+       }
+     },
+     "payloads": { "leases_by_tenant_response": <leases_by_tenant response> },
+     "context": { "lease_uuid": "<LEASE_UUID>", "service_name": "<SERVICE_NAME or empty>", "expected_fqdn": "<retry FQDN>" }
+   }' | node "$MANIFEST_PLUGIN_ROOT/scripts/verify-recover.cjs"
+   ```
+
+   Capture stdout as `RETRY_VERIFY_RESULT`. On
+   `RETRY_VERIFY_RESULT.result === "success"`, fall through to the
+   upload step. On `failure`, print
+   `RETRY_VERIFY_RESULT.user_message` verbatim and treat this as the
+   second failure. **Single retry only** — on second failure, surface
+   BOTH failures and re-offer options 2 and 3.
 3. After set-domain succeeds, fall through to the upload step below.
 
 ## On Salvage without domain (or after a successful retry)
@@ -127,13 +161,35 @@ The three recovery paths and what they do:
 2. Per runtime policy, call `cosmos_estimate_fee` first against the
    relevant subcommand (`billing cancel-lease` or `billing close-lease`)
    and surface the fee in a textual confirmation before broadcasting.
-3. After the broadcast confirms, verify on-chain via
-   `mcp__manifest-fred__app_status`. Decode the resulting state with
-   `decode-lease-state.cjs --state <int> --json` and check the `terminal`
-   flag (true for both `LEASE_STATE_CLOSED` and
-   `LEASE_STATE_INSUFFICIENT_FUNDS` — see decode-lease-state docstring).
-   On `terminal: true`, run `remove-manifest.cjs --lease-uuid
-   "$LEASE_UUID"` to clean up any saved wrapper. On `terminal: false`,
-   tell the user the tx was sent but the chain hasn't settled yet and
-   they can re-check via `/manifest-agent:troubleshoot-deployment <uuid>`
-   in ~30s.
+3. After the broadcast confirms, verify on-chain via the shared
+   verify-recover driver. Same close-lease verify spec used by
+   `references/billing-tx-confirm.md` Step 5a — keeping the two sites
+   on a single driver invocation is the dedup point. `Read`
+   `references/verify-recover.md` if you haven't yet. Re-query
+   `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`,
+   capture `chainState.state` as `STATE_INT`, then run:
+
+   ```bash
+   echo '{
+     "spec": {
+       "verifier": { "script": "decode-lease-state.cjs",
+                     "args": ["--state", "{{state_int}}", "--json"],
+                     "stdin_source": null },
+       "success": { "field": "terminal", "values": [true] },
+       "branches": {
+         "other": { "branch_id": "close-not-yet-terminal",
+                    "journal_action_tag": "close-lease-verify-pending",
+                    "user_message": "Cancel/close tx accepted but lease state is still `{{name}}`; chain may need a moment to settle. Re-run `/manifest-agent:troubleshoot-deployment {{lease_uuid}}` in ~30s to recheck." }
+       }
+     },
+     "payloads": {},
+     "context": { "state_int": "<STATE_INT>", "lease_uuid": "<LEASE_UUID>" }
+   }' | node "$MANIFEST_PLUGIN_ROOT/scripts/verify-recover.cjs"
+   ```
+
+   Capture stdout as `CLEANUP_VERIFY_RESULT`. On
+   `CLEANUP_VERIFY_RESULT.result === "success"` (terminal: true), run
+   `remove-manifest.cjs --lease-uuid "$LEASE_UUID"` to clean up any
+   saved wrapper. On `failure` (branch_id `close-not-yet-terminal`),
+   print `CLEANUP_VERIFY_RESULT.user_message` verbatim; do NOT remove
+   the local manifest record.

@@ -197,41 +197,58 @@ reference; same file is loaded by troubleshoot-deployment Step 6 and
 deploy-app's post-failure cleanup) and follow Steps 1–4 (estimate,
 humanize, textual confirm, broadcast). The PreToolUse hook will prompt
 — that's expected. Step 5a (close-lease verify) doesn't apply here;
-the custom-domain verify (Step 5b in the reference) is handled inline
-below.
+the custom-domain verify is handled via the shared verify-recover
+driver below.
 
 **Verify on-chain state after the tx returns** — a successful broadcast
 does not guarantee the chain item now holds (or no longer holds) the
-domain. Re-query `mcp__manifest-lease__leases_by_tenant` and pipe
-through `verify-domain-state.cjs` (do NOT inline the equality check in
-prose — the script wraps `extract-lease-items.cjs` and does the
-comparison so this site, the partial-success retry path, and any future
-verifier all agree on the outcome shape):
+domain. Re-query `mcp__manifest-lease__leases_by_tenant`, then pipe
+through `scripts/verify-recover.cjs` (do NOT inline the verifier call
+or the outcome branching in prose — the driver pins both the
+classification and the journal splice across all four consumers; see
+`references/verify-recover.md`).
+
+`Read` `references/verify-recover.md` if you haven't yet. Build the
+envelope and run the driver:
 
 ```bash
-echo '<leases_by_tenant response>' \
-  | node "$MANIFEST_PLUGIN_ROOT/scripts/verify-domain-state.cjs" \
-      --lease-uuid "$LEASE_UUID" \
-      <stacks: --service-name "$SERVICE_NAME"> \
-      --expected '<set: $FQDN | clear: "">'
+echo '{
+  "spec": {
+    "verifier": { "script": "verify-domain-state.cjs",
+                  "args": ["--lease-uuid", "{{lease_uuid}}",
+                           <stacks-only: "--service-name", "{{service_name}}",>
+                           "--expected", "{{expected}}"],
+                  "stdin_source": "leases_by_tenant_response" },
+    "success": { "field": "outcome", "values": ["match"] },
+    "branches": {
+      "mismatch": { "branch_id": "domain-mismatch",
+                    "journal_action_tag": "domain-verification-mismatch",
+                    "user_message": "Tx accepted but chain shows `{{actual}}` instead of the expected value. The chain may need a moment to settle; re-run `/manifest-agent:manage-domain` in ~30s to re-check." },
+      "not_found": { "branch_id": "domain-not-found",
+                     "journal_action_tag": "domain-verification-not-found",
+                     "user_message": "Lease + service combination wasn't visible to the tenant query: `{{reason}}`. Verification could not complete." }
+    }
+  },
+  "payloads": { "leases_by_tenant_response": <leases_by_tenant response object> },
+  "context": { "lease_uuid": "<LEASE_UUID>", "service_name": "<SERVICE_NAME or empty>", "expected": "<set: $FQDN | clear: empty string>" }
+}' | node "$MANIFEST_PLUGIN_ROOT/scripts/verify-recover.cjs"
 ```
 
-For set, pass `--expected "$FQDN"`. For clear, pass `--expected ""`.
+For `set`, `context.expected` is `$FQDN`. For `clear`, `context.expected`
+is the empty string. Single-item leases omit the `--service-name` line
+from `verifier.args`. Capture the driver's stdout as `VERIFY_RESULT`.
 
-The script's stdout is `{ outcome, actual?, reason? }`. Branch on `outcome`:
+Branch on `VERIFY_RESULT.result`:
 
-- **`match`** (set): tell the user "Custom domain `<FQDN>` confirmed on
-  lease `<LEASE_UUID>`. TLS may take a few minutes to provision at the
-  provider; the provider's default FQDN keeps working in the meantime."
-- **`match`** (clear): tell the user "Domain cleared on lease
+- **`success`** (set): tell the user "Custom domain `<FQDN>` confirmed
+  on lease `<LEASE_UUID>`. TLS may take a few minutes to provision at
+  the provider; the provider's default FQDN keeps working in the
+  meantime."
+- **`success`** (clear): tell the user "Domain cleared on lease
   `<LEASE_UUID>`."
-- **`mismatch`**: the chain may need a moment to settle, or the tx was
-  accepted but reverted. Tell the user the tx was sent but verification
-  shows `<actual>` instead of the expected value; suggest re-running
-  this skill in ~30s to re-check.
-- **`not_found`**: surface `reason` and tell the user the lease + service
-  combination wasn't visible to the tenant query — verification couldn't
-  complete.
+- **`failure`** (any `branch_id`): print `VERIFY_RESULT.user_message`
+  verbatim. Do NOT re-interpret the wording — the driver's user_message
+  is pre-interpolated and pinned across consumers.
 
 After branching on the verify outcome, append a journal record (one per
 set/clear invocation, regardless of verify result):
@@ -260,19 +277,19 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "tool": "mcp__manifest-lease__leases_by_tenant",
       "args_redacted": { "tenant": "<address>" },
       "outcome": "ok",
-      "result_summary": { "verify_outcome": "<match|mismatch|not_found>" }
+      "result_summary": { "verify_outcome": "<VERIFY_RESULT.verifier_outcome — match | mismatch | not_found>" }
     }
   ],
-  "outcome": "<success if match | partial if mismatch | failed if not_found>",
+  "outcome": "<success if VERIFY_RESULT.result === 'success' | partial if branch_id === 'domain-mismatch' | failed for branch_id === 'domain-not-found' or any other non-success branch_id (including 'unclassified' for future-drift cases) — see references/verify-recover.md mapping table>",
   "final_state": {
     "lease_uuid": "<LEASE_UUID>",
     "action": "<set|clear>",
     "fqdn": "<FQDN or null>",
     "service_name": "<SERVICE_NAME or null>",
-    "verified": "<true|false>"
+    "verified": "<true if VERIFY_RESULT.result === 'success', else false>"
   },
   "errors": [],
-  "recovery_actions": []
+  "recovery_actions": <VERIFY_RESULT.journal_action_tags>
 }
 JOURNAL_EOF
 ```
