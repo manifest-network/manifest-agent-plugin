@@ -66,7 +66,7 @@
  *     verbatim, never re-interpret.
  */
 
-const { readFileSync, realpathSync } = require('node:fs');
+const { readFileSync, realpathSync, statSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const { join, sep } = require('node:path');
 const { SECRET_KEY_DENYLIST } = require('./_journal.cjs');
@@ -135,6 +135,22 @@ function sanitizeScriptName(name) {
   }
   if (!resolved.startsWith(SCRIPTS_DIR_REAL + sep) && resolved !== SCRIPTS_DIR_REAL) {
     failDriver(`spec.verifier.script '${name}' resolves outside scripts/ (symlink escape)`);
+  }
+  // Containment alone is necessary but not sufficient: the resolved path
+  // could still point at the scripts directory itself (e.g. name === '.'),
+  // a subdirectory, a named pipe, a socket, or a broken symlink. Assert the
+  // target is a regular file so `spawnSync` doesn't end up with an opaque
+  // `node <directory>` failure (or worse, a side-effecting non-script
+  // target). Generalizes the rejection beyond hard-coding `.` against
+  // future scripts/ layout changes.
+  let stat;
+  try {
+    stat = statSync(resolved);
+  } catch (err) {
+    failDriver(`spec.verifier.script '${name}' could not be stat'd: ${err.message}`);
+  }
+  if (!stat.isFile()) {
+    failDriver(`spec.verifier.script '${name}' is not a regular file inside scripts/`);
   }
   // Return the realpath (not the unresolved candidate) so `spawnSync` runs
   // the exact path the containment check just validated. Returning
@@ -212,7 +228,12 @@ function selectBranch(outcome, branches) {
     failDriver(`spec.success.field must be a non-empty string`);
   }
   if (!Array.isArray(spec.success.values)) failDriver(`spec.success.values must be an array`);
-  if (spec.branches !== undefined && (typeof spec.branches !== 'object' || Array.isArray(spec.branches))) {
+  if (spec.branches !== undefined && (spec.branches === null || typeof spec.branches !== 'object' || Array.isArray(spec.branches))) {
+    // Explicit null check: `typeof null === 'object'` would otherwise let
+    // `branches: null` slip past the validation and fall through to the
+    // synthesized `unclassified` branch — silent misclassification, the
+    // same failure mode the success.field / non-object-stdout guards exist
+    // to prevent.
     failDriver(`spec.branches must be an object when present`);
   }
 

@@ -337,6 +337,22 @@ test('case 14c: verifier.script with embedded slash → exit 1', () => {
   assert.match(r.stderr, /must be a bare filename/);
 });
 
+test('case 14d: verifier.script === "." resolves to scripts/ itself → exit 1 (not a regular file)', () => {
+  // `.` passes the string-pattern check (contains no `..`, `/`, or `\`),
+  // joins to SCRIPTS_DIR, realpath resolves to SCRIPTS_DIR_REAL itself.
+  // Containment check allows resolved === SCRIPTS_DIR_REAL. Without the
+  // isFile() guard the driver would spawn `node <SCRIPTS_DIR>` and produce
+  // an opaque Node error. With the guard, the driver fails fast with a
+  // clean diagnostic.
+  const r = drive({
+    spec: { ...domainSpec(), verifier: { script: '.', args: [], stdin_source: null } },
+    payloads: {},
+    context: {},
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /is not a regular file inside scripts\//);
+});
+
 // ------------------------------ Cases 15–16: restart-app variants ------------------------------
 
 test('case 15: restart-app success — name == LEASE_STATE_ACTIVE (state 2)', () => {
@@ -616,6 +632,24 @@ test('spec.success.values not an array → exit 1', () => {
   const r = drive({ spec: { verifier: { script: 'verify-domain-state.cjs', args: [], stdin_source: null }, success: { field: 'outcome', values: 'match' } } });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /success\.values must be an array/);
+});
+
+test('spec.branches === null → exit 1 (typeof null === "object" trap)', () => {
+  // Without the explicit null check, branches: null would pass the
+  // `typeof !== 'object'` guard and fall through to selectBranch, which
+  // would silently synthesize an `unclassified` branch — defeating the
+  // fail-fast posture the other spec-shape guards establish.
+  const r = drive({
+    spec: {
+      verifier: { script: 'decode-lease-state.cjs', args: ['--state', '4', '--json'], stdin_source: null },
+      success: { field: 'terminal', values: [true] },
+      branches: null,
+    },
+    payloads: {},
+    context: {},
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /spec\.branches must be an object when present/);
 });
 
 // ------------------------------ C2: missing success.field key ------------------------------
