@@ -224,7 +224,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "result_summary": { "post_state": "<VERIFY_RESULT.verifier_outcome — decoded state name>", "post_provision_status": "<from Step 6 app_status response>", "fail_count": "<n>" }
     }
   ],
-  "outcome": "<'success' if Step 5 broadcast did not throw AND VERIFY_RESULT.result === 'success'; otherwise 'failed'>",
+  "outcome": "<'success' if Step 5 restart_app call did not throw AND VERIFY_RESULT.result === 'success'; otherwise 'failed'. restart_app is a provider HTTPS call, NOT a Cosmos broadcast — see CLAUDE.md restart-app runtime policy note.>",
   "final_state": {
     "lease_uuid": "<LEASE_UUID>",
     "action": "restart_app",

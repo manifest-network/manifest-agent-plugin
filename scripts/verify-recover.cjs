@@ -71,6 +71,11 @@ const { spawnSync } = require('node:child_process');
 const { join, sep } = require('node:path');
 const { SECRET_KEY_DENYLIST } = require('./_journal.cjs');
 
+function failDriver(msg) {
+  console.error(`verify-recover: ${msg}`);
+  process.exit(1);
+}
+
 // Production: SCRIPTS_DIR is the directory this script lives in (canonical
 // `scripts/`). The env-var override exists ONLY so tests can point the
 // driver at a temp directory carrying a fixture verifier (e.g. to exercise
@@ -87,11 +92,16 @@ const { SECRET_KEY_DENYLIST } = require('./_journal.cjs');
 // `tests/verify-recover.test.cjs`).
 const TEST_OVERRIDE = process.env.NODE_ENV === 'test' ? process.env.VERIFY_RECOVER_TEST_SCRIPTS_DIR : undefined;
 const SCRIPTS_DIR = TEST_OVERRIDE || __dirname;
-const SCRIPTS_DIR_REAL = realpathSync(SCRIPTS_DIR);
-
-function failDriver(msg) {
-  console.error(`verify-recover: ${msg}`);
-  process.exit(1);
+// `realpathSync` throws on missing/unreadable paths. Route the error through
+// `failDriver` so consumers always see a `verify-recover: …` diagnostic
+// instead of an unformatted ENOENT stack trace. In production
+// `SCRIPTS_DIR === __dirname` so the dir necessarily exists (the script is
+// in it); the only realistic failure is a misconfigured test override.
+let SCRIPTS_DIR_REAL;
+try {
+  SCRIPTS_DIR_REAL = realpathSync(SCRIPTS_DIR);
+} catch (err) {
+  failDriver(`SCRIPTS_DIR '${SCRIPTS_DIR}' could not be resolved: ${err.message}`);
 }
 
 function readStdin() {

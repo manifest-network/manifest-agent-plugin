@@ -280,7 +280,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "result_summary": { "verify_outcome": "<VERIFY_RESULT.verifier_outcome — match | mismatch | not_found>" }
     }
   ],
-  "outcome": "<success if VERIFY_RESULT.result === 'success' | partial if branch_id === 'domain-mismatch' | failed if branch_id === 'domain-not-found' — see references/verify-recover.md mapping table>",
+  "outcome": "<success if VERIFY_RESULT.result === 'success' | partial if branch_id === 'domain-mismatch' | failed for branch_id === 'domain-not-found' or any other non-success branch_id (including 'unclassified' for future-drift cases) — see references/verify-recover.md mapping table>",
   "final_state": {
     "lease_uuid": "<LEASE_UUID>",
     "action": "<set|clear>",
