@@ -45,7 +45,8 @@
  *       branches on the JSON; non-zero exit would defeat that contract.
  *   1 — driver-internal error: bad spec JSON, missing payload key, path
  *       traversal on `verifier.script`, verifier subprocess crashed
- *       (non-zero exit), verifier stdout not a JSON object.
+ *       (non-zero exit), verifier stdout not a JSON object, verifier
+ *       stdout missing the `success.field` key.
  *
  * Security notes:
  *   - `verifier.script` is sanitized in two layers. The string-pattern
@@ -125,17 +126,33 @@ function sanitizeScriptName(name) {
   if (!resolved.startsWith(SCRIPTS_DIR_REAL + sep) && resolved !== SCRIPTS_DIR_REAL) {
     failDriver(`spec.verifier.script '${name}' resolves outside scripts/ (symlink escape)`);
   }
-  return candidate;
+  // Return the realpath (not the unresolved candidate) so `spawnSync` runs
+  // the exact path the containment check just validated. Returning
+  // `candidate` would leave a TOCTOU window: an attacker who can swap a
+  // symlink inside scripts/ between the realpath check above and the
+  // spawn below could redirect execution outside the dir. Using
+  // `resolved` resolves the symlink once, at check time, and pins the
+  // execution target.
+  return resolved;
 }
 
-function stripDenylist(obj) {
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
-  const out = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (SECRET_KEY_DENYLIST.test(k)) continue;
-    out[k] = v;
+// Recursive strip — `_journal.validateRecord` walks the entire tree and
+// fail-closes on denylisted keys at any depth. The driver's stdout (which
+// feeds skill prose, including verbatim user_message print) must follow the
+// same posture: a verifier emitting `{outcome: "ok", details: {api_key: …}}`
+// would otherwise leak the nested key through `diagnostic_delta` even though
+// the journal record itself would later be rejected.
+function stripDenylist(value) {
+  if (Array.isArray(value)) return value.map(stripDenylist);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (SECRET_KEY_DENYLIST.test(k)) continue;
+      out[k] = stripDenylist(v);
+    }
+    return out;
   }
-  return out;
+  return value;
 }
 
 function selectBranch(outcome, branches) {

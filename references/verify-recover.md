@@ -113,8 +113,8 @@ Key rules:
 
 The driver emits a single-line JSON object on stdout. Exit code 0 on any
 classification; exit code 1 only on driver-internal errors (bad spec,
-missing payload key, verifier crash, non-object verifier stdout, path
-traversal).
+missing payload key, verifier crash, non-object verifier stdout,
+verifier stdout missing the `success.field` key, path traversal).
 
 ```json
 {

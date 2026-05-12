@@ -384,7 +384,7 @@ function withFixtureDir(content, fn) {
   }
 }
 
-test('case 17: denylist-keyed verifier stdout → driver strips matching keys from diagnostic_delta', () => {
+test('case 17a: top-level denylist-keyed verifier stdout → driver strips matching keys from diagnostic_delta', () => {
   const content = `#!/usr/bin/env node
 console.log(JSON.stringify({ outcome: 'ok', api_key: 'should-be-stripped', password: 'also-stripped', actual: 'safe' }));
 `;
@@ -408,6 +408,53 @@ console.log(JSON.stringify({ outcome: 'ok', api_key: 'should-be-stripped', passw
     // Driver's emitted JSON must not contain the stripped keys anywhere.
     assert.equal(/api_key/.test(r.stdout), false);
     assert.equal(/password/.test(r.stdout), false);
+  });
+});
+
+test('case 17b: NESTED denylist-keyed verifier stdout → driver strips recursively (deep walk)', () => {
+  // The `_journal.validateRecord` writer-side check walks the entire
+  // record tree and fail-closes on a denylisted key at any depth. The
+  // driver's stdout (which feeds skill prose verbatim, including
+  // user_message print) must match that posture: top-level stripping
+  // alone would leak nested denylisted values through `diagnostic_delta`
+  // even though the journal record itself would be rejected.
+  const content = `#!/usr/bin/env node
+console.log(JSON.stringify({
+  outcome: 'ok',
+  details: { api_key: 'nested-leak-1', deeper: { password: 'nested-leak-2', safe_field: 'kept' } },
+  auth_token: 'top-level-strip',
+  list: [{ private_key: 'in-array-leak', other: 'kept' }, 'string-element'],
+  actual: 'kept-top-level'
+}));
+`;
+  withFixtureDir(content, (dir) => {
+    const r = drive({
+      spec: {
+        verifier: { script: 'fixture-verifier.cjs', args: [], stdin_source: null },
+        success: { field: 'outcome', values: ['ok'] },
+        branches: {},
+      },
+      payloads: {},
+      context: {},
+    }, { NODE_ENV: 'test', VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.equal(r.json.result, 'success');
+
+    // No denylisted key, at any depth, may appear in the emitted JSON.
+    assert.equal(/api_key/.test(r.stdout), false, 'nested api_key leaked');
+    assert.equal(/password/.test(r.stdout), false, 'nested password leaked');
+    assert.equal(/private_key/.test(r.stdout), false, 'array-nested private_key leaked');
+    assert.equal(/auth_token/.test(r.stdout), false, 'auth_token-shape key leaked');
+
+    // Surviving non-denylisted keys are still reachable.
+    assert.equal(r.json.diagnostic_delta.actual, 'kept-top-level');
+    assert.equal(r.json.diagnostic_delta.details.deeper.safe_field, 'kept');
+    assert.equal(r.json.diagnostic_delta.list[0].other, 'kept');
+    assert.equal(r.json.diagnostic_delta.list[1], 'string-element');
+    // The nested objects themselves remain (only the denylisted keys inside them
+    // are removed).
+    assert.deepEqual(Object.keys(r.json.diagnostic_delta.details), ['deeper']);
+    assert.deepEqual(Object.keys(r.json.diagnostic_delta.details.deeper), ['safe_field']);
   });
 });
 
