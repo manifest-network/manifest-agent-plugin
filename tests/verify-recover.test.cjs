@@ -458,6 +458,64 @@ console.log(JSON.stringify({
   });
 });
 
+test('case 17c: prototype-pollution keys in verifier stdout → driver skips them (no prototype mutation)', () => {
+  // `JSON.parse` materializes `__proto__`, `constructor`, and `prototype` as
+  // regular own properties on the resulting object. Without explicit
+  // skipping, `out[k] = …` with `k === "__proto__"` would re-set the
+  // prototype of the local `out` object — a textbook prototype-pollution
+  // sink. This test asserts the driver's strip skips all three keys at
+  // every depth and emits a clean object.
+  const content = `#!/usr/bin/env node
+console.log(JSON.stringify({
+  outcome: 'ok',
+  __proto__: { polluted_top: 'should-not-survive' },
+  constructor: { polluted_via_constructor: 'should-not-survive' },
+  prototype: { polluted_via_prototype: 'should-not-survive' },
+  nested: { __proto__: { polluted_nested: 'should-not-survive' }, safe: 'kept' },
+  list: [{ __proto__: { polluted_in_array_elem: 'should-not-survive' }, item_safe: 'kept' }],
+  actual: 'kept-top-level'
+}));
+`;
+  withFixtureDir(content, (dir) => {
+    const r = drive({
+      spec: {
+        verifier: { script: 'fixture-verifier.cjs', args: [], stdin_source: null },
+        success: { field: 'outcome', values: ['ok'] },
+        branches: {},
+      },
+      payloads: {},
+      context: {},
+    }, { NODE_ENV: 'test', VERIFY_RECOVER_TEST_SCRIPTS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.equal(r.json.result, 'success');
+
+    // None of the prototype-pollution payload strings may appear anywhere
+    // in the driver's emitted JSON (no own properties; no leaked values).
+    assert.equal(/polluted_top/.test(r.stdout), false, 'top-level __proto__ payload leaked');
+    assert.equal(/polluted_via_constructor/.test(r.stdout), false, 'constructor payload leaked');
+    assert.equal(/polluted_via_prototype/.test(r.stdout), false, 'prototype payload leaked');
+    assert.equal(/polluted_nested/.test(r.stdout), false, 'nested __proto__ payload leaked');
+    assert.equal(/polluted_in_array_elem/.test(r.stdout), false, 'array-elem __proto__ payload leaked');
+
+    // The local diagnostic_delta object must not have its prototype
+    // mutated — `Object.getPrototypeOf` returns Object.prototype, and the
+    // polluted keys are not reachable via property access on the parsed
+    // result (which is itself the product of JSON.stringify on the driver
+    // side; this asserts the wire format is clean).
+    assert.equal(Object.getPrototypeOf(r.json.diagnostic_delta), Object.prototype);
+    assert.equal(r.json.diagnostic_delta.polluted_top, undefined);
+    assert.equal(r.json.diagnostic_delta.polluted_via_constructor, undefined);
+    assert.equal(r.json.diagnostic_delta.polluted_via_prototype, undefined);
+
+    // Surviving non-prototype keys still flow through.
+    assert.equal(r.json.diagnostic_delta.actual, 'kept-top-level');
+    assert.equal(r.json.diagnostic_delta.nested.safe, 'kept');
+    assert.equal(r.json.diagnostic_delta.list[0].item_safe, 'kept');
+    assert.deepEqual(Object.keys(r.json.diagnostic_delta.nested), ['safe']);
+    assert.deepEqual(Object.keys(r.json.diagnostic_delta.list[0]), ['item_safe']);
+  });
+});
+
 test('case 18a: verifier stdout is JSON array → exit 1, no silent unclassified', () => {
   const content = `#!/usr/bin/env node
 console.log(JSON.stringify(['array', 'not', 'object']));

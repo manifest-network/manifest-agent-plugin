@@ -152,11 +152,20 @@ function sanitizeScriptName(name) {
 // same posture: a verifier emitting `{outcome: "ok", details: {api_key: …}}`
 // would otherwise leak the nested key through `diagnostic_delta` even though
 // the journal record itself would later be rejected.
+//
+// Prototype-pollution guard: `JSON.parse` materializes `__proto__` as a
+// regular own property, which `Object.entries` then enumerates. A bare
+// `out[k] = …` assignment with `k === "__proto__"` re-sets the prototype
+// of the local `out` object — a textbook prototype-pollution sink. We skip
+// the three constructor-related keys (`__proto__`, `constructor`,
+// `prototype`) explicitly before the denylist check.
+const PROTOTYPE_POLLUTION_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 function stripDenylist(value) {
   if (Array.isArray(value)) return value.map(stripDenylist);
   if (value && typeof value === 'object') {
     const out = {};
     for (const [k, v] of Object.entries(value)) {
+      if (PROTOTYPE_POLLUTION_KEYS.has(k)) continue;
       if (SECRET_KEY_DENYLIST.test(k)) continue;
       out[k] = stripDenylist(v);
     }
