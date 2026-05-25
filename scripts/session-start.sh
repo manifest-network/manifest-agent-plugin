@@ -135,6 +135,30 @@ any non-orchestrated billing tx you find yourself about to broadcast.
   wait for textual confirmation, but do not query balances or call
   `cosmos_estimate_fee`.
 
+- **For matcher-gated lease / fred tools that an orchestrated wrapper
+  already covers (`mcp__manifest-lease__close_lease`,
+  `mcp__manifest-lease__set_item_custom_domain`,
+  `mcp__manifest-fred__update_app`):** these are gated by PreToolUse
+  but should NOT be invoked directly under normal flows. Route through
+  the orchestrated wrappers instead — `close_lease_orchestrated`,
+  `manage_domain_orchestrated`, and `deploy_app_orchestrated`
+  respectively (the last drives `update_app` internally as part of
+  its partial-success recovery dispatch). The orchestrated wrappers
+  handle fee estimation, intent disclosure, and verify-and-recover
+  via MCP elicitation; direct invocation skips all of that and
+  surfaces only the raw PreToolUse permission prompt with no
+  preceding fee or action summary, which violates the runtime policy
+  above. If you have a genuine reason to call them directly (e.g.
+  recovering from a corrupted state where the wrapper refuses to
+  proceed), follow the `cosmos_tx` pattern above for the Cosmos-
+  broadcast ones (`close_lease`, `set_item_custom_domain`) — call
+  `cosmos_estimate_fee` with `{module: "billing", subcommand:
+  "close-lease" | "set-item-custom-domain", args: [...]}`, show the
+  humanized fee, and wait for confirmation — or the provider-side
+  action-plus-textual-confirm pattern for `update_app`, AND cite the
+  explicit reason in your intent recap so the user understands why
+  the wrapper is being bypassed.
+
 If `cosmos_estimate_fee` itself fails, surface the error and ask the
 user whether to proceed without an estimate — do NOT silently skip.
 When you broadcast, pass the same `gas_multiplier` you used for the
