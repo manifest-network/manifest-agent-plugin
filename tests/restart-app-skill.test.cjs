@@ -98,16 +98,23 @@ test('restart-app SKILL.md does NOT inline integer-literal comparisons against S
 
 test('restart-app SKILL.md compares the decoded name against the canonical "LEASE_STATE_ACTIVE" string', () => {
   // Positive existence check — the skill must somewhere compare a
-  // `*_NAME`-suffixed binding (or any STATE-bound binding) against
-  // the canonical name string. This catches the case where someone
-  // drops the helper call AND the name-comparison, leaving no
-  // state-eligibility check at all.
+  // `STATE_NAME`-suffixed binding (i.e. literal `STATE_NAME`, or
+  // anything ending with `STATE_NAME` like `POST_STATE_NAME` which
+  // matches because it contains `STATE_NAME` as a substring)
+  // against the canonical name string. This catches the case where
+  // someone drops the helper call AND the name-comparison, leaving
+  // no state-eligibility check at all. Renaming the binding to
+  // something without the `STATE_NAME` suffix (e.g. `RESULT_NAME`)
+  // would (correctly) require updating this regex — the convention
+  // IS the suffix.
   assert.match(
     SKILL,
     /STATE_NAME\s*===\s*["']LEASE_STATE_ACTIVE["']/,
-    'restart-app SKILL.md must compare a *_NAME binding (e.g. STATE_NAME or POST_STATE_NAME) ' +
-    'against the canonical "LEASE_STATE_ACTIVE" string — the post-decode eligibility gate. ' +
-    'If this assertion fires, the skill either dropped the eligibility check or renamed the ' +
-    'binding in a way that breaks the convention.',
+    'restart-app SKILL.md must compare a STATE_NAME-suffixed binding ' +
+    '(STATE_NAME, POST_STATE_NAME, or any future *STATE_NAME variant) ' +
+    'against the canonical "LEASE_STATE_ACTIVE" string — the post-decode ' +
+    'eligibility gate. If this assertion fires, the skill either dropped ' +
+    'the eligibility check or renamed the binding out of the STATE_NAME ' +
+    'suffix convention.',
   );
 });
