@@ -138,7 +138,7 @@ node scripts/start-server.cjs chain
 4. Version consistency: `package.json` and `.claude-plugin/plugin.json` must match.
 5. PreToolUse matcher: every alternative is `^...$`-anchored AND the matcher gates exactly the expected broadcast tools (no missing, no extra). Edit the expected list in `ci.yml` when adding/removing a broadcast tool.
 6. SessionStart policy: `bash scripts/session-start.sh` must produce non-empty stdout that contains `cosmos_estimate_fee`.
-7. MCP binary presence: `manifest-mcp-{chain,lease,fred,cosmwasm}` are installed and executable.
+7. MCP binary presence: `manifest-mcp-{chain,lease,fred,cosmwasm,agent}` are installed and executable.
 8. `NODE_PATH` resolution: `@cosmjs/proto-signing` is reachable from the install dir.
 9. Unit tests: `node --test tests/*.test.cjs`.
 

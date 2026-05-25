@@ -118,7 +118,7 @@ jobs:
 
       - name: Verify MCP binaries and NODE_PATH resolution
         run: |
-          for bin in manifest-mcp-chain manifest-mcp-lease manifest-mcp-fred manifest-mcp-cosmwasm; do
+          for bin in manifest-mcp-chain manifest-mcp-lease manifest-mcp-fred manifest-mcp-cosmwasm manifest-mcp-agent; do
             path="$HOME/.manifest-agent/node_modules/.bin/$bin"
             if [ ! -x "$path" ]; then
               echo "Missing or non-executable MCP binary: $path" >&2
