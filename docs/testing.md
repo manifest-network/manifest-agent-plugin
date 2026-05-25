@@ -24,7 +24,7 @@ CI does the same dance with `INSTALL_DIR=$HOME/.manifest-agent` (`.github/workfl
 To run a single test file:
 
 ```bash
-NODE_PATH="$INSTALL_DIR/node_modules" node --test tests/evaluate-readiness.test.cjs
+NODE_PATH="$INSTALL_DIR/node_modules" node --test tests/summarize-manifest.test.cjs
 ```
 
 ## Test file layout
@@ -38,7 +38,7 @@ tests/
 
 Conventions:
 
-- File name mirrors the script under test: `evaluate-readiness.cjs` → `tests/evaluate-readiness.test.cjs`. Underscore helpers get an underscore prefix in the test file too: `_io.cjs` → `tests/_io.test.cjs`.
+- File name mirrors the script under test: `summarize-manifest.cjs` → `tests/summarize-manifest.test.cjs`. Underscore helpers get an underscore prefix in the test file too: `_io.cjs` → `tests/_io.test.cjs`.
 - One `node:test` `test(...)` per assertion or tightly scoped behavior. Group with `describe` only when there's real shared setup; otherwise top-level `test` calls keep the failure output readable.
 - Tests should be hermetic: no real network, no real chain RPC, no real disk outside `os.tmpdir()`. Stub by passing fixture data on stdin or via `--*-file` flags pointing at tmpfiles.
 
@@ -54,7 +54,7 @@ Used for CLI entry-point scripts where the contract is the stdin/stdout/exit-cod
 
 ```js
 const { runScript } = require('./_subprocess.cjs');
-const result = runScript('evaluate-readiness.cjs', ['--gas-price', '0.001umfx'], stdinPayload);
+const result = runScript('journal-write.cjs', ['--dry-run'], JSON.stringify(record));
 // result === { status, stdout, stderr, json? }
 //   - status: process exit code
 //   - stdout / stderr: captured strings
@@ -80,10 +80,10 @@ Branch coverage checklist for a new test file:
 
 - [ ] Happy path (canonical input → expected output)
 - [ ] Each error/exit path the script can take (missing flag, invalid JSON, schema violation, etc.)
-- [ ] Each enumerated output classification, if the script is a classifier (e.g. `evaluate-readiness.cjs` has `ok` / `warn` / `block`)
+- [ ] Each enumerated output classification, if the script is a classifier (e.g. a hypothetical readiness evaluator with `ok` / `warn` / `block`; or `_journal.cjs#redactArgs`'s seven per-tool branches)
 - [ ] Boundary conditions for any threshold the script enforces (e.g. gas-price floor, FQDN length cap)
 
-For schema-evolving wrappers (`save-manifest.cjs` / `summarize-manifest.cjs`), include both:
+For schema-evolving wrappers (the post-deploy wrapper file written by `manifest-agent-core`'s `saveManifest()` and read by `summarize-manifest.cjs` / `list-saved-manifests.cjs`), include both:
 
 - A v(N) fixture asserting the new shape works.
 - A v(N-1) fixture asserting the reader still loads it (missing fields render as undefined, not throw).
