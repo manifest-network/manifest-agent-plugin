@@ -75,14 +75,17 @@ Store the chosen UUID as `LEASE_UUID`.
 ## Step 2 — Show pre-restart context
 
 Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
-Decode the lease state via:
+Read `chainState.state` as `STATE_INT` (integer per the Cosmos lease
+enum: `1` is `LEASE_STATE_ACTIVE`; anything else — pending, closed,
+insufficient-funds, etc. — is not eligible for restart). Inline the
+decode: `state === 1` is the only ACTIVE value the chain enum exposes
+today (proto is stable per ENG-158); name it `ACTIVE` for the user
+narrative.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state <chainState.state> --json
-```
-
-Surface the decoded `name`, the response's `provision_status`, and
-(when present) `IMAGE` from the saved-manifest summary:
+Surface the lease's state name (`ACTIVE` when `STATE_INT === 1`; raw
+integer otherwise so the user can grep the enum if they need to),
+the response's `provision_status`, and (when present) `IMAGE` from
+the saved-manifest summary:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-manifest.cjs" --lease-uuid "$LEASE_UUID"
@@ -91,10 +94,12 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-manifest.cjs" --lease-uuid "$LEASE
 If the redacted summary starts with `(no saved manifest`, render
 `<IMAGE>` as `(unknown — no local record)`.
 
-If `terminal === true` (the lease is closed or out of credits), refuse
-and stop:
-> Lease `<LEASE_UUID>` is `<decoded-name>`; `restart_app` requires an
-> ACTIVE lease. Use `/manifest-agent:deploy-app` to redeploy.
+If `STATE_INT !== 1`, refuse and stop:
+> Lease `<LEASE_UUID>` has chain state `<STATE_INT>` (not ACTIVE);
+> `restart_app` requires an ACTIVE lease. Use
+> `/manifest-agent:deploy-app` to redeploy if the lease has closed,
+> or `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` to see
+> what state the lease is actually in.
 
 ## Step 3 — Mainnet warning (if applicable)
 
@@ -137,36 +142,13 @@ automatically.
 
 Re-call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`
 once. Capture the response; extract `chainState.state` (integer) as
-`STATE_INT`, plus `provision_status` and `fail_count` for the
-provider-side narrative (the driver doesn't handle those — see below).
+`POST_STATE_INT`, plus `provision_status` and `fail_count` for the
+provider-side narrative.
 
-The structural state check goes through the shared verify-recover
-driver (`scripts/verify-recover.cjs`; see `references/verify-recover.md`
-for the spec contract). `Read` `references/verify-recover.md` if you
-haven't yet. Build the envelope and run:
+Inline the state check: `POST_STATE_INT === 1` is `LEASE_STATE_ACTIVE`
+(the canonical Cosmos lease enum; chain proto is stable per ENG-158).
 
-```bash
-echo '{
-  "spec": {
-    "verifier": { "script": "decode-lease-state.cjs",
-                  "args": ["--state", "{{state_int}}", "--json"],
-                  "stdin_source": null },
-    "success": { "field": "name", "values": ["LEASE_STATE_ACTIVE"] },
-    "branches": {
-      "other": { "branch_id": "restart-state-not-active",
-                 "journal_action_tag": "restart-post-verify-not-active",
-                 "user_message": "Restart was sent but lease state is now `{{name}}`. Run `/manifest-agent:troubleshoot-deployment {{lease_uuid}}` for a full diagnostics report." }
-    }
-  },
-  "payloads": {},
-  "context": { "state_int": "<STATE_INT>", "lease_uuid": "<LEASE_UUID>" }
-}' | node "$MANIFEST_PLUGIN_ROOT/scripts/verify-recover.cjs"
-```
-
-Capture the driver's stdout as `VERIFY_RESULT`. Branch on
-`VERIFY_RESULT.result`:
-
-- **`success`** (state is ACTIVE): surface `provision_status` and
+- **ACTIVE** (`POST_STATE_INT === 1`): surface `provision_status` and
   `fail_count` from the `app_status` response in plain prose. If
   `provision_status` looks healthy (`provisioned`, `running`, etc.),
   tell the user the restart was accepted and the provider is bringing
@@ -176,11 +158,12 @@ Capture the driver's stdout as `VERIFY_RESULT`. Branch on
   restart but the provider reports `<provision_status>` (and
   `fail_count: <n>`); suggest
   `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` for a full
-  report.
-- **`failure`** (branch_id `restart-state-not-active`): print
-  `VERIFY_RESULT.user_message` verbatim. The chain state has regressed
-  (closed, insufficient funds, etc.) — the driver's message already
-  points the user at troubleshoot-deployment.
+  report. Bind `JOURNAL_RECOVERY_ACTIONS = []`.
+- **Anything else** (regression): tell the user:
+  > Restart was sent but the lease state is now `<POST_STATE_INT>`
+  > (not ACTIVE). Run `/manifest-agent:troubleshoot-deployment <LEASE_UUID>`
+  > for a full diagnostics report.
+  Bind `JOURNAL_RECOVERY_ACTIONS = ["restart-post-verify-not-active"]`.
 
 Do not poll. One verify pass is enough; the user can re-run this skill
 or troubleshoot-deployment if they want a fresher snapshot.
@@ -221,19 +204,20 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "tool": "mcp__manifest-fred__app_status",
       "args_redacted": { "lease_uuid": "<LEASE_UUID>" },
       "outcome": "ok",
-      "result_summary": { "post_state": "<VERIFY_RESULT.verifier_outcome — decoded state name>", "post_provision_status": "<from Step 6 app_status response>", "fail_count": "<n>" }
+      "result_summary": { "post_state_int": <POST_STATE_INT>, "post_state_active": <true if POST_STATE_INT === 1 else false>, "post_provision_status": "<from Step 6 app_status response>", "fail_count": "<n>" }
     }
   ],
-  "outcome": "<'success' if Step 5 restart_app call did not throw AND VERIFY_RESULT.result === 'success'; otherwise 'failed'. restart_app is a provider HTTPS call, NOT a Cosmos broadcast — see CLAUDE.md restart-app runtime policy note.>",
+  "outcome": "<'success' if Step 5 restart_app call did not throw AND POST_STATE_INT === 1; otherwise 'failed'. restart_app is a provider HTTPS call, NOT a Cosmos broadcast — see CLAUDE.md restart-app runtime policy note.>",
   "final_state": {
     "lease_uuid": "<LEASE_UUID>",
     "action": "restart_app",
-    "post_state": "<VERIFY_RESULT.verifier_outcome — decoded state name>",
+    "post_state_int": <POST_STATE_INT>,
+    "post_state_active": <true if POST_STATE_INT === 1 else false>,
     "post_provision_status": "<from Step 6>",
     "fail_count": "<n>"
   },
   "errors": [],
-  "recovery_actions": <VERIFY_RESULT.journal_action_tags>
+  "recovery_actions": <JOURNAL_RECOVERY_ACTIONS — [] on ACTIVE, ["restart-post-verify-not-active"] on regression>
 }
 JOURNAL_EOF
 ```
