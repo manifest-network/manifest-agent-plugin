@@ -21,11 +21,15 @@
  *
  * ## Directive grammar (HTML-comment, immediately preceding the fence)
  *
- * A block is opted in by an HTML comment on its own, whose next non-blank
- * line MUST open a fenced code block. The comment is invisible in
- * rendered Markdown (clean published doc) but carries structured assertion
- * metadata a fence info-string can't, and is grep-able
- * (`grep -n docs-ci docs/testing.md`):
+ * A block is opted in by an HTML comment that occupies its OWN LINE at
+ * column 0 (no leading indentation, nothing after `-->`), whose next
+ * non-blank line MUST open a fenced code block. The column-0 / whole-line
+ * requirement is deliberate: it lets prose ELSEWHERE in the doc mention or
+ * illustrate a `<!-- docs-ci ... -->` directive (inline in a sentence, or
+ * inside an indented example block) without that mention being extracted
+ * and executed. The comment is invisible in rendered Markdown (clean
+ * published doc) but carries structured assertion metadata a fence
+ * info-string can't, and is grep-able (`grep -n docs-ci docs/testing.md`):
  *
  *   <!-- docs-ci -->                  marker; run the next fence.
  *   network                           skip unless env DOCS_CI_RUN_NETWORK=1
@@ -108,7 +112,11 @@ function extractBlocks(md) {
   const lines = md.split('\n');
   const blocks = [];
   for (let i = 0; i < lines.length; i++) {
-    const dm = lines[i].match(/<!--\s*docs-ci\b(.*?)-->/);
+    // Anchored: the directive must be the WHOLE line at column 0. This keeps
+    // inline mentions in prose, and indented illustrative examples, from
+    // being picked up as runnable blocks (the contributor docs show a
+    // `<!-- docs-ci ... -->` example, and that example must not execute).
+    const dm = lines[i].match(/^<!--\s*docs-ci\b(.*?)-->\s*$/);
     if (!dm) continue;
     const directives = parseDirectives(dm[1]);
     // The directive's next non-blank line MUST open a fence.

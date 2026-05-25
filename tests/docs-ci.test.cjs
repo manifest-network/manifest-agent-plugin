@@ -83,6 +83,31 @@ test('parseDirectives does not confuse expect-not with expect', () => {
   assert.deepEqual(d.expectNot, ['(unavailable)']);
 });
 
+test('extractBlocks ignores an INDENTED directive (illustrative example in prose is not extracted)', () => {
+  // The contributor docs show a `<!-- docs-ci ... -->` example inside a
+  // 4-space-indented block. That example must NOT be picked up and run.
+  const blocks = extractBlocks(md(
+    'How to tag a block:',
+    '',
+    '    <!-- docs-ci expect="MFX" -->',
+    '    ```bash',
+    '    echo illustrative',
+    '    ```',
+  ));
+  assert.equal(blocks.length, 0);
+});
+
+test('extractBlocks ignores an INLINE directive mention in a prose sentence', () => {
+  // A line that merely contains the directive in backticks mid-sentence
+  // must not match (and must not throw "not followed by a fence").
+  const blocks = extractBlocks(md(
+    'Tag the block with `<!-- docs-ci expect="MFX" -->` on the line before the fence.',
+    '',
+    'Some other prose.',
+  ));
+  assert.equal(blocks.length, 0);
+});
+
 test('extractBlocks ignores fences with no preceding docs-ci directive', () => {
   const blocks = extractBlocks(md(
     '```bash',
