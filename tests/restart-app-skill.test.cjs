@@ -77,7 +77,13 @@ test('restart-app SKILL.md does NOT inline integer-literal comparisons against S
   // Backticks on either side allowed (skill prose wraps inline code
   // with `…`). The character class for the bareword is conservative
   // (ASCII letters + digits + underscore).
-  const inlineIntComparePattern = /`?\b[A-Za-z_][A-Za-z0-9_]*STATE[A-Za-z0-9_]*\b\s*===\s*\d+\b/g;
+  // Leading char-class is `*` (zero-or-more), NOT `+` (one-or-more), so
+  // that the bare `STATE` binding — which is the exact shape the
+  // original Copilot bug had (`STATE === 1`) and which the skill still
+  // binds at Step 2 — is matched. A mandatory leading character would
+  // skip bare `STATE` and let the historical bug shape re-enter
+  // undetected; QA caught this gap on the prior `2c000bd` revision.
+  const inlineIntComparePattern = /`?\b[A-Za-z_]*STATE[A-Za-z0-9_]*\b\s*===\s*\d+\b/g;
   const hits = [...SKILL.matchAll(inlineIntComparePattern)].map((m) => m[0]);
   assert.equal(
     hits.length,
