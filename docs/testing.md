@@ -106,27 +106,41 @@ node scripts/fetch-chain-registry.cjs
 # Generate a key (reads password from stdin)
 echo "test-password" | node scripts/gen-agent-key.cjs --prefix manifest
 
-# Run a classifier with a stdin fixture
-echo '{ "ok": true, "wallet_balances": [{ "denom": "umfx", "amount": "1000000" }] }' \
-  | node scripts/evaluate-readiness.cjs --gas-price 0.001umfx --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/testnet.json"
+# Render a balance report with a fixture credit_balance response
+echo '{ "wallet_balances": [{ "denom": "umfx", "amount": "1000000" }], "credit": null }' \
+  | node scripts/render-balance.cjs \
+      --address manifest1abc \
+      --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/testnet.json"
 
-# Render a deployment plan (stdout is the canonical block).
-# Reads a {summary, readiness} envelope on stdin; --tx-fee is the human-readable
-# string from humanize-fee.cjs (e.g. "0.0023 MFX"), NOT raw <amount><denom>.
+# Append a fixture journal record (uses --dry-run to skip the disk write)
 echo '{
-  "summary": { "format": "single", "service_count": 1, "image": "docker.io/library/nginx:1.27" },
-  "readiness": { "wallet_balances": [{ "denom": "umfx", "amount": "1000000" }] }
-}' | node scripts/render-deployment-plan.cjs \
-  --meta-hash 0xabc... \
-  --image docker.io/library/nginx:1.27 \
-  --size <sku-id> \
-  --tx-gas 150000 \
-  --tx-fee "0.0023 MFX" \
-  --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/testnet.json"
+  "skill": "set-gas-price",
+  "active_chain": "testnet",
+  "signer_address": "manifest1abc",
+  "intent": "test record",
+  "plan_summary": "smoke",
+  "tool_calls": [],
+  "outcome": "success",
+  "final_state": {},
+  "errors": [],
+  "recovery_actions": []
+}' | node scripts/journal-write.cjs --dry-run
 
-# Test the MCP wrapper end-to-end (requires config.json)
+# Test an MCP wrapper end-to-end (requires config.json)
 node scripts/start-server.cjs chain
+node scripts/start-server.cjs agent   # ENG-130 5th server
 ```
+
+## Testing the orchestrated flow
+
+Post-ENG-130 most orchestration logic lives in `@manifest-network/manifest-agent-core` (in the [`manifest-mcp-mono`](https://github.com/manifest-network/manifest-mcp-mono) repo, not this plugin). Plan rendering, fee itemization, classification, partial-success recovery, and verify-and-recover dispatch are all upstream. The plugin's tests cover only what stays here:
+
+- `tests/start-server.test.cjs` — the wrapper's env-var contract for the 5th server (`agent`), including the new `MANIFEST_AGENT_DATA_DIR` / `MANIFEST_CHAIN_DATA_FILE` / `MANIFEST_AGENT_FETCH_GUARDED` env vars.
+- `tests/_journal.test.cjs` + `tests/journal-write.test.cjs` — `redactArgs` reducers for the four orchestrated tools (`deploy_app_orchestrated`, `manage_domain_orchestrated`, `troubleshoot_deployment_orchestrated`, `close_lease_orchestrated`) plus the secret-key denylist + integration round-trip.
+- `tests/session-start.test.cjs` — the runtime policy heredoc references the orchestrated tools as the canonical confirmation surface (no longer mentions `render-deployment-plan.cjs` / `format-success.cjs`).
+- All read-only renderers (`tests/render-{balance,providers,releases}.test.cjs`), the journal (`tests/_journal.test.cjs`, `tests/journal-{read,write}.test.cjs`), the I/O primitives (`tests/_io.test.cjs`, `tests/_uuid.test.cjs`), the spec helpers (`tests/_spec.test.cjs`), the env merge (`tests/merge-env.test.cjs`), and the saved-manifest summarizer (`tests/summarize-manifest.test.cjs`).
+
+For end-to-end exercise of the orchestrated flow itself, see `manifest-mcp-mono`'s test suite. A live testnet smoke run from this plugin is in scope for ENG-130 #18 but optional pending wallet/credit availability.
 
 ## What CI runs
 
@@ -140,6 +154,6 @@ node scripts/start-server.cjs chain
 6. SessionStart policy: `bash scripts/session-start.sh` must produce non-empty stdout that contains `cosmos_estimate_fee`.
 7. MCP binary presence: `manifest-mcp-{chain,lease,fred,cosmwasm,agent}` are installed and executable.
 8. `NODE_PATH` resolution: `@cosmjs/proto-signing` is reachable from the install dir.
-9. Unit tests: `node --test tests/*.test.cjs`.
+9. Unit tests: `node --test tests/*.test.cjs`. Post-ENG-130 the suite covers wrapper plumbing (`tests/start-server.test.cjs` — env-var contract for all five servers including `agent`), the journal layer (`tests/_journal.test.cjs` + `tests/journal-{read,write}.test.cjs` — including the four new orchestrated-tool reducers), the read-only renderers, the env merge, and the saved-manifest summarizer. Orchestration logic itself (plan rendering, classification, recovery dispatch) is tested upstream in `manifest-mcp-mono`.
 
 If you change the broadcast-tool surface, you must update `hooks/hooks.json`, the matcher's expected list in `ci.yml`, and the "Tools gated by the PreToolUse hook" list in `CLAUDE.md` — all in the same commit.

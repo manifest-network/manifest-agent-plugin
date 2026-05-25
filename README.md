@@ -2,7 +2,7 @@
 
 A [Claude Code](https://claude.ai/code) plugin that sets up [Manifest](https://manifestai.org/) blockchain MCP tooling for an autonomous agent.
 
-It handles keypair generation and import, chain configuration (testnet/mainnet), live chain registry data from the [Cosmos chain registry](https://github.com/cosmos/chain-registry), and configuring four MCP servers (all bundled in [@manifest-network/manifest-mcp-node](https://www.npmjs.com/package/@manifest-network/manifest-mcp-node)) so the agent can interact with the configured chain.
+It handles keypair generation and import, chain configuration (testnet/mainnet), live chain registry data from the [Cosmos chain registry](https://github.com/cosmos/chain-registry), and configuring five MCP servers (all bundled in [@manifest-network/manifest-mcp-node](https://www.npmjs.com/package/@manifest-network/manifest-mcp-node)) so the agent can interact with the configured chain. Deployment orchestration (plan + confirm + broadcast + recovery + persistence) lives in [`@manifest-network/manifest-agent-core`](https://www.npmjs.com/package/@manifest-network/manifest-agent-core) and is surfaced through the `manifest-agent` MCP server's `*_orchestrated` tools via MCP elicitation.
 
 ---
 
@@ -44,7 +44,7 @@ git clone https://github.com/liftedinit/manifest-agent-plugin.git
 claude --plugin-dir ./manifest-agent-plugin
 ```
 
-After installing, the four MCP servers will appear in `/mcp` but **all four will fail until you initialize**. That's expected — they need a `config.json` that doesn't exist yet. Run `/manifest-agent:init-agent` first.
+After installing, the five MCP servers will appear in `/mcp` but **all five will fail until you initialize**. That's expected — they need a `config.json` that doesn't exist yet. Run `/manifest-agent:init-agent` first.
 
 ## Quick Start
 
@@ -62,7 +62,7 @@ This walks you through:
 4. Generating a new keypair, or importing an existing mnemonic
 5. Writing the agent configuration
 
-After setup, **restart Claude Code** (or run `/mcp` and reconnect) so the four MCP servers can pick up the new config.
+After setup, **restart Claude Code** (or run `/mcp` and reconnect) so the five MCP servers can pick up the new config.
 
 ### 2. Verify your setup
 
@@ -86,31 +86,27 @@ The agent will call `mcp__manifest-chain__request_faucet` (intentionally not gat
 
 ## Deploying an app
 
-Once your wallet is funded, you can deploy a containerized app three ways. All three assume you already have a public container image (e.g. `ghcr.io/me/app@sha256:…`) on a registry the Fred provider permits. Image build and image push are intentionally out of scope — bring your own published image.
+Once your wallet is funded, you deploy in two steps: author a spec file, then deploy it. The orchestrated deploy tool requires a complete `DeploySpec` (the agent-core `validateSpec()` check runs first), so the two-step flow is the supported path.
 
-### Image fast-path (single-service shortcut)
-
-```
-/manifest-agent:deploy-app docker.io/library/nginx:1.27
-/manifest-agent:deploy-app ghcr.io/me/app@sha256:abc123…
-```
-
-If you pass an image reference (anything matching `<name>:<tag>` or `<name>@sha256:<digest>`), the plugin treats it as a single-service deploy and asks you only for what's still needed: SKU, port, and any optional env / labels / health check / etc. Skips the "what shape?" and "what image?" questions entirely.
-
-### Multi-image stack fast-path
+### Step 1 — Author a spec
 
 ```
-/manifest-agent:deploy-app docker.io/lifted/wordpress:6 docker.io/library/mysql:9
-/manifest-agent:deploy-app wordpress:6 + mysql:9         # `+` is optional cosmetic separator
+/manifest-agent:author-manifest
 ```
 
-If you pass two or more image references separated by whitespace (with optional `+` tokens), the plugin treats them as services in a stack. Service names are derived from the image basenames (`wordpress`, `mysql`). The plugin shows you the parsed stack and asks for confirmation before authoring; you can rename services if the auto-derived names don't fit. Same per-service auto-detection as the single-service fast-path (ports, tmpfs, image defaults).
+Walks you through choosing single-service vs multi-service stack, picking a SKU, entering image refs, ports, env vars, optional custom domain, etc. Saves the spec to `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json` (or a user-chosen absolute path). The file is plain JSON — hand-edit it, version-control it, generate it from a script, share it across deploys.
 
-Inter-service env vars (e.g. `WORDPRESS_DB_HOST=mysql`, `WORDPRESS_DB_PASSWORD=...`) are NOT auto-wired — you provide them through the per-service env prompts. The intent-recap step before broadcast flags obvious gaps (e.g. a wordpress with no DB credentials).
+### Step 2 — Deploy
+
+```
+/manifest-agent:deploy-app /path/to/the/saved-spec.json
+```
+
+The orchestrated tool handles plan rendering, fee itemization, dual-tx broadcast (when `customDomain` is set), partial-success recovery, and manifest persistence end-to-end via MCP elicitation. You'll see one or more native UI prompts for confirmation (deployment plan, mainnet warning if applicable, partial-success recovery choice if relevant) and one or more permission prompts for the inner broadcasts (`deploy_app`, optionally `set_item_custom_domain`).
 
 ### Sensitive env values (file-pipe pattern)
 
-For secrets like database passwords, the env prompt offers a "From a file" option. Create a dotenv file in a separate terminal first:
+For secrets like database passwords, the env prompt in `/manifest-agent:author-manifest` offers a "From a file" option. Create a dotenv file in a separate terminal first:
 
 ```bash
 cat > /tmp/wordpress.env
@@ -122,24 +118,7 @@ chmod 600 /tmp/wordpress.env
 
 Then tell the agent the path. Values flow through a script pipe into the spec file; they never enter the chat input box and the agent never echoes them in summaries. Mirrors the mnemonic-import pattern from `init-agent` / `import-key`.
 
-Note: env values still appear in the `deploy_app` MCP tool call args at broadcast time — eliminating that exposure entirely needs upstream MCP changes.
-
-### Interactive (full authoring, supports multi-service)
-
-```
-/manifest-agent:deploy-app
-```
-
-Walks you through choosing single-service vs multi-service stack, picking a SKU, entering image refs, ports, env vars, etc., then deploys. No reusable spec file is written in this path, but after a successful deploy a saved manifest record is created at `$MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json`.
-
-### From a spec file (reusable)
-
-```
-/manifest-agent:author-manifest        # walks you through, saves a spec file
-/manifest-agent:deploy-app /path/to/the/saved-spec.json
-```
-
-The spec file is plain JSON — hand-edit it, version-control it, generate it from a script, share it across deploys. Default save location is `$MANIFEST_PLUGIN_DATA/manifests-drafts/`; a custom absolute path is allowed as long as it resolves inside that drafts directory or the system tmpdir.
+Note: env values still appear in the `deploy_app_orchestrated` MCP tool call args at broadcast time — eliminating that exposure entirely needs upstream MCP changes.
 
 #### Spec file shape
 
@@ -178,15 +157,15 @@ Authoritative validation lives in the Fred manifest JSON Schema bundled in `mani
 
 ### What happens before broadcast
 
-A confirmation step shows the deployment plan (image, SKU, cost, wallet/credit balances) before any broadcast:
+The orchestrated deploy tool drives the confirmation flow internally:
 
-1. **Intent recap** — chain, signer address, format (single or stack), service count, env keys (never values).
-2. **Readiness check** — `check_deployment_readiness` runs and any blocker is surfaced verbatim.
-3. **DeploymentPlan block** — fees line-by-line (estimated via `cosmos_estimate_fee`), wallet balance, total cost.
-4. **Permission prompt** — Claude Code's own prompt (the plugin forces this via a `PreToolUse` hook regardless of your permission settings).
-5. **Broadcast** — `deploy_app` is called; on success you see a "Deployed." block with the URL.
+1. **Readiness check** — `check_deployment_readiness` runs; any blocker surfaces as an MCP error.
+2. **Plan elicitation** — a native UI prompt shows the deployment plan (image, SKU, fees line-by-line, wallet/credit balances). Fees are estimated via `cosmos_estimate_fee` before the prompt fires.
+3. **Mainnet warning** (mainnet only) — an extra elicitation prompt asking you to acknowledge real-funds spending.
+4. **Permission prompt** — Claude Code's own prompt fires on the inner `deploy_app` broadcast (and again on `set_item_custom_domain` if `customDomain` is set). The plugin forces this via a `PreToolUse` hook regardless of your permission settings.
+5. **Broadcast** — `deploy_app` is called; on success the orchestrator persists a saved manifest wrapper at `$MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json` and returns the URL.
 
-Failed deploys auto-invoke a troubleshoot sequence and offer to reclaim the lease.
+Failed deploys (partial-success — lease created but manifest upload failed) raise a recovery-choice elicitation prompt: retry set-domain + upload, salvage without domain, or close the lease.
 
 ## Custom domains
 
@@ -196,9 +175,9 @@ Attach an FQDN to a lease item so users reach the app via your own hostname inst
 /manifest-agent:manage-domain    # interactive: set / clear / lookup
 ```
 
-`manage-domain` runs a warn-only DNS pre-check before broadcasting — it queries A/AAAA/CNAME records for the FQDN with a 5-second timeout and surfaces the result, but does not block the broadcast. The chain is the authoritative arbiter of FQDN format and reservation; DNS resolution affects only browser routing, not the chain claim.
+`manage-domain` (set/clear path) routes through the orchestrated tool, which runs a warn-only DNS pre-check before broadcasting — it queries A/AAAA/CNAME records for the FQDN with a 5-second timeout and surfaces the result, but does not block the broadcast. The chain is the authoritative arbiter of FQDN format and reservation; DNS resolution affects only browser routing, not the chain claim. The lookup path calls `lease_by_custom_domain` directly (read-only, ungated by the permission prompt).
 
-When `customDomain` is set on a deploy, `deploy_app` broadcasts TWO billing transactions atomically: `create-lease` AND `set-item-custom-domain`. The DeploymentPlan shows both fees line-by-line plus a `Total fee:` so you see the full cost before approving. The single permission prompt that fires next covers both transactions.
+When `customDomain` is set on a deploy, the orchestrated tool broadcasts TWO billing transactions atomically: `create-lease` AND `set-item-custom-domain`. The plan-elicitation prompt shows both fees line-by-line plus a `Total fee:` so you see the full cost before approving. The permission prompt fires once per inner broadcast.
 
 ### DNS setup happens AFTER the deploy
 
@@ -214,11 +193,11 @@ You can't point your CNAME until you know the provider's ingress hostname, which
 
 The upstream `deploy_app` runs `create-lease` → `set-item-custom-domain` → manifest upload → readiness poll. If anything after `create-lease` fails (most commonly the FQDN is already claimed by another tenant — the upstream `Deploy partially succeeded:` error), the lease was created on-chain but the manifest was NEVER uploaded, so no app is running yet.
 
-The orchestrator detects this case, queries the lease state, and offers state-aware recovery:
+The orchestrated tool detects this case, queries the lease state, and offers state-aware recovery via an MCP elicitation prompt:
 
 - **Retry set-domain + upload** — re-attach the domain then upload the manifest via `update_app`.
 - **Salvage without domain** — skip the domain; upload the manifest now so the lease starts serving.
-- **Cancel/Close the lease** — uses `billing cancel-lease` (via `mcp__manifest-chain__cosmos_tx`) for `LEASE_STATE_PENDING`, and the `mcp__manifest-lease__close_lease` MCP tool for `LEASE_STATE_ACTIVE`.
+- **Cancel/Close the lease** — uses `billing cancel-lease` for `LEASE_STATE_PENDING`, and the `close_lease` MCP tool for `LEASE_STATE_ACTIVE`.
 
 ## Operations
 
@@ -293,7 +272,7 @@ For development installs (`claude --plugin-dir`), pull the latest commits in you
 | `/manifest-agent:switch-chain` | Switch between testnet and mainnet |
 | `/manifest-agent:set-gas-price` | Change the gas fee token, price, and/or gas multiplier |
 | `/manifest-agent:refresh-registry` | Re-fetch chain data from the Cosmos chain registry |
-| `/manifest-agent:deploy-app [path-or-images]` | Deploy a containerized app end-to-end. Optional argument: a JSON spec file path, OR a single image reference (e.g. `nginx:1.27`) for a single-service fast-path, OR multiple whitespace-separated image references (e.g. `wordpress:6 mysql:9`) for a multi-service stack fast-path. Omit for full interactive authoring. Pre-flight → plan → confirm → broadcast → URL. Optional `customDomain` in the spec triggers a dual-tx broadcast (create-lease + set-item-custom-domain) with line-by-line fees in the plan |
+| `/manifest-agent:deploy-app <path>` | Deploy a containerized app end-to-end via `mcp__manifest-agent__deploy_app_orchestrated`. Required argument: path to a JSON spec file produced by `/manifest-agent:author-manifest`. The orchestrated tool requires a complete `DeploySpec` (`validateSpec()` runs first), so non-file input directs at author-manifest. Plan / confirm / partial-success recovery via MCP elicitation; manifest persistence via `MANIFEST_AGENT_DATA_DIR` |
 | `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `$MANIFEST_PLUGIN_DATA/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app`. Optionally collects a custom domain (FQDN + service for stacks) |
 | `/manifest-agent:manage-domain` | Set, clear, or look up the custom domain (FQDN) on an existing lease item. Set/clear go through cosmos_estimate_fee + textual confirm + permission prompt + on-chain verification; lookup is read-only |
 | `/manifest-agent:troubleshoot-deployment` | Bundle status, diagnostics, and recent logs for a deployed lease into a unified report. Lease picker includes a "lookup by custom domain" option |
@@ -305,7 +284,7 @@ For development installs (`claude --plugin-dir`), pull the latest commits in you
 
 ## MCP servers
 
-Once configured, the plugin provides four MCP servers, all launched from binaries bundled in `@manifest-network/manifest-mcp-node`:
+Once configured, the plugin provides five MCP servers, all launched from binaries bundled in `@manifest-network/manifest-mcp-node`:
 
 | Server | Description |
 |---|---|
@@ -313,6 +292,7 @@ Once configured, the plugin provides four MCP servers, all launched from binarie
 | `manifest-lease` | Compute leasing, custom domains |
 | `manifest-fred` | Deploy / restart / update apps |
 | `manifest-cosmwasm` | MFX ↔ PWR conversion via CosmWasm |
+| `manifest-agent` | Orchestrated `deploy_app` / `manage_domain` / `troubleshoot_deployment` / `close_lease` flows via MCP elicitation; wraps the four legacy servers' inner broadcasts with plan + confirm + recovery + verification end-to-end |
 
 The servers start automatically when Claude Code launches but **will fail until the plugin is initialized**. This is expected — run `/manifest-agent:init-agent` to set up the agent, then restart Claude Code to connect the servers.
 
@@ -374,12 +354,18 @@ Chain data (endpoints, gas prices, explorer URLs) is fetched live from the [Cosm
                              │  manifest-mcp-lease      │
                              │  manifest-mcp-fred       │
                              │  manifest-mcp-cosmwasm   │
+                             │  manifest-mcp-agent      │ ← wraps deploy /
+                             │                          │   manage-domain /
+                             │                          │   troubleshoot /
+                             │                          │   close-lease via
+                             │                          │   manifest-agent-core
                              └──────────────────────────┘
 ```
 
 - **Plugin root is read-only** in production (marketplace cache). All mutable state lives in `$MANIFEST_PLUGIN_DATA` — Claude Code's per-plugin persistent data directory at `~/.claude/plugins/data/<id>/`. The directory survives plugin updates and is cleaned on uninstall.
-- **Dependencies** (`@cosmjs/proto-signing`, `@manifest-network/manifest-mcp-node`, `request-filtering-agent`) are installed to `$MANIFEST_PLUGIN_DATA/node_modules/` automatically by the SessionStart hook (diff-checked against the plugin's bundled `package.json` on every session start), not in the plugin directory.
-- **MCP servers** are launched by a wrapper script (`start-server.cjs`) that reads `config.json` and passes the appropriate environment variables to the server binary.
+- **Dependencies** (`@cosmjs/proto-signing`, `@manifest-network/manifest-mcp-node`, `request-filtering-agent`) are installed to `$MANIFEST_PLUGIN_DATA/node_modules/` automatically by the SessionStart hook (diff-checked against the plugin's bundled `package.json` on every session start), not in the plugin directory. The umbrella package now includes `manifest-mcp-agent` as a peer dep.
+- **MCP servers** are launched by a wrapper script (`start-server.cjs`) that reads `config.json` and passes the appropriate environment variables to the server binary. The `manifest-agent` server additionally gets `MANIFEST_AGENT_DATA_DIR=$MANIFEST_PLUGIN_DATA` (so `agent-core`'s `saveManifest()` writes wrappers to the same path the read-only helpers index) and `MANIFEST_CHAIN_DATA_FILE` (for denom-map humanization).
+- **Orchestration** (plan rendering, fee itemization, partial-success recovery, verify-and-recover, persistence) lives in `@manifest-network/manifest-agent-core` — not in the plugin. Skill prose invokes the orchestrated MCP tools and surfaces their typed return values; the plugin no longer owns plan-rendering scripts, classification scripts, or verify-and-recover dispatch.
 - **Keypairs** are encrypted with a random 256-bit password and stored with `0600` permissions.
 
 For the full architectural picture (data flow, scripts inventory, hook contracts), see [`CLAUDE.md`](CLAUDE.md).
