@@ -66,11 +66,18 @@ the MCP elicitation + progress-notification protocols.
 
 When you invoke one of these tools:
 
-- The wrapper raises one or more `elicitInput` requests at confirmation
-  gates — deployment plan, set-domain confirm, close-lease confirm,
-  partial-success recovery choice, mainnet warning. The host renders
-  each as a native UI prompt. The user's elicitation response IS the
-  binding confirmation.
+- The wrapper **may** raise one or more `elicitInput` requests at
+  confirmation gates — deployment plan, set-domain confirm, close-
+  lease confirm, partial-success recovery choice, mainnet warning.
+  `deploy_app_orchestrated`, `manage_domain_orchestrated` (on its
+  `set` / `clear` sub-flows), and `close_lease_orchestrated` ALWAYS
+  elicit at least once. `troubleshoot_deployment_orchestrated` is a
+  read-only chain query and emits **ZERO** elicitations — handle its
+  `TroubleshootReport` return value directly without waiting for a
+  prompt. `manage_domain_orchestrated` on its `lookup` sub-flow also
+  emits zero (read-only). When elicitations DO fire, the host
+  renders each as a native UI prompt; the user's elicitation
+  response IS the binding confirmation.
 - **Print each elicitation prompt's `message` body verbatim. Do NOT
   paraphrase, summarize, or splice in extra fields.** `agent-core`'s
   internal `internals/render-*` modules pin the exact wording so
