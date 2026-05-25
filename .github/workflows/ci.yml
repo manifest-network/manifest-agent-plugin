@@ -65,6 +65,12 @@ jobs:
         # The expected list below is the source of truth for CI. When adding
         # or removing a broadcast tool, keep hooks/hooks.json, CLAUDE.md
         # (Transaction Behavior section), and the list below in sync.
+        #
+        # Negative-match list guards against double-prompt: the orchestrated
+        # agent-server tools (mcp__manifest-agent__*_orchestrated) MUST NOT
+        # match — they dispatch the inner broadcast tools internally, which
+        # hit the hook on their own. A regex that accidentally matched them
+        # would prompt the user twice for one logical broadcast.
         run: |
           node -e '
             const expected = new Set([
@@ -77,6 +83,12 @@ jobs:
               "mcp__manifest-lease__close_lease",
               "mcp__manifest-lease__set_item_custom_domain",
             ]);
+            const mustNotMatch = [
+              "mcp__manifest-agent__deploy_app_orchestrated",
+              "mcp__manifest-agent__manage_domain_orchestrated",
+              "mcp__manifest-agent__troubleshoot_deployment_orchestrated",
+              "mcp__manifest-agent__close_lease_orchestrated",
+            ];
             const h = require("./hooks/hooks.json");
             const pre = (h.hooks && h.hooks.PreToolUse) || [];
             if (pre.length === 0) { console.error("PreToolUse hook missing"); process.exit(1); }
@@ -87,6 +99,12 @@ jobs:
               const bad = alts.filter(a => !/^\^.+\$$/.test(a));
               if (bad.length) { console.error("Unanchored matcher alternatives:", bad); process.exit(1); }
               for (const a of alts) got.add(a.replace(/^\^|\$$/g, ""));
+              const r = new RegExp(entry.matcher);
+              const accidental = mustNotMatch.filter(t => r.test(t));
+              if (accidental.length) {
+                console.error("PreToolUse matcher accidentally matches orchestrated tools:", accidental);
+                process.exit(1);
+              }
             }
             const missing = [...expected].filter(t => !got.has(t));
             const extra = [...got].filter(t => !expected.has(t));
@@ -94,7 +112,7 @@ jobs:
               console.error("PreToolUse matcher drift. missing:", missing, "extra:", extra);
               process.exit(1);
             }
-            console.log(`PreToolUse matcher gates the ${expected.size} expected tools, all anchored`);
+            console.log(`PreToolUse matcher gates the ${expected.size} expected tools, all anchored, and does NOT match the ${mustNotMatch.length} orchestrated wrappers`);
           '
 
       - name: Verify session-start policy is emitted and references fee estimation

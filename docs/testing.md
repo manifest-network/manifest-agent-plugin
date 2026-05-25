@@ -136,7 +136,7 @@ node scripts/start-server.cjs chain
 2. `bash -n` syntax check on every `scripts/*.sh`.
 3. `JSON.parse` on every tracked `.json` file.
 4. Version consistency: `package.json` and `.claude-plugin/plugin.json` must match.
-5. PreToolUse matcher: every alternative is `^...$`-anchored AND the matcher gates exactly the expected broadcast tools (no missing, no extra). Edit the expected list in `ci.yml` when adding/removing a broadcast tool.
+5. PreToolUse matcher: every alternative is `^...$`-anchored, the matcher gates exactly the expected broadcast tools (no missing, no extra), AND it does NOT accidentally match any of the `mcp__manifest-agent__*_orchestrated` wrapper tools. The negative-match list guards against double-prompt: the orchestrated wrappers dispatch the inner broadcast tools internally, which already trigger the hook on their own — a regex that matched both would prompt the user twice for one logical broadcast. Edit the expected list (and the negative-match list, if a new orchestrated tool ships) in `ci.yml` when the surface changes.
 6. SessionStart policy: `bash scripts/session-start.sh` must produce non-empty stdout that contains `cosmos_estimate_fee`.
 7. MCP binary presence: `manifest-mcp-{chain,lease,fred,cosmwasm,agent}` are installed and executable.
 8. `NODE_PATH` resolution: `@cosmjs/proto-signing` is reachable from the install dir.

@@ -55,11 +55,57 @@ The manifest-agent plugin exposes MCP tools that broadcast Cosmos SDK
 transactions on the Manifest blockchain and spend the agent's funds.
 The rules below apply to every session where these tools are available.
 
-## Pre-broadcast confirmation (mandatory)
+## Orchestrated agent-server tools (the preferred surface)
 
-Each broadcast needs its own explicit user confirmation in chat. Never
-infer approval from silence, from a prior unrelated approval, or from
-the fact that the user asked for the action.
+The four tools under `mcp__manifest-agent__*_orchestrated`
+(`deploy_app_orchestrated`, `manage_domain_orchestrated`,
+`troubleshoot_deployment_orchestrated`, `close_lease_orchestrated`)
+wrap `manifest-agent-core` flows. They own plan, confirmation,
+progress, recovery, and post-broadcast verification end-to-end via
+the MCP elicitation + progress-notification protocols.
+
+When you invoke one of these tools:
+
+- The wrapper raises one or more `elicitInput` requests at confirmation
+  gates — deployment plan, set-domain confirm, close-lease confirm,
+  partial-success recovery choice, mainnet warning. The host renders
+  each as a native UI prompt. The user's elicitation response IS the
+  binding confirmation.
+- **Print each elicitation prompt's `message` body verbatim. Do NOT
+  paraphrase, summarize, or splice in extra fields.** `agent-core`'s
+  internal `internals/render-*` modules pin the exact wording so
+  adjacent runs cannot drift.
+- **Do NOT compose your own `DeploymentPlan`, intent recap, or
+  fee-itemization block.** The wrapper owns those rendered texts.
+- **Do NOT call `cosmos_estimate_fee` yourself before invoking the
+  orchestrated tool.** The wrapper runs the estimate internally and
+  embeds the result in the elicitation prompt.
+- Progress notifications stream during the call; if the host renders
+  `notifications/progress`, surface them as inline status updates.
+- On thrown errors the wrapper returns a standard MCP error envelope.
+  Surface the message verbatim and follow any recovery branch the
+  wrapper points at.
+- The **inner** broadcast tools the wrapper dispatches
+  (`mcp__manifest-fred__deploy_app`,
+  `mcp__manifest-lease__set_item_custom_domain`,
+  `mcp__manifest-lease__close_lease`, etc.) still trigger the
+  PreToolUse permission prompt on their own — that's expected. One
+  prompt fires per inner tx.
+
+For `deploy_app_orchestrated` specifically, the wrapper also handles
+the dual-tx case (`create-lease` + `set-item-custom-domain` when
+`customDomain` is set) — both fees are itemized in the plan
+elicitation, both inner txes fire under one MCP tool call, and the
+PreToolUse hook prompts once per inner tx.
+
+## Pre-broadcast confirmation for non-orchestrated billing txes
+
+When you call a billing-module broadcast tool **outside** the
+orchestrated wrappers — typically `cosmos_tx`, `convert_mfx_to_pwr`,
+or a direct `fund_credit` from a setup skill — the old confirmation
+discipline applies. After the rewire most flows go through the
+orchestrated wrappers, but these patterns remain authoritative for
+any non-orchestrated billing tx you find yourself about to broadcast.
 
 - **For `cosmos_tx` (chain server):** Call `cosmos_estimate_fee` first
   with the same `module`, `subcommand`, `args`, and `gas_multiplier`
@@ -67,65 +113,20 @@ the fact that the user asked for the action.
   human-readable form (amount + denom symbol, e.g. `0.0023 MFX`), then
   wait for the user to confirm before calling `cosmos_tx`.
 
-- **For chain-broadcast tools that wrap `cosmosTx` under the hood**
-  (`deploy_app`, `close_lease`, `fund_credit`, `set_item_custom_domain`):
-  these all broadcast Cosmos SDK billing-module transactions, so
-  `cosmos_estimate_fee` applies. Call it first, show the returned
-  `gasEstimate` and `fee.amount` in human-readable form, then wait for
-  confirmation.
-    - `deploy_app`: call
-      `cosmos_estimate_fee({module: "billing", subcommand: "create-lease", args: ["--meta-hash", <meta_hash_hex>, "<skuUuid>:1[:<svcName>]", ...]})`.
-      Use `meta_hash_hex` from `build_manifest_preview` and `sku.uuid`
-      from `check_deployment_readiness`. For multi-service stacks,
-      append one `<skuUuid>:1:<svcName>` per service. For storage,
-      append `<storageSkuUuid>:1` (look up the storage SKU UUID via
-      `mcp__manifest-lease__get_skus` if you don't have it cached).
-      **When `custom_domain` is set on `deploy_app`**, the call broadcasts
-      TWO billing txes atomically (`create-lease` + `set-item-custom-domain`).
-      The single PreToolUse permission prompt covers both — the textual
-      DeploymentPlan + intent recap MUST itemize both fees and both txes
-      so the per-tx acknowledgement is in the textual flow. Estimate the
-      second tx by querying `mcp__manifest-lease__leases_by_tenant` for
-      the signer's first ACTIVE lease and running
-      `cosmos_estimate_fee({module: "billing", subcommand: "set-item-custom-domain", args: ["<existing_owned_lease_uuid>", "<fqdn-to-be-claimed>"[, "--service-name", "<svc>"]]})`.
-      The fee is essentially fixed for this msg type; using a
-      representative existing lease passes the keeper's ownership check.
-      If no representative lease exists, allowed degradation: pass
-      `--set-domain-tx-fee skipped` to render-deployment-plan.cjs (which
-      owns the canonical "not estimated" marker). The plan renders the
-      script's verbatim message; surface the gap explicitly in the recap.
-      Do NOT silently omit it.
-    - `close_lease`: call
-      `cosmos_estimate_fee({module: "billing", subcommand: "close-lease", args: ["<lease_uuid>"]})`.
-    - `fund_credit`: call
-      `cosmos_estimate_fee({module: "billing", subcommand: "fund-credit", args: ["<amount>"[, "--tenant", "<addr>"]]})`
-      where `<amount>` is the same string you'll pass to `fund_credit`
-      (e.g. `"10000000umfx"`).
-    - `set_item_custom_domain` (standalone, not via deploy_app): call
-      `cosmos_estimate_fee({module: "billing", subcommand: "set-item-custom-domain", args: ["<lease_uuid>", "<fqdn>"[, "--service-name", "<svc>"][, "--clear"]]})`.
-      For clear-only, omit the `<fqdn>` positional and pass `--clear`.
+- **For `fund_credit` (when invoked outside an orchestrated wrapper):**
+  Call
+  `cosmos_estimate_fee({module: "billing", subcommand: "fund-credit", args: ["<amount>"[, "--tenant", "<addr>"]]})`
+  where `<amount>` is the same string you'll pass to `fund_credit`
+  (e.g. `"10000000umfx"`). Show the returned `gasEstimate` and
+  `fee.amount` in human-readable form, then wait for confirmation.
 
-  If `cosmos_estimate_fee` itself fails, surface the error and ask the
-  user whether to proceed without an estimate — do NOT silently skip.
-  When you broadcast, pass the same `gas_multiplier` you used for the
-  estimate so the actual fee matches what was previewed.
-
-  Exception for `deploy_app` routed through `/manifest-agent:deploy-app`:
-  the orchestrator also calls `check_deployment_readiness` once during
-  authoring. Its `wallet_balances[]` field IS the bank balances and is
-  the canonical source for the DeploymentPlan `Wallet:` line — do not
-  re-query for that. The `cosmos_estimate_fee` call above is in
-  addition to the readiness check, not a replacement.
-
-- **For chain-broadcast tools with a different transaction shape**
-  (`convert_mfx_to_pwr`, which broadcasts a CosmWasm
-  `MsgExecuteContract` rather than a Cosmos SDK module/subcommand):
-  `cosmos_estimate_fee` does not apply. Describe the action concretely
-  (what, where, how much), query the agent's balance for the gas denom
-  (via `cosmos_query` with `module: "bank", subcommand: "balances"`),
-  show it so the user has an upper bound on potential loss, and note
-  that the exact fee will be determined at broadcast time. Then wait
-  for confirmation.
+- **For `convert_mfx_to_pwr`** (CosmWasm `MsgExecuteContract`, not a
+  Cosmos SDK module/subcommand): `cosmos_estimate_fee` does not apply.
+  Describe the action concretely (what, where, how much), query the
+  agent's balance for the gas denom (via `cosmos_query` with
+  `module: "bank", subcommand: "balances"`), show it so the user has
+  an upper bound on potential loss, note that the exact fee will be
+  determined at broadcast time, then wait for confirmation.
 
 - **For provider-side write tools that do NOT broadcast on-chain**
   (`restart_app`, `update_app`): these are HTTPS calls to the
@@ -133,6 +134,11 @@ the fact that the user asked for the action.
   PreToolUse permission prompt still fires; describe the action and
   wait for textual confirmation, but do not query balances or call
   `cosmos_estimate_fee`.
+
+If `cosmos_estimate_fee` itself fails, surface the error and ask the
+user whether to proceed without an estimate — do NOT silently skip.
+When you broadcast, pass the same `gas_multiplier` you used for the
+estimate so the actual fee matches what was previewed.
 
 ## Gas retry
 
@@ -146,40 +152,27 @@ fails, report both failures and stop. If `cosmos_estimate_fee` itself
 throws while preparing the retry, surface that error alongside the
 original OOG and do not broadcast.
 
-## Deployment plan format (deploy_app)
-
-Before broadcasting `mcp__manifest-fred__deploy_app`, render a
-`DeploymentPlan` block and wait for textual confirmation. The
-canonical block is produced by `scripts/render-deployment-plan.cjs`
-in this plugin — print that script's stdout verbatim. Do NOT compose
-the block by hand; the script owns the field names, ordering, and
-spacing so the agent and the runtime policy cannot drift.
-
-The `Provider` field is intentionally absent from the block: the
-chain selects a provider internally during `deploy_app`, so it is
-not knowable pre-broadcast. Print the resolved provider in the
-success output. On the typical happy path the orchestrator reads
-`provider_uuid` from the `deploy_app` response itself; on the
-fallback path where `deploy_app` returns without an active
-connection, it calls `wait_for_app_ready` and `app_status` to
-obtain it instead. The provider's catalog entry currently exposes
-no friendly `name` field, so the success output renders the raw
-UUID — `format-success.cjs` is the canonical renderer.
-
-Note that `check_deployment_readiness` does not validate the image
-registry allowlist — that check fires inside `deploy_app` at upload
-time. Surface the rejection verbatim if it happens, and offer
-`close_lease` if a lease was already created.
+The orchestrated agent tools handle gas retry internally for the
+wrapped flows; this section applies only to direct `cosmos_tx`
+invocations.
 
 ## Enforcement note
 
 Claude Code also runs a PreToolUse hook that forces a user permission
 prompt before any broadcast tool runs, regardless of pre-existing
 permission settings. That prompt is a safety net — it does not replace
-the textual fee summary and confirmation you must provide first. If
-the user sees a permission prompt for a broadcast tool without having
-first seen a fee estimate (for `cosmos_tx`) or an action + balance
-summary (for other tools) from you, you have violated this policy.
+the textual fee summary and confirmation you must provide first (for
+non-orchestrated broadcasts) or the elicitation flow the orchestrated
+wrappers drive (for the four orchestrated tools). The prompt fires on
+the **inner** broadcast tools, even when invoked through an
+orchestrated wrapper, so the user sees one prompt per inner tx. The
+orchestrated wrappers themselves do NOT trigger the hook — the
+matcher is anchored on the inner tool names.
+
+If the user sees a permission prompt for a broadcast tool without
+having first seen either an elicitation prompt (orchestrated tools)
+or a fee/balance summary (direct tx) from you, you have violated
+this policy.
 POLICY
 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
