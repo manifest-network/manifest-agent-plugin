@@ -81,6 +81,30 @@ test('policy heredoc is always emitted on stdout', () => {
   assert.match(r.stdout, /manifest-agent runtime transaction policy/);
 });
 
+test('policy describes the orchestrated tools as the preferred surface', () => {
+  // After the ENG-130 rewire the orchestrated wrappers own plan,
+  // confirmation, progress, and recovery. The runtime policy must
+  // (a) name them, (b) describe the elicitation contract, and
+  // (c) tell the agent NOT to compose its own plan/recap.
+  const r = runHook({ stdin: '' });
+  assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+  assert.match(r.stdout, /deploy_app_orchestrated/);
+  assert.match(r.stdout, /manage_domain_orchestrated/);
+  assert.match(r.stdout, /troubleshoot_deployment_orchestrated/);
+  assert.match(r.stdout, /close_lease_orchestrated/);
+  assert.match(r.stdout, /elicitInput|elicitation/i);
+});
+
+test('policy no longer references the deleted render-deployment-plan / format-success scripts', () => {
+  // The orchestrated tools own plan rendering inside agent-core's
+  // internals/render-* modules. The plugin-side renderers are gone
+  // post-rewire; the policy must not point at them.
+  const r = runHook({ stdin: '' });
+  assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /render-deployment-plan\.cjs/);
+  assert.doesNotMatch(r.stdout, /format-success\.cjs/);
+});
+
 test('exports MANIFEST_PLUGIN_ROOT, MANIFEST_PLUGIN_DATA, NODE_PATH to CLAUDE_ENV_FILE', () => {
   const r = runHook({ stdin: '' });
   assert.equal(r.status, 0);

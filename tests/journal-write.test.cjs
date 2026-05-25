@@ -207,3 +207,51 @@ test('errors when MANIFEST_PLUGIN_DATA is unset and the writer needs it', () => 
   assert.equal(r.status, 1);
   assert.match(r.stderr, /MANIFEST_PLUGIN_DATA/);
 });
+
+test('integration: orchestrated-tool records append cleanly and survive the secret-key denylist', () => {
+  // Post-ENG-130 every state-changing skill writes ONE tool_calls[] entry
+  // per orchestrated invocation. Confirm the four new reducer output
+  // shapes round-trip through the writer (no denylist false positives,
+  // no shape-validation rejections, no truncation under the 4 KiB cap).
+  withDataDir((dataDir) => {
+    const record = makeRecord({
+      skill: 'deploy-app',
+      plan_summary: 'deploy single spec via orchestrated tool, image=nginx:1.27',
+      tool_calls: [
+        {
+          tool: 'mcp__manifest-agent__deploy_app_orchestrated',
+          args_redacted: {
+            summary: {
+              format: 'single',
+              service_count: 1,
+              port_count: 1,
+              env_count: 1,
+              env_keys: ['LOG_LEVEL'],
+              images: ['nginx:1.27'],
+            },
+            customDomain: 'integ.example.com',
+            serviceName: 'web',
+            size: 'small',
+          },
+          outcome: 'ok',
+          result_summary: {
+            lease_uuid: '11111111-1111-4111-8111-111111111111',
+            url: 'https://integ.example.com',
+          },
+        },
+      ],
+      final_state: {
+        lease_uuid: '11111111-1111-4111-8111-111111111111',
+        custom_domain: 'integ.example.com',
+      },
+    });
+    const r = runWrite(dataDir, record, [], { MANIFEST_SESSION_ID: 'integ-sess' });
+    assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+    const line = readFileSync(r.stdout.trim(), 'utf8').trimEnd();
+    const parsed = JSON.parse(line);
+    assert.equal(parsed.outcome, 'success');
+    assert.equal(parsed.tool_calls[0].tool, 'mcp__manifest-agent__deploy_app_orchestrated');
+    assert.equal(parsed.tool_calls[0].args_redacted.customDomain, 'integ.example.com');
+    assert.deepEqual(parsed.tool_calls[0].args_redacted.summary.env_keys, ['LOG_LEVEL']);
+  });
+});

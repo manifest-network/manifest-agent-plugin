@@ -69,25 +69,46 @@
  *     generic args walks (defense in depth for unknown tools).
  *   - appendRecord(record) — validate + append, returns the journal file path.
  *   - redactArgs(toolName, rawArgs) — produce the `args_redacted` block for a
- *     `tool_calls[]` entry. Five tool-specific branches:
- *       (1) deploy_app / build_manifest_preview → reduce spec to
- *           summarize-spec output (env keys-only summary), preserve
- *           whitelisted top-level fields (customDomain, serviceName, size;
- *           snake_case aliases also accepted).
- *       (2) cosmos_tx / cosmos_estimate_fee → preserve {module,
+ *     `tool_calls[]` entry. Seven tool-specific branches:
+ *       (1) deploy_app / build_manifest_preview / deploy_app_orchestrated →
+ *           reduce spec to the in-process `summarizeSpec()` output (env
+ *           keys-only summary; defined below), preserve whitelisted
+ *           top-level fields (customDomain, serviceName, size;
+ *           snake_case aliases also accepted). The orchestrated form
+ *           ALWAYS uses the `{ spec: ... }` envelope; the legacy fred
+ *           tools tolerate either shape.
+ *       (2) manage_domain_orchestrated → normalize { action, lease_uuid?,
+ *           fqdn?, service_name? } to camelCase output keys (leaseUuid,
+ *           customDomain, serviceName). No secrets — every field is a
+ *           structural identifier or an action enum.
+ *       (3) troubleshoot_deployment_orchestrated /
+ *           close_lease_orchestrated → preserve { leaseUuid } only.
+ *       (4) cosmos_tx / cosmos_estimate_fee → preserve {module,
  *           subcommand, gas_multiplier (when set), args[]} verbatim —
  *           billing-module CLI args carry no secrets.
- *       (3) update_app → reduce the manifest field (canonical Fred-
+ *       (5) update_app → reduce the manifest field (canonical Fred-
  *           rendered string with embedded env values) via the same
- *           summarize-spec output; preserve lease_uuid.
- *       (4) Known-safe tools (lease module, fred provider tools other
+ *           `summarizeSpec()` helper; preserve lease_uuid.
+ *       (6) Known-safe tools (lease module, fred provider tools other
  *           than update_app, cosmwasm, read-only chain queries,
  *           faucet) → deep-walk: every field passes through except
  *           SUSPECT_KEY_PATTERN matches, which are replaced with
  *           `<redacted>` as defense in depth.
- *       (5) Unknown tool → best-effort walk: redact suspect keys + any
+ *       (7) Unknown tool → best-effort walk: redact suspect keys + any
  *           string longer than 256 chars. Audit-only; not a security
  *           boundary (see deepRedactByKeyAndLongStrings).
+ *
+ * **Per-tool fidelity trade-off (post-ENG-130).** Each orchestrated
+ * MCP tool dispatches multiple inner broadcast tools internally
+ * (deploy_app_orchestrated → cosmos_estimate_fee + deploy_app + maybe
+ * wait_for_app_ready + app_status + cleanup; manage_domain_orchestrated
+ * → estimate + set_item_custom_domain + leases_by_tenant verify). The
+ * skill prose can only see the OUTER tool call from its vantage point,
+ * so the journal record carries ONE `tool_calls[]` entry per orchestrated
+ * invocation rather than the pre-rewire ~8 per deploy-app run. The
+ * coarser trace is sufficient for audit/grep (intent, plan_summary,
+ * outcome, final_state, recovery_actions all stay populated) and is
+ * documented in CLAUDE.md as the canonical journal contract.
  *   - validateRecord(record) — throws if any key in the record matches the
  *     secret denylist anywhere in the tree.
  *   - todayUtcDate() — `YYYY-MM-DD` of the current UTC date.
@@ -131,9 +152,15 @@ const SECRET_KEY_DENYLIST = /(mnemonic|password|private[_-]?key|secret[_-]?key|a
 // deploy_app) happens via the spec-summarizer, not via this regex.
 const SUSPECT_KEY_PATTERN = /(MNEMONIC|PASSWORD|TOKEN|SECRET|API[_-]?KEY|PRIVATE[_-]?KEY)/i;
 
-// Mirrors summarize-spec.cjs in-process. Skills that already shell out to
-// summarize-spec.cjs for the deployment plan can keep doing so; this is for
-// callers (the journal layer) that want the same shape without a subprocess.
+// Env-keys-only spec summary used by the journal layer's per-tool
+// reducers. Returns `{ format, service_count, port_count, env_count,
+// env_keys, images }`. Mirrors the output shape the pre-ENG-130
+// standalone `summarize-spec.cjs` script produced; that script was
+// deleted in the rewire (orchestration-renderer; agent-core owns the
+// equivalent now), so this in-process helper is the surviving
+// canonical reducer. Skills MUST NOT shell out to it — they pipe
+// records through journal-write.cjs and the writer applies `redactArgs`
+// which in turn calls this function.
 function summarizeSpec(spec) {
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return null;
   const format = isStack(spec) ? 'stack' : 'single';
@@ -233,22 +260,32 @@ function redactArgs(toolName, rawArgs) {
   // The per-tool branches below assume rawArgs is a plain object (they
   // index by key). None of today's MCP tools pass non-object rawArgs,
   // but the header docstring promises long-string redaction in the
-  // unknown-tool fallback (branch 5 in the header docstring) — route any non-object input
+  // unknown-tool fallback (the final branch in the header docstring) — route any non-object input
   // through that fallback so a hypothetical future tool with a top-level
   // string or array doesn't bypass the >256-char check.
   if (typeof rawArgs !== 'object' || Array.isArray(rawArgs)) {
     return deepRedactByKeyAndLongStrings(rawArgs);
   }
 
-  // deploy_app / build_manifest_preview accept a structured spec (potentially
-  // carrying user env values). Reduce it to summarize-spec.cjs's shape.
+  // deploy_app / build_manifest_preview / deploy_app_orchestrated accept a
+  // structured spec (potentially carrying user env values). Reduce it via
+  // the in-process `summarizeSpec()` helper (env-keys-only summary; see
+  // its definition above). The orchestrated form ALWAYS uses the
+  // `{ spec: ... }` envelope per its MCP inputSchema; the legacy fred
+  // tools tolerate either bare-spec or wrapped. Sharing the branch avoids
+  // duplicating the summarizer + passthrough discipline across three tool
+  // names. `dataDir` is intentionally NOT in the passthrough — the
+  // orchestrated tool reads it from the server env (MANIFEST_AGENT_DATA_DIR)
+  // and does not accept a per-call override (see agent README finding #4),
+  // so it never appears in rawArgs.
   if (
     toolName === 'mcp__manifest-fred__deploy_app'
     || toolName === 'mcp__manifest-fred__build_manifest_preview'
+    || toolName === 'mcp__manifest-agent__deploy_app_orchestrated'
   ) {
-    // Tolerate two call shapes: a bare spec, or `{ spec: ... }`. Today's
-    // MCP call uses the bare-spec shape (deploy-app SKILL.md splats fields
-    // directly), but the wrapper shape is supported defensively.
+    // Tolerate two call shapes: a bare spec, or `{ spec: ... }`. The
+    // orchestrated tool uses the wrapper shape; legacy fred tools use
+    // bare-spec.
     const spec = rawArgs.spec && typeof rawArgs.spec === 'object' ? rawArgs.spec : rawArgs;
     const out = { summary: summarizeSpec(spec) };
     // Whitelisted passthrough fields. The SPEC stores camelCase
@@ -272,6 +309,38 @@ function redactArgs(toolName, rawArgs) {
         if (found !== undefined) { out[outKey] = found; break; }
       }
     }
+    return out;
+  }
+
+  // manage_domain_orchestrated: { action: "set"|"clear"|"lookup",
+  //   lease_uuid?, fqdn?, service_name? }. No secrets — every field is
+  //   a structural identifier or an action enum. Normalize to camelCase
+  //   on output (matches the deploy reducer's output convention so a
+  //   future journal-reader can join across tool calls without case
+  //   mapping). `fqdn` becomes `customDomain` in the journal because
+  //   that's the field name agent-core uses internally and the journal
+  //   already standardizes on it (see existing deploy_app reducer).
+  if (toolName === 'mcp__manifest-agent__manage_domain_orchestrated') {
+    const out = {};
+    if (typeof rawArgs.action === 'string') out.action = rawArgs.action;
+    const leaseUuid = rawArgs.leaseUuid ?? rawArgs.lease_uuid;
+    if (typeof leaseUuid === 'string') out.leaseUuid = leaseUuid;
+    const customDomain = rawArgs.customDomain ?? rawArgs.fqdn;
+    if (typeof customDomain === 'string') out.customDomain = customDomain;
+    const serviceName = rawArgs.serviceName ?? rawArgs.service_name;
+    if (typeof serviceName === 'string') out.serviceName = serviceName;
+    return out;
+  }
+
+  // troubleshoot_deployment_orchestrated + close_lease_orchestrated share
+  // a single-field shape: { lease_uuid: string }. No secrets.
+  if (
+    toolName === 'mcp__manifest-agent__troubleshoot_deployment_orchestrated'
+    || toolName === 'mcp__manifest-agent__close_lease_orchestrated'
+  ) {
+    const out = {};
+    const leaseUuid = rawArgs.leaseUuid ?? rawArgs.lease_uuid;
+    if (typeof leaseUuid === 'string') out.leaseUuid = leaseUuid;
     return out;
   }
 

@@ -24,7 +24,7 @@ CI does the same dance with `INSTALL_DIR=$HOME/.manifest-agent` (`.github/workfl
 To run a single test file:
 
 ```bash
-NODE_PATH="$INSTALL_DIR/node_modules" node --test tests/evaluate-readiness.test.cjs
+NODE_PATH="$INSTALL_DIR/node_modules" node --test tests/summarize-manifest.test.cjs
 ```
 
 ## Test file layout
@@ -38,7 +38,7 @@ tests/
 
 Conventions:
 
-- File name mirrors the script under test: `evaluate-readiness.cjs` → `tests/evaluate-readiness.test.cjs`. Underscore helpers get an underscore prefix in the test file too: `_io.cjs` → `tests/_io.test.cjs`.
+- File name mirrors the script under test: `summarize-manifest.cjs` → `tests/summarize-manifest.test.cjs`. Underscore helpers get an underscore prefix in the test file too: `_io.cjs` → `tests/_io.test.cjs`.
 - One `node:test` `test(...)` per assertion or tightly scoped behavior. Group with `describe` only when there's real shared setup; otherwise top-level `test` calls keep the failure output readable.
 - Tests should be hermetic: no real network, no real chain RPC, no real disk outside `os.tmpdir()`. Stub by passing fixture data on stdin or via `--*-file` flags pointing at tmpfiles.
 
@@ -54,7 +54,7 @@ Used for CLI entry-point scripts where the contract is the stdin/stdout/exit-cod
 
 ```js
 const { runScript } = require('./_subprocess.cjs');
-const result = runScript('evaluate-readiness.cjs', ['--gas-price', '0.001umfx'], stdinPayload);
+const result = runScript('journal-write.cjs', ['--dry-run'], JSON.stringify(record));
 // result === { status, stdout, stderr, json? }
 //   - status: process exit code
 //   - stdout / stderr: captured strings
@@ -80,10 +80,10 @@ Branch coverage checklist for a new test file:
 
 - [ ] Happy path (canonical input → expected output)
 - [ ] Each error/exit path the script can take (missing flag, invalid JSON, schema violation, etc.)
-- [ ] Each enumerated output classification, if the script is a classifier (e.g. `evaluate-readiness.cjs` has `ok` / `warn` / `block`)
+- [ ] Each enumerated output classification, if the script is a classifier (e.g. a hypothetical readiness evaluator with `ok` / `warn` / `block`; or `_journal.cjs#redactArgs`'s seven per-tool branches)
 - [ ] Boundary conditions for any threshold the script enforces (e.g. gas-price floor, FQDN length cap)
 
-For schema-evolving wrappers (`save-manifest.cjs` / `summarize-manifest.cjs`), include both:
+For schema-evolving wrappers (the post-deploy wrapper file written by `manifest-agent-core`'s `saveManifest()` and read by `summarize-manifest.cjs` / `list-saved-manifests.cjs`), include both:
 
 - A v(N) fixture asserting the new shape works.
 - A v(N-1) fixture asserting the reader still loads it (missing fields render as undefined, not throw).
@@ -106,27 +106,57 @@ node scripts/fetch-chain-registry.cjs
 # Generate a key (reads password from stdin)
 echo "test-password" | node scripts/gen-agent-key.cjs --prefix manifest
 
-# Run a classifier with a stdin fixture
-echo '{ "ok": true, "wallet_balances": [{ "denom": "umfx", "amount": "1000000" }] }' \
-  | node scripts/evaluate-readiness.cjs --gas-price 0.001umfx --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/testnet.json"
-
-# Render a deployment plan (stdout is the canonical block).
-# Reads a {summary, readiness} envelope on stdin; --tx-fee is the human-readable
-# string from humanize-fee.cjs (e.g. "0.0023 MFX"), NOT raw <amount><denom>.
+# Render a balance report with a fixture credit_balance response.
+# The fixture keys match the actual payload `render-balance.cjs` reads:
+# `balances` (wallet), `credits.{balances,available_balances}` (gross
+# + net credit), `current_balance` (live estimator), `spending_per_hour`,
+# `running_apps`, `hours_remaining`. Note that `running_apps` and
+# `hours_remaining` are STRINGS in the live-estimator response shape
+# (see scripts/render-balance.cjs lines 136-141) — passing them as
+# numbers silently degrades to "(unavailable)".
 echo '{
-  "summary": { "format": "single", "service_count": 1, "image": "docker.io/library/nginx:1.27" },
-  "readiness": { "wallet_balances": [{ "denom": "umfx", "amount": "1000000" }] }
-}' | node scripts/render-deployment-plan.cjs \
-  --meta-hash 0xabc... \
-  --image docker.io/library/nginx:1.27 \
-  --size <sku-id> \
-  --tx-gas 150000 \
-  --tx-fee "0.0023 MFX" \
-  --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/testnet.json"
+  "balances": [{ "denom": "umfx", "amount": "1000000" }],
+  "credits": {
+    "balances": [{ "denom": "umfx", "amount": "5000000" }],
+    "available_balances": [{ "denom": "umfx", "amount": "4500000" }]
+  },
+  "current_balance": [{ "denom": "umfx", "amount": "4500000" }],
+  "spending_per_hour": [{ "denom": "umfx", "amount": "10000" }],
+  "running_apps": "1",
+  "hours_remaining": "450"
+}' | node scripts/render-balance.cjs \
+      --address manifest1abc \
+      --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/testnet.json"
 
-# Test the MCP wrapper end-to-end (requires config.json)
+# Append a fixture journal record (uses --dry-run to skip the disk write)
+echo '{
+  "skill": "set-gas-price",
+  "active_chain": "testnet",
+  "signer_address": "manifest1abc",
+  "intent": "test record",
+  "plan_summary": "smoke",
+  "tool_calls": [],
+  "outcome": "success",
+  "final_state": {},
+  "errors": [],
+  "recovery_actions": []
+}' | node scripts/journal-write.cjs --dry-run
+
+# Test an MCP wrapper end-to-end (requires config.json)
 node scripts/start-server.cjs chain
+node scripts/start-server.cjs agent   # ENG-130 5th server
 ```
+
+## Testing the orchestrated flow
+
+Post-ENG-130 most orchestration logic lives in `@manifest-network/manifest-agent-core` (in the [`manifest-mcp-mono`](https://github.com/manifest-network/manifest-mcp-mono) repo, not this plugin). Plan rendering, fee itemization, classification, partial-success recovery, and verify-and-recover dispatch are all upstream. The plugin's tests cover only what stays here:
+
+- `tests/start-server.test.cjs` — the wrapper's env-var contract for the 5th server (`agent`), including the new `MANIFEST_AGENT_DATA_DIR` / `MANIFEST_CHAIN_DATA_FILE` / `MANIFEST_AGENT_FETCH_GUARDED` env vars.
+- `tests/_journal.test.cjs` + `tests/journal-write.test.cjs` — `redactArgs` reducers for the four orchestrated tools (`deploy_app_orchestrated`, `manage_domain_orchestrated`, `troubleshoot_deployment_orchestrated`, `close_lease_orchestrated`) plus the secret-key denylist + integration round-trip.
+- `tests/session-start.test.cjs` — the runtime policy heredoc references the orchestrated tools as the canonical confirmation surface (no longer mentions `render-deployment-plan.cjs` / `format-success.cjs`).
+- All read-only renderers (`tests/render-{balance,providers,releases}.test.cjs`), the journal (`tests/_journal.test.cjs`, `tests/journal-{read,write}.test.cjs`), the I/O primitives (`tests/_io.test.cjs`, `tests/_uuid.test.cjs`), the spec helpers (`tests/_spec.test.cjs`), the env merge (`tests/merge-env.test.cjs`), and the saved-manifest summarizer (`tests/summarize-manifest.test.cjs`).
+
+For end-to-end exercise of the orchestrated flow itself, see `manifest-mcp-mono`'s test suite. A live testnet smoke run from this plugin is in scope for ENG-130 #18 but optional pending wallet/credit availability.
 
 ## What CI runs
 
@@ -136,10 +166,10 @@ node scripts/start-server.cjs chain
 2. `bash -n` syntax check on every `scripts/*.sh`.
 3. `JSON.parse` on every tracked `.json` file.
 4. Version consistency: `package.json` and `.claude-plugin/plugin.json` must match.
-5. PreToolUse matcher: every alternative is `^...$`-anchored AND the matcher gates exactly the expected broadcast tools (no missing, no extra). Edit the expected list in `ci.yml` when adding/removing a broadcast tool.
+5. PreToolUse matcher: every alternative is `^...$`-anchored, the matcher gates exactly the expected broadcast tools (no missing, no extra), AND it does NOT accidentally match any of the `mcp__manifest-agent__*_orchestrated` wrapper tools. The negative-match list guards against double-prompt: the orchestrated wrappers dispatch the inner broadcast tools internally, which already trigger the hook on their own — a regex that matched both would prompt the user twice for one logical broadcast. Edit the expected list (and the negative-match list, if a new orchestrated tool ships) in `ci.yml` when the surface changes.
 6. SessionStart policy: `bash scripts/session-start.sh` must produce non-empty stdout that contains `cosmos_estimate_fee`.
-7. MCP binary presence: `manifest-mcp-{chain,lease,fred,cosmwasm}` are installed and executable.
+7. MCP binary presence: `manifest-mcp-{chain,lease,fred,cosmwasm,agent}` are installed and executable.
 8. `NODE_PATH` resolution: `@cosmjs/proto-signing` is reachable from the install dir.
-9. Unit tests: `node --test tests/*.test.cjs`.
+9. Unit tests: `node --test tests/*.test.cjs`. Post-ENG-130 the suite covers wrapper plumbing (`tests/start-server.test.cjs` — env-var contract for all five servers including `agent`), the journal layer (`tests/_journal.test.cjs` + `tests/journal-{read,write}.test.cjs` — including the four new orchestrated-tool reducers), the read-only renderers, the env merge, and the saved-manifest summarizer. Orchestration logic itself (plan rendering, classification, recovery dispatch) is tested upstream in `manifest-mcp-mono`.
 
 If you change the broadcast-tool surface, you must update `hooks/hooks.json`, the matcher's expected list in `ci.yml`, and the "Tools gated by the PreToolUse hook" list in `CLAUDE.md` — all in the same commit.
