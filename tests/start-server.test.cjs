@@ -71,7 +71,7 @@ function runWrapper(serverName, { data, extraEnv = {} } = {}) {
     MANIFEST_PLUGIN_DATA: data,
     ...extraEnv,
   };
-  const res = spawnSync('node', [SCRIPT, serverName], {
+  const res = spawnSync(process.execPath, [SCRIPT, serverName], {
     encoding: 'utf8',
     env,
     timeout: 10_000,
