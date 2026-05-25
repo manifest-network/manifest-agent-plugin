@@ -276,10 +276,11 @@ test('runBlock does NOT inject an empty NODE_PATH into the child when the parent
 // runBlock — network skip behavior
 // ---------------------------------------------------------------------------
 
-test('network block is skipped unless DOCS_CI_RUN_NETWORK is set', () => {
+test('network block is skipped when runNetwork is false', () => {
   const [block] = extractBlocks(md('<!-- docs-ci network -->', '```bash', 'echo net', '```'));
-  // ctx.runNetwork defaults from env (unset in the test runner) -> skipped.
-  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  // Pass runNetwork explicitly so the test is hermetic — it must not depend
+  // on whether DOCS_CI_RUN_NETWORK happens to be set in the runner's env.
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE, runNetwork: false });
   assert.equal(r.skipped, true);
   assert.equal(r.ok, true, 'a skipped block is not a failure');
 });
