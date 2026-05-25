@@ -141,8 +141,11 @@ STRINGS in the live-estimator response shape (see `scripts/render-balance.cjs`)
 — passing them as numbers, or using the wrong top-level keys, silently
 degrades the rendered output to "(unavailable)" rather than erroring. That
 exact drift (wrong payload keys) is what PR #9's R4b review caught; the
-`expect-not="(unavailable)"` directive on this block is what now catches it
-in CI.
+`expect-not="(unavailable)"` (credit-key drift) and `expect-not="(empty)"`
+(wallet-key drift) directives on this block are what now catch it in CI.
+(Caveat: `expect-not="(empty)"` assumes this funded-wallet fixture; if you
+copy the block to demonstrate an empty wallet, drop that directive or it
+will false-RED.)
 
 <!-- docs-ci expect="MFX" expect-not="(unavailable)" expect-not="(empty)" -->
 ```bash

@@ -229,6 +229,20 @@ function runBlock(block, ctx) {
       failures.push(`${loc}: expected non-empty stdout (default mode) — command produced none`);
     }
 
+    // Diagnostic hint: a Node MODULE_NOT_FOUND in a failed block almost
+    // always means deps aren't on the resolution path — the usual cause is a
+    // contributor running `npm run test:docs` without NODE_PATH set (the
+    // render-balance example needs ./humanize-denom.cjs; gen-agent-key needs
+    // @cosmjs/proto-signing). Point them at the setup rather than leaving a
+    // bare stack trace. Failure-message-only: never flips a pass to a fail.
+    if (failures.length > 0 && /Cannot find module/.test(stderr)) {
+      failures.push(
+        `${loc}: hint — "Cannot find module" usually means deps aren't resolvable; `
+        + 'set NODE_PATH to your install dir per docs/testing.md → "One-time setup" '
+        + '(CI sets it automatically).',
+      );
+    }
+
     return { ok: failures.length === 0, status, stdout, stderr, failures };
   } finally {
     rmSync(dataDir, { recursive: true, force: true });

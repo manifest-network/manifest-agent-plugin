@@ -203,6 +203,39 @@ test('RED (default mode): exit 0 but empty stdout fails', () => {
 });
 
 // ---------------------------------------------------------------------------
+// runBlock — NODE_PATH diagnostic hint (Finding C)
+// ---------------------------------------------------------------------------
+
+test('runBlock appends a NODE_PATH hint when a failed block stderr shows "Cannot find module"', () => {
+  // A contributor who forgets to set NODE_PATH gets a raw module-resolution
+  // error from an executed example (e.g. gen-agent-key needs
+  // @cosmjs/proto-signing). Surface a pointer at the setup docs instead of
+  // leaving them with a bare stack trace. Hermetic: just require a module
+  // that does not exist anywhere.
+  const [block] = extractBlocks(md(
+    '<!-- docs-ci -->',
+    '```bash',
+    "node -e \"require('totally-missing-module-xyz')\"",
+    '```',
+  ));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, false);
+  const msg = r.failures.join('\n');
+  assert.match(msg, /Cannot find module/, 'the raw module error is still surfaced');
+  assert.match(msg, /NODE_PATH/, 'a NODE_PATH hint is appended');
+  assert.match(msg, /One-time setup|docs\/testing\.md/, 'the hint points at the setup docs');
+});
+
+test('runBlock does NOT append the NODE_PATH hint for an ordinary failure (no module error)', () => {
+  // The hint must be specific to module-resolution failures, not noise on
+  // every failed block.
+  const [block] = extractBlocks(md('<!-- docs-ci expect="goodbye" -->', '```bash', 'echo hello', '```'));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, false);
+  assert.doesNotMatch(r.failures.join('\n'), /NODE_PATH/, 'no module error -> no NODE_PATH hint');
+});
+
+// ---------------------------------------------------------------------------
 // runBlock — network skip behavior
 // ---------------------------------------------------------------------------
 
