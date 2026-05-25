@@ -19,9 +19,9 @@ jobs:
       - name: Syntax-check CJS scripts
         run: |
           shopt -s nullglob
-          files=(scripts/*.cjs)
+          files=(scripts/*.cjs ci/*.cjs)
           if [ ${#files[@]} -eq 0 ]; then
-            echo "ERROR: no CJS scripts found in scripts/" >&2
+            echo "ERROR: no CJS scripts found in scripts/ or ci/" >&2
             exit 1
           fi
           for f in "${files[@]}"; do
@@ -115,6 +115,16 @@ jobs:
             console.log(`PreToolUse matcher gates the ${expected.size} expected tools, all anchored, and does NOT match the ${mustNotMatch.length} orchestrated wrappers`);
           '
 
+      - name: Verify PreToolUse policy completeness (matcher tools named in policy + CLAUDE.md parity)
+        # ENG-213 Check 2. Paired with the matcher-anchoring step above — both
+        # assert hooks.json / session-start.sh / CLAUDE.md integrity and need
+        # no runtime deps. Asserts every gated tool is named in the
+        # session-start.sh runtime policy (the R3 fix) AND that the CLAUDE.md
+        # "Tools gated by the PreToolUse hook" list set-equals the matcher
+        # (principle #6). See ci/policy-completeness.cjs for the matching
+        # contract and allowlist rules.
+        run: npm run test:policy-completeness
+
       - name: Verify session-start policy is emitted and references fee estimation
         run: |
           out=$(bash scripts/session-start.sh)
@@ -151,3 +161,14 @@ jobs:
         # test that requires() a runtime dep resolves the same way the
         # plugin's MCP wrapper does at runtime.
         run: NODE_PATH="$HOME/.manifest-agent/node_modules" node --test tests/*.test.cjs
+
+      - name: Verify executable docs (docs-ci)
+        # ENG-213 Check 1. Runs the `docs-ci`-tagged shell examples in
+        # docs/testing.md, each in an isolated tempdir, and asserts the
+        # documented expect/expect-not directives hold. MUST run after the
+        # "Install runtime deps" step: the render-balance example resolves
+        # ./humanize-denom.cjs and the gen-agent-key example needs
+        # @cosmjs/proto-signing, both via NODE_PATH (same as Run unit tests
+        # above). `network`-tagged blocks are inventoried-but-skipped unless
+        # DOCS_CI_RUN_NETWORK=1.
+        run: NODE_PATH="$HOME/.manifest-agent/node_modules" npm run test:docs
