@@ -144,7 +144,7 @@ exact drift (wrong payload keys) is what PR #9's R4b review caught; the
 `expect-not="(unavailable)"` directive on this block is what now catches it
 in CI.
 
-<!-- docs-ci expect="MFX" expect-not="(unavailable)" -->
+<!-- docs-ci expect="MFX" expect-not="(unavailable)" expect-not="(empty)" -->
 ```bash
 echo '{
   "balances": [{ "denom": "umfx", "amount": "1000000" }],
