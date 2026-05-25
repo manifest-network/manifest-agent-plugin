@@ -51,18 +51,21 @@ If `ACTION === "lookup"`, ask the user for the FQDN to look up. Then call:
 mcp__manifest-lease__lease_by_custom_domain({ custom_domain: <fqdn> })
 ```
 
-This is a direct call (not through `manage_domain_orchestrated`) to keep
-the read-only path as terse as possible — the orchestrated wrapper drives
-an elicitation flow designed for state-changing actions (fee estimation,
-intent confirm, on-chain verification), all of which is overhead for a
-pure chain query. (The wrapper itself is NOT PreToolUse-gated; the matcher
-in `hooks/hooks.json` is anchored on the inner broadcast tools, and CI
-asserts the wrapper tools don't accidentally match — see
-`.github/workflows/ci.yml`'s negative-match list. So the branch isn't
-about avoiding a permission prompt; it's about avoiding unnecessary
-elicitation ceremony.) Once `ENG-212` lands and splits lookup into its
-own orchestrated MCP tool (one that doesn't elicit), this branch
-collapses to the orchestrated form.
+This is a direct call rather than `manage_domain_orchestrated({action:
+"lookup", fqdn})` because the pre-rewire skill already used the direct
+form and the rewire took the minimum-change path. Both work correctly:
+`manage_domain_orchestrated`'s lookup sub-flow has an explicit
+elicitation-capability carve-out (the MCP wrapper skips
+`assertElicitationCapability` when `action === "lookup"`) and is
+functionally a pure chain query through `leaseByCustomDomain` — the
+same call this skill makes directly. No substantive design distinction
+supports one form over the other today; this branch is process drift,
+not design intent. Once `ENG-212` lands and splits lookup into its
+own orchestrated MCP tool, this branch collapses to that form — a
+contributor implementing ENG-212 should treat the collapse as pure
+cleanup, not as undoing a design choice. (See CLAUDE.md DECISION 5
+for the full discipline trail and the "wrong rationale + right design
+= silent failure" retro principle this rewrite operationalizes.)
 
 Render the response:
 - If the lease exists, surface `lease.uuid`, `lease.tenant`,
