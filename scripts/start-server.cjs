@@ -21,7 +21,7 @@ const { join } = require('node:path');
 const { spawn } = require('node:child_process');
 const { getDataDir } = require('./_io.cjs');
 
-const VALID_SERVERS = ['chain', 'lease', 'fred', 'cosmwasm'];
+const VALID_SERVERS = ['chain', 'lease', 'fred', 'cosmwasm', 'agent'];
 let AGENT_DIR;
 try {
   AGENT_DIR = getDataDir();
@@ -114,6 +114,30 @@ if (chain.faucetUrl) env.MANIFEST_FAUCET_URL = chain.faucetUrl;
 if (gasMultiplier) env.COSMOS_GAS_MULTIPLIER = String(gasMultiplier);
 if (agent?.keyFile) env.MANIFEST_KEY_FILE = agent.keyFile;
 if (agent?.keyPassword) env.MANIFEST_KEY_PASSWORD = agent.keyPassword;
+
+// --- Agent server: ENG-204 env contract ---
+// MANIFEST_AGENT_DATA_DIR: agent-core's saveManifest() writes to
+//   <dataDir>/manifests/<lease_uuid>.json. Setting it to AGENT_DIR makes
+//   agent-core write to the same $MANIFEST_PLUGIN_DATA/manifests/ tree
+//   the plugin's existing helpers (list-saved-manifests.cjs, etc.) read
+//   from — keeping v2/v3 wrappers cross-readable.
+// MANIFEST_CHAIN_DATA_FILE: denom-map humanization (the agent server's
+//   replacement for the old --chain-data-file flag the deleted renderers
+//   used). Points at the active chain's registry JSON.
+// MANIFEST_AGENT_FETCH_GUARDED: SSRF-guarded fetch toggle. The agent
+//   server defaults this to ON; we only forward it when the operator
+//   has explicitly set it in the parent shell, letting the package's
+//   default stand otherwise.
+// Gated on serverName === 'agent' so we don't pollute the other four
+// servers' env (they ignore unknown vars today, but limiting blast
+// radius keeps us defensive against future env-contract drift).
+if (serverName === 'agent') {
+  env.MANIFEST_AGENT_DATA_DIR = AGENT_DIR;
+  env.MANIFEST_CHAIN_DATA_FILE = join(AGENT_DIR, 'chains', `${activeChain}.json`);
+  if (process.env.MANIFEST_AGENT_FETCH_GUARDED !== undefined) {
+    env.MANIFEST_AGENT_FETCH_GUARDED = process.env.MANIFEST_AGENT_FETCH_GUARDED;
+  }
+}
 
 // Warn loudly when a testnet config pre-dates the faucetUrl field — otherwise
 // `request_faucet` silently fails to register and the user has no signal why.

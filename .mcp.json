@@ -19,6 +19,11 @@
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "cosmwasm"],
       "env": { "MANIFEST_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}" }
+    },
+    "manifest-agent": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/start-server.cjs", "agent"],
+      "env": { "MANIFEST_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}" }
     }
   }
 }
