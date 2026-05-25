@@ -1,0 +1,219 @@
+'use strict';
+
+/**
+ * Demonstrated-drift unit test for the executable-docs harness
+ * (`ci/docs-ci.cjs`, ENG-213 Check 1).
+ *
+ * This is the principle-#2 (ENG-214) red-green proof that the check
+ * actually FIRES on the bug class it claims to catch — not a guard that
+ * can't fail. Every assertion drives an exported pure function with
+ * SYNTHETIC fixture markdown + hermetic `echo`/`exit` commands (no plugin
+ * deps, no network), so the test is fast and self-contained.
+ *
+ * The canonical drift it proves catchable is the PR #9 R4b regression:
+ * `render-balance.cjs` reads `payload.balances` / `payload.credits`, but
+ * the docs example used `wallet_balances` / `credit`. Wrong keys →
+ * "(unavailable)" in the rendered output while the process still exits 0,
+ * so an exit-code-only check would pass. The `expect-not="(unavailable)"`
+ * directive is what catches it; the "RED (expect-not hit)" case below
+ * simulates exactly that sentinel.
+ */
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { join } = require('node:path');
+
+const { extractBlocks, parseDirectives, runBlock, seedDataDir } = require('../ci/docs-ci.cjs');
+
+const REPO_ROOT = join(__dirname, '..');
+// A label, not a real read — runBlock only uses it to build the
+// `<file>:<line>` location prefix in failure messages.
+const SOURCE = 'docs/testing.md';
+
+function md(...lines) {
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// extractBlocks — directive grammar
+// ---------------------------------------------------------------------------
+
+test('extractBlocks parses a bare marker directive + fence', () => {
+  const blocks = extractBlocks(md(
+    'Some prose.',
+    '',
+    '<!-- docs-ci -->',
+    '```bash',
+    'echo hello',
+    '```',
+    '',
+    'More prose.',
+  ));
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].lang, 'bash');
+  assert.equal(blocks[0].code, 'echo hello');
+  assert.deepEqual(blocks[0].directives, {
+    network: false,
+    allowNonzero: false,
+    expect: [],
+    expectNot: [],
+  });
+  // line points at the opening fence (1-based) for failure messages.
+  assert.equal(blocks[0].line, 4);
+});
+
+test('extractBlocks parses all directive tokens: network, repeated expect/expect-not, allow-nonzero', () => {
+  const blocks = extractBlocks(md(
+    '<!-- docs-ci network expect="a" expect-not="b" expect="c" allow-nonzero -->',
+    '```bash',
+    'echo hi',
+    '```',
+  ));
+  assert.equal(blocks.length, 1);
+  const d = blocks[0].directives;
+  assert.equal(d.network, true, 'network flag must be parsed');
+  assert.equal(d.allowNonzero, true, 'allow-nonzero flag must be parsed');
+  assert.deepEqual(d.expect, ['a', 'c'], 'expect is repeatable and order-preserving');
+  assert.deepEqual(d.expectNot, ['b'], 'expect-not is repeatable');
+});
+
+test('parseDirectives does not confuse expect-not with expect', () => {
+  const d = parseDirectives(' expect-not="(unavailable)" ');
+  assert.deepEqual(d.expect, [], 'expect-not="..." must NOT register as an expect');
+  assert.deepEqual(d.expectNot, ['(unavailable)']);
+});
+
+test('extractBlocks ignores fences with no preceding docs-ci directive', () => {
+  const blocks = extractBlocks(md(
+    '```bash',
+    'echo untagged',
+    '```',
+  ));
+  assert.equal(blocks.length, 0);
+});
+
+test('extractBlocks throws when a directive is not followed by a fence', () => {
+  assert.throws(
+    () => extractBlocks(md('<!-- docs-ci -->', 'just prose, no fence')),
+    /not followed by a fenced code block/,
+  );
+});
+
+test('extractBlocks throws on an unknown directive token (anti-typo / anti-lying-guard)', () => {
+  assert.throws(
+    () => extractBlocks(md('<!-- docs-ci expct="MFX" -->', '```bash', 'echo hi', '```')),
+    /Unknown docs-ci directive token/,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// runBlock — GREEN cases
+// ---------------------------------------------------------------------------
+
+test('GREEN: expect substring present', () => {
+  const [block] = extractBlocks(md('<!-- docs-ci expect="hello" -->', '```bash', 'echo hello', '```'));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, true, `failures: ${r.failures.join(' | ')}`);
+  assert.equal(r.status, 0);
+});
+
+test('GREEN: default mode (no directives) — exit 0 + non-empty stdout', () => {
+  const [block] = extractBlocks(md('<!-- docs-ci -->', '```bash', 'echo something', '```'));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, true, `failures: ${r.failures.join(' | ')}`);
+});
+
+test('GREEN: allow-nonzero lets a nonzero exit pass', () => {
+  const [block] = extractBlocks(md('<!-- docs-ci allow-nonzero -->', '```bash', 'echo boom; exit 3', '```'));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, true, `failures: ${r.failures.join(' | ')}`);
+  assert.equal(r.status, 3);
+});
+
+// ---------------------------------------------------------------------------
+// runBlock — RED cases (the principle-#2 proofs)
+// ---------------------------------------------------------------------------
+
+test('RED (expect miss): missing substring fails; message names the file:line + the substring', () => {
+  const [block] = extractBlocks(md('<!-- docs-ci expect="goodbye" -->', '```bash', 'echo hello', '```'));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, false);
+  const msg = r.failures.join('\n');
+  // Directive on line 1, fence opener on line 2 -> location names the fence.
+  assert.match(msg, /docs\/testing\.md:2/, 'failure message must carry the file:line ref');
+  assert.match(msg, /goodbye/, 'failure message must name the expected substring');
+});
+
+test('RED (expect-not hit): the R4b "(unavailable)" sentinel drift class', () => {
+  // Simulates render-balance.cjs drift: wrong payload keys make the
+  // renderer emit "(unavailable)" while still exiting 0. exit-code-only
+  // would miss it; expect-not catches it.
+  const [block] = extractBlocks(md(
+    '<!-- docs-ci expect-not="(unavailable)" -->',
+    '```bash',
+    'echo "- Burn rate: (unavailable) / hour"',
+    '```',
+  ));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, false, 'a block whose output contains the forbidden sentinel must FAIL');
+  assert.equal(r.status, 0, 'and it must fail despite a clean exit 0 — the whole point');
+  const msg = r.failures.join('\n');
+  assert.match(msg, /docs\/testing\.md:2/);
+  assert.match(msg, /\(unavailable\)/, 'failure message must name the forbidden substring');
+});
+
+test('RED (nonzero exit, default mode): nonzero without allow-nonzero fails', () => {
+  const [block] = extractBlocks(md('<!-- docs-ci -->', '```bash', 'echo oops; exit 1', '```'));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, false);
+  assert.equal(r.status, 1);
+  assert.match(r.failures.join('\n'), /docs\/testing\.md:2/);
+});
+
+test('RED (default mode): exit 0 but empty stdout fails', () => {
+  const [block] = extractBlocks(md('<!-- docs-ci -->', '```bash', 'true', '```'));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, false, 'default mode requires non-empty stdout');
+  assert.equal(r.status, 0);
+});
+
+// ---------------------------------------------------------------------------
+// runBlock — network skip behavior
+// ---------------------------------------------------------------------------
+
+test('network block is skipped unless DOCS_CI_RUN_NETWORK is set', () => {
+  const [block] = extractBlocks(md('<!-- docs-ci network -->', '```bash', 'echo net', '```'));
+  // ctx.runNetwork defaults from env (unset in the test runner) -> skipped.
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.skipped, true);
+  assert.equal(r.ok, true, 'a skipped block is not a failure');
+});
+
+test('network block runs when ctx.runNetwork is true', () => {
+  const [block] = extractBlocks(md('<!-- docs-ci network expect="net" -->', '```bash', 'echo net', '```'));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE, runNetwork: true });
+  assert.notEqual(r.skipped, true);
+  assert.equal(r.ok, true, `failures: ${r.failures.join(' | ')}`);
+});
+
+// ---------------------------------------------------------------------------
+// seedDataDir — offline render-balance fixture
+// ---------------------------------------------------------------------------
+
+test('seedDataDir writes a minimal chains/testnet.json with the MFX/PWR fee tokens', () => {
+  const { mkdtempSync, rmSync, readFileSync, existsSync } = require('node:fs');
+  const { tmpdir } = require('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'docs-ci-seed-'));
+  try {
+    seedDataDir(dir);
+    const p = join(dir, 'chains', 'testnet.json');
+    assert.ok(existsSync(p), 'chains/testnet.json must exist after seeding');
+    const data = JSON.parse(readFileSync(p, 'utf8'));
+    assert.ok(Array.isArray(data.feeTokens));
+    const symbols = data.feeTokens.map((t) => t.symbol);
+    assert.ok(symbols.includes('MFX'), 'seed must map umfx -> MFX so render-balance shows MFX offline');
+    assert.ok(symbols.includes('PWR'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

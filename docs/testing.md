@@ -92,28 +92,60 @@ For schema-evolving wrappers (the post-deploy wrapper file written by `manifest-
 
 Useful for debugging without standing up a full Claude session.
 
+The shell examples below are each self-contained and tagged for the
+executable-docs check (`npm run test:docs` — see "Executable doc examples
+(docs-ci)" further down). Under that check every tagged block runs in its
+own isolated tempdir: the harness points `MANIFEST_PLUGIN_DATA` at a fresh
+dir pre-seeded with a minimal `chains/testnet.json`, inherits `NODE_PATH`,
+and runs from the repo root. Run the one-time setup yourself only when
+exercising the commands by hand.
+
+### One-time setup
+
+<!-- docs-ci network -->
 ```bash
-# One-time setup
 export MANIFEST_PLUGIN_DATA="$HOME/.manifest-agent-dev"
 mkdir -p "$MANIFEST_PLUGIN_DATA"
 cp package.json "$MANIFEST_PLUGIN_DATA/"
 npm install --omit=dev --prefix "$MANIFEST_PLUGIN_DATA"
 export NODE_PATH="$MANIFEST_PLUGIN_DATA/node_modules"
+```
 
-# Fetch chain registry
+### Fetch chain registry
+
+<!-- docs-ci network -->
+```bash
 node scripts/fetch-chain-registry.cjs
+```
 
-# Generate a key (reads password from stdin)
-echo "test-password" | node scripts/gen-agent-key.cjs --prefix manifest
+### Generate a key
 
-# Render a balance report with a fixture credit_balance response.
-# The fixture keys match the actual payload `render-balance.cjs` reads:
-# `balances` (wallet), `credits.{balances,available_balances}` (gross
-# + net credit), `current_balance` (live estimator), `spending_per_hour`,
-# `running_apps`, `hours_remaining`. Note that `running_apps` and
-# `hours_remaining` are STRINGS in the live-estimator response shape
-# (see scripts/render-balance.cjs lines 136-141) — passing them as
-# numbers silently degrades to "(unavailable)".
+`gen-agent-key.cjs` mints a fresh 24-word wallet, encrypts it under a
+randomly generated password, and prints `{ address, keyfile, password,
+agentId }` as JSON on stdout (all human-readable logs go to stderr). It
+writes the encrypted keyfile under `$MANIFEST_PLUGIN_DATA/keys/`.
+
+<!-- docs-ci -->
+```bash
+node scripts/gen-agent-key.cjs --prefix manifest
+```
+
+### Render a balance report
+
+A fixture `credit_balance` response. The fixture keys match the actual
+payload `render-balance.cjs` reads: `balances` (wallet),
+`credits.{balances,available_balances}` (gross + net credit),
+`current_balance` (live estimator), `spending_per_hour`, `running_apps`,
+`hours_remaining`. Note that `running_apps` and `hours_remaining` are
+STRINGS in the live-estimator response shape (see `scripts/render-balance.cjs`)
+— passing them as numbers, or using the wrong top-level keys, silently
+degrades the rendered output to "(unavailable)" rather than erroring. That
+exact drift (wrong payload keys) is what PR #9's R4b review caught; the
+`expect-not="(unavailable)"` directive on this block is what now catches it
+in CI.
+
+<!-- docs-ci expect="MFX" expect-not="(unavailable)" -->
+```bash
 echo '{
   "balances": [{ "denom": "umfx", "amount": "1000000" }],
   "credits": {
@@ -127,8 +159,15 @@ echo '{
 }' | node scripts/render-balance.cjs \
       --address manifest1abc \
       --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/testnet.json"
+```
 
-# Append a fixture journal record (uses --dry-run to skip the disk write)
+### Append a fixture journal record
+
+Uses `--dry-run` to print the record that *would* be appended without
+touching disk.
+
+<!-- docs-ci -->
+```bash
 echo '{
   "skill": "set-gas-price",
   "active_chain": "testnet",
@@ -141,8 +180,14 @@ echo '{
   "errors": [],
   "recovery_actions": []
 }' | node scripts/journal-write.cjs --dry-run
+```
 
-# Test an MCP wrapper end-to-end (requires config.json)
+### Test an MCP wrapper end-to-end
+
+Requires a real `config.json` and blocks on the spawned MCP server, so it
+is intentionally NOT tagged for docs-ci.
+
+```bash
 node scripts/start-server.cjs chain
 node scripts/start-server.cjs agent   # ENG-130 5th server
 ```
