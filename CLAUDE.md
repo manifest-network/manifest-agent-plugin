@@ -96,6 +96,10 @@ This plugin codifies a split between deterministic operations (CJS scripts in `s
 
 The motivation: deterministic logic in prose accumulates LLM-paraphrasing drift across runs and can silently regress when models change. Scripts pin the contract — and the orchestrated tools take that discipline a step further, pinning the user-facing wording inside agent-core's `internals/render-*` modules.
 
+> *Hindsight from ENG-130*: when a rewire deletes helpers whose logic moves elsewhere AND inlines residual decode paths into prose on the grounds they're "trivial enums," the survivors are the ones that need the **most** discipline, not the least — they're now the only place the logic lives. If correctness depends on a chain-proto enum value, a wire-encoding detail, or any invariant a future agent-model could paraphrase wrong, it belongs in a tested CJS script.
+>
+> **Rule of thumb: delete orchestration; keep primitives.** Tier examples — primitives (small, type-narrow, testable invariants — keep): `_io.cjs`, `_uuid.cjs`, `_spec.cjs`, `decode-lease-state.cjs`. Orchestration (multi-step decision flows that LLMs can carry — delete and move into agent-core): `render-deployment-plan.cjs`, `classify-deploy-error.cjs`, `evaluate-readiness.cjs`. The PR #9 Copilot review caught a real instance of this failure mode: an inverted `LEASE_STATE_ACTIVE === 1` in inlined skill prose after the original `_lease-state.cjs` test was deleted. The primitive was restored.
+
 The enumeration above is illustrative; see "Scripts inventory" below for the full per-script catalog.
 
 ## Scripts inventory
