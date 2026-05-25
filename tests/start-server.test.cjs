@@ -59,8 +59,11 @@ function buildPluginData({ activeChain = 'testnet', faucetUrl, gasPrice = '0.025
 }
 
 // Run start-server.cjs with the given server name + plugin data dir + any
-// parent-env overrides. Returns { status, stdout, stderr } and cleans up
-// the data dir.
+// parent-env overrides. Returns { status, stdout, stderr }. Cleanup of
+// the data dir is the caller's responsibility — see `withData()`'s
+// finally block for the canonical pattern (every call site in this
+// file wraps `runWrapper(...)` in `withData(...)` so the dir gets torn
+// down even on assertion failure).
 function runWrapper(serverName, { data, extraEnv = {} } = {}) {
   const env = {
     PATH: process.env.PATH,
