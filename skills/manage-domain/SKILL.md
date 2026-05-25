@@ -52,9 +52,16 @@ mcp__manifest-lease__lease_by_custom_domain({ custom_domain: <fqdn> })
 ```
 
 This is a direct call (not through `manage_domain_orchestrated`) to keep
-the read-only path ungated — the orchestrated wrapper is broadcast-gated
-by the PreToolUse hook, which would incorrectly prompt for a chain query.
-Once `ENG-212` lands and splits lookup into its own MCP tool, this branch
+the read-only path as terse as possible — the orchestrated wrapper drives
+an elicitation flow designed for state-changing actions (fee estimation,
+intent confirm, on-chain verification), all of which is overhead for a
+pure chain query. (The wrapper itself is NOT PreToolUse-gated; the matcher
+in `hooks/hooks.json` is anchored on the inner broadcast tools, and CI
+asserts the wrapper tools don't accidentally match — see
+`.github/workflows/ci.yml`'s negative-match list. So the branch isn't
+about avoiding a permission prompt; it's about avoiding unnecessary
+elicitation ceremony.) Once `ENG-212` lands and splits lookup into its
+own orchestrated MCP tool (one that doesn't elicit), this branch
 collapses to the orchestrated form.
 
 Render the response:
