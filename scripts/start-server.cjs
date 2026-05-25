@@ -129,14 +129,24 @@ if (agent?.keyPassword) env.MANIFEST_KEY_PASSWORD = agent.keyPassword;
 //   has explicitly set it in the parent shell, letting the package's
 //   default stand otherwise.
 // Gated on serverName === 'agent' so we don't pollute the other four
-// servers' env (they ignore unknown vars today, but limiting blast
-// radius keeps us defensive against future env-contract drift).
+// servers' env. Defensive against future env-contract drift AND
+// against pollution from an operator's parent shell — the `else`
+// branch's explicit `delete` is the load-bearing line: the `env`
+// object was built via `{ ...process.env, ... }` above, so a parent-
+// shell-exported `MANIFEST_AGENT_DATA_DIR` would otherwise leak
+// into all four non-agent servers' envs regardless of what this
+// `if` block does. Limiting blast radius requires both ADD-when-agent
+// AND STRIP-when-not-agent.
 if (serverName === 'agent') {
   env.MANIFEST_AGENT_DATA_DIR = AGENT_DIR;
   env.MANIFEST_CHAIN_DATA_FILE = join(AGENT_DIR, 'chains', `${activeChain}.json`);
   if (process.env.MANIFEST_AGENT_FETCH_GUARDED !== undefined) {
     env.MANIFEST_AGENT_FETCH_GUARDED = process.env.MANIFEST_AGENT_FETCH_GUARDED;
   }
+} else {
+  delete env.MANIFEST_AGENT_DATA_DIR;
+  delete env.MANIFEST_CHAIN_DATA_FILE;
+  delete env.MANIFEST_AGENT_FETCH_GUARDED;
 }
 
 // Warn loudly when a testnet config pre-dates the faucetUrl field — otherwise

@@ -175,12 +175,69 @@ test('lease server does NOT receive the wrapper-computed agent env vars', () => 
     const got = parseEnvLines(r.stdout);
     // The wrapper only ADDS these under serverName === 'agent'. Confirm
     // they don't appear when the parent env didn't set them either.
-    // (The wrapper's `...process.env` spread will pass through any var
-    // the operator chooses to set in the parent shell — that's expected
-    // and consistent with how PATH / NODE_PATH / HOME etc. flow through.)
+    // (Parent-env values of these specific vars are STRIPPED for non-
+    // agent servers — see the "strips agent-only env vars" test below
+    // for the parent-env-set case.)
     assert.equal(got.MANIFEST_AGENT_DATA_DIR, undefined);
     assert.equal(got.MANIFEST_CHAIN_DATA_FILE, undefined);
     assert.equal(got.MANIFEST_AGENT_FETCH_GUARDED, undefined);
+  });
+});
+
+test('strips agent-only env vars (MANIFEST_AGENT_*, MANIFEST_CHAIN_DATA_FILE) from non-agent servers even when set in parent shell', () => {
+  // Regression for Copilot R4 finding: the wrapper builds env via
+  // `{ ...process.env, ... }` then conditionally ADDS agent-only vars
+  // under serverName === 'agent'. Without an explicit strip in the
+  // non-agent branch, parent-shell exports of these three vars leak
+  // into the chain / lease / fred / cosmwasm server envs.
+  //
+  // The strip is load-bearing for the "limit blast radius" framing in
+  // start-server.cjs's comment: future env-contract drift (e.g. a
+  // future manifest-mcp-chain that grows a MANIFEST_AGENT_DATA_DIR
+  // sensitivity) would silently break if an operator happened to
+  // export the var for an agent run and then started a chain server
+  // in the same shell.
+  const polluted = {
+    MANIFEST_AGENT_DATA_DIR: '/operator/exported/path',
+    MANIFEST_CHAIN_DATA_FILE: '/operator/exported/chain.json',
+    MANIFEST_AGENT_FETCH_GUARDED: '0',
+  };
+  for (const serverName of ['chain', 'lease', 'fred', 'cosmwasm']) {
+    withData((data) => {
+      const r = runWrapper(serverName, { data, extraEnv: polluted });
+      assert.equal(r.status, 0, `stderr from ${serverName}: ${r.stderr}`);
+      const got = parseEnvLines(r.stdout);
+      assert.equal(
+        got.MANIFEST_AGENT_DATA_DIR,
+        undefined,
+        `${serverName} server's env carried parent-set MANIFEST_AGENT_DATA_DIR=${got.MANIFEST_AGENT_DATA_DIR}; should have been stripped.`,
+      );
+      assert.equal(
+        got.MANIFEST_CHAIN_DATA_FILE,
+        undefined,
+        `${serverName} server's env carried parent-set MANIFEST_CHAIN_DATA_FILE=${got.MANIFEST_CHAIN_DATA_FILE}; should have been stripped.`,
+      );
+      assert.equal(
+        got.MANIFEST_AGENT_FETCH_GUARDED,
+        undefined,
+        `${serverName} server's env carried parent-set MANIFEST_AGENT_FETCH_GUARDED=${got.MANIFEST_AGENT_FETCH_GUARDED}; should have been stripped.`,
+      );
+    });
+  }
+  // Sanity-check: the agent server in the same parent-env still receives
+  // the values (computed-from-config for the first two, forwarded for
+  // the third) — the strip is non-agent-only.
+  withData((data) => {
+    const r = runWrapper('agent', { data, extraEnv: polluted });
+    assert.equal(r.status, 0, `stderr from agent: ${r.stderr}`);
+    const got = parseEnvLines(r.stdout);
+    // Wrapper computes MANIFEST_AGENT_DATA_DIR from AGENT_DIR — overrides
+    // the parent-set value rather than passing it through. Same for
+    // MANIFEST_CHAIN_DATA_FILE.
+    assert.equal(got.MANIFEST_AGENT_DATA_DIR, data);
+    assert.equal(got.MANIFEST_CHAIN_DATA_FILE, join(data, 'chains', 'testnet.json'));
+    // MANIFEST_AGENT_FETCH_GUARDED is forwarded from parent when set.
+    assert.equal(got.MANIFEST_AGENT_FETCH_GUARDED, '0');
   });
 });
 
