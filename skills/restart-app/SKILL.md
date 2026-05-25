@@ -75,28 +75,20 @@ Store the chosen UUID as `LEASE_UUID`.
 ## Step 2 — Show pre-restart context
 
 Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
-Read `chainState.state` as `STATE` (the chain may return either the
-integer form `2` or the canonical string `"LEASE_STATE_ACTIVE"`
-depending on the encoding path — handle both). The Cosmos lease
-enum (canonical, stable per ENG-158) is:
+Capture `chainState.state` as `STATE` (the chain may return integer,
+stringy-int, or canonical `LEASE_STATE_*` form depending on the
+encoding path). Decode via the canonical helper:
 
-```
-0: LEASE_STATE_UNSPECIFIED
-1: LEASE_STATE_PENDING
-2: LEASE_STATE_ACTIVE          ← only restart-eligible value
-3: LEASE_STATE_INSUFFICIENT_FUNDS
-4: LEASE_STATE_CLOSED
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state "$STATE" --json
 ```
 
-Inline the decode: `STATE === 2 || STATE === 'LEASE_STATE_ACTIVE'` is
-ACTIVE; bind that boolean as `IS_ACTIVE` for reuse below. Anything
-else (pending, closed, insufficient-funds, unspecified) is not
-restart-eligible.
+The script's stdout is `{"name":"<LEASE_STATE_*>","terminal":<bool>}`.
+Bind `STATE_NAME` to the `name` field. Restart is eligible iff
+`STATE_NAME === "LEASE_STATE_ACTIVE"`.
 
-Surface the lease's state name (`LEASE_STATE_ACTIVE` when `IS_ACTIVE`
-is true; the raw integer or string otherwise so the user can grep
-the enum), the response's `provision_status`, and (when present)
-`IMAGE` from the saved-manifest summary:
+Surface `STATE_NAME`, the response's `provision_status`, and (when
+present) `IMAGE` from the saved-manifest summary:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-manifest.cjs" --lease-uuid "$LEASE_UUID"
@@ -105,9 +97,9 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/summarize-manifest.cjs" --lease-uuid "$LEASE
 If the redacted summary starts with `(no saved manifest`, render
 `<IMAGE>` as `(unknown — no local record)`.
 
-If `IS_ACTIVE` is false, refuse and stop:
-> Lease `<LEASE_UUID>` has chain state `<STATE>` (not
-> LEASE_STATE_ACTIVE); `restart_app` requires an ACTIVE lease. Use
+If `STATE_NAME !== "LEASE_STATE_ACTIVE"`, refuse and stop:
+> Lease `<LEASE_UUID>` has chain state `<STATE_NAME>`;
+> `restart_app` requires an ACTIVE lease. Use
 > `/manifest-agent:deploy-app` to redeploy if the lease has closed,
 > or `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` to see
 > what state the lease is actually in.
@@ -152,28 +144,33 @@ automatically.
 ## Step 6 — Post-restart verification
 
 Re-call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`
-once. Capture the response; extract `chainState.state` as
-`POST_STATE` (int or string, same as Step 2), plus `provision_status`
-and `fail_count` for the provider-side narrative.
+once. Capture `chainState.state` as `POST_STATE` (same encoding
+ambiguity as Step 2), plus `provision_status` and `fail_count` for
+the provider-side narrative.
 
-Inline the state check using the same encoding-tolerant rule as Step 2:
-`POST_STATE === 2 || POST_STATE === 'LEASE_STATE_ACTIVE'` is ACTIVE
-(the canonical Cosmos lease enum; chain proto is stable per ENG-158).
-Bind that boolean as `POST_IS_ACTIVE`.
+Decode via the canonical helper (same script, same shape as Step 2):
 
-- **ACTIVE** (`POST_IS_ACTIVE === true`): surface `provision_status`
-  and `fail_count` from the `app_status` response in plain prose. If
-  `provision_status` looks healthy (`provisioned`, `running`, etc.),
-  tell the user the restart was accepted and the provider is bringing
-  the container back up. TLS / ingress can take a few seconds to
-  settle. If `provision_status` itself reports a failure even while
-  the chain state is ACTIVE, tell the user the chain registered the
-  restart but the provider reports `<provision_status>` (and
-  `fail_count: <n>`); suggest
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state "$POST_STATE" --json
+```
+
+Bind `POST_STATE_NAME` to the `name` field. Restart is healthy iff
+`POST_STATE_NAME === "LEASE_STATE_ACTIVE"`.
+
+- **ACTIVE** (`POST_STATE_NAME === "LEASE_STATE_ACTIVE"`): surface
+  `provision_status` and `fail_count` from the `app_status` response
+  in plain prose. If `provision_status` looks healthy (`provisioned`,
+  `running`, etc.), tell the user the restart was accepted and the
+  provider is bringing the container back up. TLS / ingress can take
+  a few seconds to settle. If `provision_status` itself reports a
+  failure even while the chain state is ACTIVE, tell the user the
+  chain registered the restart but the provider reports
+  `<provision_status>` (and `fail_count: <n>`); suggest
   `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` for a full
   report. Bind `JOURNAL_RECOVERY_ACTIONS = []`.
-- **Anything else** (regression — `POST_IS_ACTIVE === false`): tell the user:
-  > Restart was sent but the lease state is now `<POST_STATE>`
+- **Anything else** (regression — `POST_STATE_NAME !== "LEASE_STATE_ACTIVE"`):
+  tell the user:
+  > Restart was sent but the lease state is now `<POST_STATE_NAME>`
   > (not LEASE_STATE_ACTIVE). Run
   > `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` for a full
   > diagnostics report.
@@ -218,15 +215,14 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "tool": "mcp__manifest-fred__app_status",
       "args_redacted": { "lease_uuid": "<LEASE_UUID>" },
       "outcome": "ok",
-      "result_summary": { "post_state": <POST_STATE as JSON — int 2 or string "LEASE_STATE_ACTIVE" when healthy>, "post_state_active": <POST_IS_ACTIVE — true iff POST_STATE === 2 || POST_STATE === 'LEASE_STATE_ACTIVE'>, "post_provision_status": "<from Step 6 app_status response>", "fail_count": "<n>" }
+      "result_summary": { "post_state_name": "<POST_STATE_NAME from decode-lease-state.cjs in Step 6>", "post_provision_status": "<from Step 6 app_status response>", "fail_count": "<n>" }
     }
   ],
-  "outcome": "<'success' if Step 5 restart_app call did not throw AND POST_IS_ACTIVE; otherwise 'failed'. restart_app is a provider HTTPS call, NOT a Cosmos broadcast — see CLAUDE.md restart-app runtime policy note.>",
+  "outcome": "<'success' if Step 5 restart_app call did not throw AND POST_STATE_NAME === 'LEASE_STATE_ACTIVE'; otherwise 'failed'. restart_app is a provider HTTPS call, NOT a Cosmos broadcast — see CLAUDE.md restart-app runtime policy note.>",
   "final_state": {
     "lease_uuid": "<LEASE_UUID>",
     "action": "restart_app",
-    "post_state": <POST_STATE as JSON>,
-    "post_state_active": <POST_IS_ACTIVE>,
+    "post_state_name": "<POST_STATE_NAME>",
     "post_provision_status": "<from Step 6>",
     "fail_count": "<n>"
   },
