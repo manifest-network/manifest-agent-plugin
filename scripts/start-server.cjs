@@ -7,7 +7,7 @@
  * Reads $MANIFEST_PLUGIN_DATA/config.json, builds env vars, and spawns the
  * appropriate MCP server binary from $MANIFEST_PLUGIN_DATA/node_modules/.bin/.
  *
- * Usage: node start-server.cjs <chain|lease|fred|cosmwasm>
+ * Usage: node start-server.cjs <chain|lease|fred|cosmwasm|agent>
  */
 
 const major = parseInt(process.versions.node, 10);
