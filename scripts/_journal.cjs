@@ -71,11 +71,12 @@
  *   - redactArgs(toolName, rawArgs) — produce the `args_redacted` block for a
  *     `tool_calls[]` entry. Seven tool-specific branches:
  *       (1) deploy_app / build_manifest_preview / deploy_app_orchestrated →
- *           reduce spec to summarize-spec output (env keys-only summary),
- *           preserve whitelisted top-level fields (customDomain,
- *           serviceName, size; snake_case aliases also accepted). The
- *           orchestrated form ALWAYS uses the `{ spec: ... }` envelope;
- *           the legacy fred tools tolerate either shape.
+ *           reduce spec to the in-process `summarizeSpec()` output (env
+ *           keys-only summary; defined below), preserve whitelisted
+ *           top-level fields (customDomain, serviceName, size;
+ *           snake_case aliases also accepted). The orchestrated form
+ *           ALWAYS uses the `{ spec: ... }` envelope; the legacy fred
+ *           tools tolerate either shape.
  *       (2) manage_domain_orchestrated → normalize { action, lease_uuid?,
  *           fqdn?, service_name? } to camelCase output keys (leaseUuid,
  *           customDomain, serviceName). No secrets — every field is a
@@ -87,7 +88,7 @@
  *           billing-module CLI args carry no secrets.
  *       (5) update_app → reduce the manifest field (canonical Fred-
  *           rendered string with embedded env values) via the same
- *           summarize-spec output; preserve lease_uuid.
+ *           `summarizeSpec()` helper; preserve lease_uuid.
  *       (6) Known-safe tools (lease module, fred provider tools other
  *           than update_app, cosmwasm, read-only chain queries,
  *           faucet) → deep-walk: every field passes through except
@@ -151,9 +152,15 @@ const SECRET_KEY_DENYLIST = /(mnemonic|password|private[_-]?key|secret[_-]?key|a
 // deploy_app) happens via the spec-summarizer, not via this regex.
 const SUSPECT_KEY_PATTERN = /(MNEMONIC|PASSWORD|TOKEN|SECRET|API[_-]?KEY|PRIVATE[_-]?KEY)/i;
 
-// Mirrors summarize-spec.cjs in-process. Skills that already shell out to
-// summarize-spec.cjs for the deployment plan can keep doing so; this is for
-// callers (the journal layer) that want the same shape without a subprocess.
+// Env-keys-only spec summary used by the journal layer's per-tool
+// reducers. Returns `{ format, service_count, port_count, env_count,
+// env_keys, images }`. Mirrors the output shape the pre-ENG-130
+// standalone `summarize-spec.cjs` script produced; that script was
+// deleted in the rewire (orchestration-renderer; agent-core owns the
+// equivalent now), so this in-process helper is the surviving
+// canonical reducer. Skills MUST NOT shell out to it — they pipe
+// records through journal-write.cjs and the writer applies `redactArgs`
+// which in turn calls this function.
 function summarizeSpec(spec) {
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return null;
   const format = isStack(spec) ? 'stack' : 'single';
@@ -261,8 +268,9 @@ function redactArgs(toolName, rawArgs) {
   }
 
   // deploy_app / build_manifest_preview / deploy_app_orchestrated accept a
-  // structured spec (potentially carrying user env values). Reduce it to
-  // summarize-spec.cjs's shape. The orchestrated form ALWAYS uses the
+  // structured spec (potentially carrying user env values). Reduce it via
+  // the in-process `summarizeSpec()` helper (env-keys-only summary; see
+  // its definition above). The orchestrated form ALWAYS uses the
   // `{ spec: ... }` envelope per its MCP inputSchema; the legacy fred
   // tools tolerate either bare-spec or wrapped. Sharing the branch avoids
   // duplicating the summarizer + passthrough discipline across three tool
