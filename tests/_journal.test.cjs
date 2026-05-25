@@ -203,6 +203,201 @@ test('redactArgs preserves wrapper-shape passthrough fields at the top level', (
   assert.equal(out2.customDomain, 'inner.example.com');
 });
 
+// --------------------------------------------------------------------------
+// Orchestrated agent-server tool reducers (ENG-130).
+//
+// Four tools land on this branch:
+//   - deploy_app_orchestrated      → spec → summary, customDomain/serviceName/size
+//   - manage_domain_orchestrated   → action + leaseUuid + customDomain + serviceName
+//   - troubleshoot_deployment_orchestrated → leaseUuid only
+//   - close_lease_orchestrated     → leaseUuid only
+//
+// The journal carries ONE entry per orchestrated invocation (option-a
+// contract); inner-tool detail vanishes because skill prose can't see
+// it. The reducers here pin the camelCase output shape so adjacent
+// runs can't drift.
+// --------------------------------------------------------------------------
+
+test('redactArgs(deploy_app_orchestrated, ...) reduces spec to summary; env values absent', () => {
+  const SECRET = 'super-secret-orchestrated-postgres-password';
+  // The orchestrated tool always uses the `{ spec: ... }` wrapper shape.
+  const rawArgs = {
+    spec: {
+      services: {
+        web: {
+          image: 'ghcr.io/me/web:v3',
+          ports: { '80': {} },
+          env: {
+            DATABASE_URL: `postgres://user:${SECRET}@db/app`,
+            FEATURE_FLAG_X: 'true',
+          },
+        },
+      },
+      customDomain: 'orchestrated.example.com',
+      serviceName: 'web',
+      size: 'large',
+    },
+  };
+  const out = _journal.redactArgs('mcp__manifest-agent__deploy_app_orchestrated', rawArgs);
+  const json = JSON.stringify(out);
+  assert.ok(!json.includes(SECRET), 'env value MUST NOT appear in args_redacted');
+  // Env keys are safe and aid audit.
+  assert.ok(json.includes('DATABASE_URL'));
+  assert.ok(json.includes('FEATURE_FLAG_X'));
+  // Whitelisted passthrough fields preserved.
+  assert.equal(out.customDomain, 'orchestrated.example.com');
+  assert.equal(out.serviceName, 'web');
+  assert.equal(out.size, 'large');
+  assert.equal(out.summary.format, 'stack');
+  assert.equal(out.summary.service_count, 1);
+  assert.deepEqual(out.summary.env_keys, ['DATABASE_URL', 'FEATURE_FLAG_X']);
+  // dataDir is NOT a per-call arg post-finding #4 — verify it's not
+  // accidentally captured even if the caller passes one.
+  const outWithStrayDataDir = _journal.redactArgs('mcp__manifest-agent__deploy_app_orchestrated', {
+    spec: { image: 'nginx:1.27', port: 80 },
+    dataDir: '/some/path',
+  });
+  assert.equal(outWithStrayDataDir.dataDir, undefined);
+});
+
+test('redactArgs(manage_domain_orchestrated, set) normalizes snake_case input to camelCase output', () => {
+  // The MCP inputSchema uses snake_case (lease_uuid, fqdn, service_name).
+  // The journal output should be canonical camelCase so a future reader
+  // can grep across tools without case-mapping.
+  const out = _journal.redactArgs('mcp__manifest-agent__manage_domain_orchestrated', {
+    action: 'set',
+    lease_uuid: '11111111-1111-4111-8111-111111111111',
+    fqdn: 'app.example.com',
+    service_name: 'web',
+  });
+  assert.equal(out.action, 'set');
+  assert.equal(out.leaseUuid, '11111111-1111-4111-8111-111111111111');
+  assert.equal(out.customDomain, 'app.example.com');
+  assert.equal(out.serviceName, 'web');
+  // No snake_case keys leak through.
+  assert.equal(out.lease_uuid, undefined);
+  assert.equal(out.fqdn, undefined);
+  assert.equal(out.service_name, undefined);
+});
+
+test('redactArgs(manage_domain_orchestrated, clear) omits fqdn (not part of clear args)', () => {
+  const out = _journal.redactArgs('mcp__manifest-agent__manage_domain_orchestrated', {
+    action: 'clear',
+    lease_uuid: '22222222-2222-4222-8222-222222222222',
+    service_name: 'db',
+  });
+  assert.equal(out.action, 'clear');
+  assert.equal(out.leaseUuid, '22222222-2222-4222-8222-222222222222');
+  assert.equal(out.serviceName, 'db');
+  // No FQDN to capture on clear.
+  assert.equal(out.customDomain, undefined);
+});
+
+test('redactArgs(manage_domain_orchestrated, lookup) carries fqdn but no leaseUuid', () => {
+  // Lookup is reverse-FQDN-to-lease; the user doesn't know the lease.
+  const out = _journal.redactArgs('mcp__manifest-agent__manage_domain_orchestrated', {
+    action: 'lookup',
+    fqdn: 'who-owns-this.example.com',
+  });
+  assert.equal(out.action, 'lookup');
+  assert.equal(out.customDomain, 'who-owns-this.example.com');
+  assert.equal(out.leaseUuid, undefined);
+  assert.equal(out.serviceName, undefined);
+});
+
+test('redactArgs(manage_domain_orchestrated) accepts camelCase input (defensive)', () => {
+  // Tolerate the camelCase form too — keeps the reducer aligned with the
+  // deploy_app reducer's alias discipline so the journal record looks the
+  // same whether the skill assembled args by hand or splat from a spec.
+  const out = _journal.redactArgs('mcp__manifest-agent__manage_domain_orchestrated', {
+    action: 'set',
+    leaseUuid: '33333333-3333-4333-8333-333333333333',
+    customDomain: 'camel.example.com',
+    serviceName: 'web',
+  });
+  assert.equal(out.action, 'set');
+  assert.equal(out.leaseUuid, '33333333-3333-4333-8333-333333333333');
+  assert.equal(out.customDomain, 'camel.example.com');
+  assert.equal(out.serviceName, 'web');
+});
+
+test('redactArgs(troubleshoot_deployment_orchestrated) preserves leaseUuid only', () => {
+  const out = _journal.redactArgs('mcp__manifest-agent__troubleshoot_deployment_orchestrated', {
+    lease_uuid: '44444444-4444-4444-8444-444444444444',
+  });
+  assert.deepEqual(out, { leaseUuid: '44444444-4444-4444-8444-444444444444' });
+});
+
+test('redactArgs(close_lease_orchestrated) preserves leaseUuid only', () => {
+  const out = _journal.redactArgs('mcp__manifest-agent__close_lease_orchestrated', {
+    lease_uuid: '55555555-5555-4555-8555-555555555555',
+  });
+  assert.deepEqual(out, { leaseUuid: '55555555-5555-4555-8555-555555555555' });
+});
+
+test('redactArgs for the four orchestrated tools tolerates non-object rawArgs via unknown-tool fallback', () => {
+  // None of the orchestrated MCP tools pass non-object args today (their
+  // inputSchemas are all `z.object`-shaped), but the per-tool branches
+  // index by key so a non-object input would crash without the fallback
+  // routing. Verify the existing top-level array/string redirector still
+  // catches them.
+  const longSecret = 'Z'.repeat(300);
+  for (const tool of [
+    'mcp__manifest-agent__deploy_app_orchestrated',
+    'mcp__manifest-agent__manage_domain_orchestrated',
+    'mcp__manifest-agent__troubleshoot_deployment_orchestrated',
+    'mcp__manifest-agent__close_lease_orchestrated',
+  ]) {
+    assert.equal(_journal.redactArgs(tool, longSecret), '<redacted-long-string>');
+    // Bare arrays route through the fallback too.
+    const arrOut = _journal.redactArgs(tool, [{ api_token: 'leak' }]);
+    assert.equal(arrOut[0].api_token, '<redacted>');
+  }
+});
+
+test('orchestrated-tool args_redacted shapes pass validateRecord', () => {
+  // SECRET_KEY_DENYLIST applies to the WHOLE record tree, not just args.
+  // Run each reducer's output through validateRecord embedded in a real
+  // record to confirm none of the output field names (action, leaseUuid,
+  // customDomain, serviceName) trip the denylist.
+  const orchestratedToolCalls = [
+    {
+      tool: 'mcp__manifest-agent__deploy_app_orchestrated',
+      args_redacted: _journal.redactArgs('mcp__manifest-agent__deploy_app_orchestrated', {
+        spec: { image: 'nginx:1.27', port: 80, env: { LOG_LEVEL: 'info' } },
+        customDomain: 'app.example.com',
+        size: 'small',
+      }),
+      outcome: 'ok',
+    },
+    {
+      tool: 'mcp__manifest-agent__manage_domain_orchestrated',
+      args_redacted: _journal.redactArgs('mcp__manifest-agent__manage_domain_orchestrated', {
+        action: 'set',
+        lease_uuid: '11111111-1111-4111-8111-111111111111',
+        fqdn: 'app.example.com',
+      }),
+      outcome: 'ok',
+    },
+    {
+      tool: 'mcp__manifest-agent__troubleshoot_deployment_orchestrated',
+      args_redacted: _journal.redactArgs('mcp__manifest-agent__troubleshoot_deployment_orchestrated', {
+        lease_uuid: '22222222-2222-4222-8222-222222222222',
+      }),
+      outcome: 'ok',
+    },
+    {
+      tool: 'mcp__manifest-agent__close_lease_orchestrated',
+      args_redacted: _journal.redactArgs('mcp__manifest-agent__close_lease_orchestrated', {
+        lease_uuid: '33333333-3333-4333-8333-333333333333',
+      }),
+      outcome: 'ok',
+    },
+  ];
+  const record = makeRecord({ tool_calls: orchestratedToolCalls });
+  assert.doesNotThrow(() => _journal.validateRecord(record));
+});
+
 test('redactArgs(cosmos_estimate_fee, ...) preserves billing-module CLI args verbatim', () => {
   const out = _journal.redactArgs('mcp__manifest-chain__cosmos_estimate_fee', {
     module: 'billing',
