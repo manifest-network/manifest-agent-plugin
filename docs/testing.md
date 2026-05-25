@@ -106,9 +106,25 @@ node scripts/fetch-chain-registry.cjs
 # Generate a key (reads password from stdin)
 echo "test-password" | node scripts/gen-agent-key.cjs --prefix manifest
 
-# Render a balance report with a fixture credit_balance response
-echo '{ "wallet_balances": [{ "denom": "umfx", "amount": "1000000" }], "credit": null }' \
-  | node scripts/render-balance.cjs \
+# Render a balance report with a fixture credit_balance response.
+# The fixture keys match the actual payload `render-balance.cjs` reads:
+# `balances` (wallet), `credits.{balances,available_balances}` (gross
+# + net credit), `current_balance` (live estimator), `spending_per_hour`,
+# `running_apps`, `hours_remaining`. Note that `running_apps` and
+# `hours_remaining` are STRINGS in the live-estimator response shape
+# (see scripts/render-balance.cjs lines 136-141) — passing them as
+# numbers silently degrades to "(unavailable)".
+echo '{
+  "balances": [{ "denom": "umfx", "amount": "1000000" }],
+  "credits": {
+    "balances": [{ "denom": "umfx", "amount": "5000000" }],
+    "available_balances": [{ "denom": "umfx", "amount": "4500000" }]
+  },
+  "current_balance": [{ "denom": "umfx", "amount": "4500000" }],
+  "spending_per_hour": [{ "denom": "umfx", "amount": "10000" }],
+  "running_apps": "1",
+  "hours_remaining": "450"
+}' | node scripts/render-balance.cjs \
       --address manifest1abc \
       --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/testnet.json"
 
