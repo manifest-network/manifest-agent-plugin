@@ -188,7 +188,13 @@ function runBlock(block, ctx) {
       env: {
         ...process.env,
         MANIFEST_PLUGIN_DATA: dataDir,
-        NODE_PATH: process.env.NODE_PATH || '',
+        // Inherit NODE_PATH untouched: `...process.env` already carries it
+        // when set, and when unset we must NOT inject `NODE_PATH=''` — a
+        // spurious empty var that differs from the natural unset state. (It
+        // doesn't mask the module-not-found hint — empty and absent are
+        // equivalent for Node resolution — but passing a bogus empty env var
+        // to every example block is wrong on its face.)
+        ...(process.env.NODE_PATH ? { NODE_PATH: process.env.NODE_PATH } : {}),
       },
     });
     const status = res.status;

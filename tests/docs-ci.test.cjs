@@ -236,6 +236,43 @@ test('runBlock does NOT append the NODE_PATH hint for an ordinary failure (no mo
 });
 
 // ---------------------------------------------------------------------------
+// runBlock — NODE_PATH env-shape propagation (Copilot R1, finding 1)
+// ---------------------------------------------------------------------------
+
+// A block that reports whether the CHILD process sees NODE_PATH as a real
+// value, an empty string, or absent — the only clean way to observe the env
+// runBlock builds for the spawned command.
+const NP_PROBE = "node -e \"console.log('NP=' + (process.env.NODE_PATH===undefined ? 'ABSENT' : JSON.stringify(process.env.NODE_PATH)))\"";
+
+test('runBlock passes the parent NODE_PATH through to the child when set', () => {
+  const saved = process.env.NODE_PATH;
+  process.env.NODE_PATH = '/known/test/path';
+  try {
+    const [block] = extractBlocks(md('<!-- docs-ci -->', '```bash', NP_PROBE, '```'));
+    const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+    assert.match(r.stdout, /NP="\/known\/test\/path"/);
+  } finally {
+    if (saved === undefined) delete process.env.NODE_PATH; else process.env.NODE_PATH = saved;
+  }
+});
+
+test('runBlock does NOT inject an empty NODE_PATH into the child when the parent has none', () => {
+  // RED-GREEN anchor for the fix: the old `NODE_PATH: process.env.NODE_PATH || ''`
+  // forced NODE_PATH="" on the child (a spurious empty var that contradicts the
+  // ...process.env inheritance). The child must instead see NODE_PATH ABSENT,
+  // exactly as if runBlock weren't touching it.
+  const saved = process.env.NODE_PATH;
+  delete process.env.NODE_PATH;
+  try {
+    const [block] = extractBlocks(md('<!-- docs-ci -->', '```bash', NP_PROBE, '```'));
+    const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+    assert.match(r.stdout, /NP=ABSENT/);
+  } finally {
+    if (saved === undefined) delete process.env.NODE_PATH; else process.env.NODE_PATH = saved;
+  }
+});
+
+// ---------------------------------------------------------------------------
 // runBlock — network skip behavior
 // ---------------------------------------------------------------------------
 
