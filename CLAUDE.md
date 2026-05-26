@@ -104,7 +104,7 @@ The enumeration above is illustrative; see "Scripts inventory" below for the ful
 
 ## Review-discipline hindsight (ENG-130 + ENG-213)
 
-Two consecutive PRs ([#9](https://github.com/manifest-network/manifest-agent-plugin/pull/9) ENG-130 — 6 Copilot review rounds; [#10](https://github.com/manifest-network/manifest-agent-plugin/pull/10) ENG-213 — 5 Copilot review rounds) plus their in-team critique cycles surfaced seven review-discipline principles worth carrying forward. The "delete orchestration; keep primitives" hindsight in the Scripts-vs-prose blockquote above is the first; the rest follow. Each principle: **rule**, **why** (worked example), **how to apply**.
+Two consecutive PRs ([#9](https://github.com/manifest-network/manifest-agent-plugin/pull/9) ENG-130 — 6 Copilot review rounds; [#10](https://github.com/manifest-network/manifest-agent-plugin/pull/10) ENG-213 — 5 Copilot review rounds) plus their in-team critique cycles surfaced eight review-discipline principles worth carrying forward. The "delete orchestration; keep primitives" hindsight in the Scripts-vs-prose blockquote above is the first; the seven additional principles follow below. Each: **rule**, **why** (worked example), **how to apply**.
 
 ### Test discipline
 
