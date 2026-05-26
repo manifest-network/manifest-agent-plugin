@@ -94,7 +94,7 @@ When you land a fix that corrects a prose pattern (a wrong rationale, a stale re
 
 **Reviewer's half:** when verifying a sweep-class fix, independently run the same grep. Don't trust the commit's stated coverage. The PR #9 R6 propagation gap (a wrong rationale fixed at two of three sites; QA caught the third) demonstrated that either discipline alone misses what the pair catches.
 
-This is principle #6 in [`CLAUDE.md`](CLAUDE.md) "Review-discipline hindsight". See also principle #5 (reference by structural role, not by index) for the related anti-pattern of `_journal.cjs:263` carrying a stale "branch 5" reference after the docstring grew to seven branches.
+This is principle #6 in [`CLAUDE.md`](CLAUDE.md) "Review-discipline hindsight". See also principle #5 (reference by structural role, not by index) for the related anti-pattern of `_journal.cjs`'s `redactArgs` non-object routing comment carrying a stale "branch 5" reference after the header docstring grew to seven branches (fixed in commit `dec2cf1`).
 
 ## Multi-agent team coordination
 

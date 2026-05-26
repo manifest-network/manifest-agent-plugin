@@ -97,7 +97,7 @@ A regression test that exists but doesn't fire on its negative-injection check m
 1. Inject the mutation the test is meant to catch (revert the fix, flip an enum value, drop a directive).
 2. Run the test; confirm it fails with a message that names the violated invariant.
 3. Revert; confirm it passes.
-4. Commit the test with a `git log` message that names the mutation it was red-green'd against, so a future contributor can audit the guarantee.
+4. Commit the test with a commit body that names the mutation it was red-green'd against, so a future contributor can audit the guarantee.
 
 **Worked examples from ENG-213** (`tests/docs-ci.test.cjs` + `tests/policy-completeness.test.cjs`):
 
