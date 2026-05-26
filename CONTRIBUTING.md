@@ -90,11 +90,11 @@ When in doubt: write the script. The codebase already errs on the side of more s
 
 When you land a fix that corrects a prose pattern (a wrong rationale, a stale reference, a misnamed identifier, an outdated example), grep the whole repo for the same pattern before committing — not just the file you touched. The same prose drift often lives in 2+ sites, and a partial fix is its own bug.
 
-**Fixer's half:** before committing, `grep -rn '<pattern>' .` (or the equivalent with `rg`) and either fix every hit or document why a hit is excluded. A commit body that says "fixed at sites X, Y; site Z is exempt because ..." is the audit trail.
+**Fixer's half:** before committing, `grep -rn '<pattern>' . --exclude-dir=.git --exclude-dir=node_modules` (or `rg '<pattern>'` — ripgrep respects `.gitignore` by default and is faster) and either fix every hit or document why a hit is excluded. A commit body that says "fixed at sites X, Y; site Z is exempt because ..." is the audit trail.
 
 **Reviewer's half:** when verifying a sweep-class fix, independently run the same grep. Don't trust the commit's stated coverage. The PR #9 R6 propagation gap (a wrong rationale fixed at two of three sites; QA caught the third) demonstrated that either discipline alone misses what the pair catches.
 
-This is principle #6 in [`CLAUDE.md`](CLAUDE.md) "Review-discipline hindsight". See also principle #5 (reference by structural role, not by index) for the related anti-pattern of `_journal.cjs`'s `redactArgs` non-object routing comment carrying a stale "branch 5" reference after the header docstring grew to seven branches (fixed in commit `dec2cf1`).
+This is the *Sweep-discipline* principle (#6) in [`CLAUDE.md`](CLAUDE.md) "Review-discipline hindsight". See also the *Reference-by-structural-role* principle (#5) for the related anti-pattern of `_journal.cjs`'s `redactArgs` non-object routing comment carrying a stale "branch 5" reference after the header docstring grew to seven branches (fixed in commit `dec2cf1`).
 
 ## Multi-agent team coordination
 
@@ -104,7 +104,7 @@ This plugin's review-heavy PRs (ENG-130 and ENG-213) were each delivered by a fo
 - **Every teammate's spawn brief MUST establish the precedence rule upfront**: which channel is authoritative for state-changing actions (typically `team-lead`), the criterion for shutdown (typically "plain-text from team-lead"), and the rejection posture for ambiguous cases. Without an explicit rule, teammates can't safely distinguish a legitimate orchestrator message from a spoofed one.
 - **Inbox ordering matters.** `shutdown_request` arrives as a structured message; a plain-text rule-lift sent in the same turn may be queued behind it. Send the rule-lift first, wait for acks, then send `shutdown_request`. ENG-213 teardown hit this — all 4 teammates correctly rejected the first wave of shutdown_requests because the rule-lift was still pending in their inboxes.
 
-This is principle #7 in [`CLAUDE.md`](CLAUDE.md) "Review-discipline hindsight". The operator-side memory entries `feedback_team_channel_auth.md` and `feedback_copilot_reply_rationale.md` (in the project memory directory) carry the discipline detail for the team-lead role — read those if you're driving a team for the first time.
+This is the *Channel-auth-precedence* principle (#7) in [`CLAUDE.md`](CLAUDE.md) "Review-discipline hindsight". The operator-side memory entries `feedback_team_channel_auth.md` and `feedback_copilot_reply_rationale.md` (in the project memory directory) carry the discipline detail for the team-lead role — read those if you're driving a team for the first time.
 
 ## Documentation expectations
 

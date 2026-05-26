@@ -90,7 +90,7 @@ For schema-evolving wrappers (the post-deploy wrapper file written by `manifest-
 
 ## Regression tests for documentation invariants
 
-A regression test that exists but doesn't fire on its negative-injection check manufactures false confidence — reviewers (human + AI) treat it as a guard when it isn't one. This is principle #2 in [`../CLAUDE.md`](../CLAUDE.md) "Review-discipline hindsight" and the most common failure mode caught by Copilot review on this repo. The drift-guard recursion corollary (a tool that catches drift can itself drift) compounds it: every drift guard needs its own drift guard.
+A regression test that exists but doesn't fire on its negative-injection check manufactures false confidence — reviewers (human + AI) treat it as a guard when it isn't one. This is the *Test-that-lies-about-coverage* principle (#2) in [`../CLAUDE.md`](../CLAUDE.md) "Review-discipline hindsight" and the most common failure mode caught by Copilot review on this repo. The drift-guard recursion corollary (a tool that catches drift can itself drift) compounds it: every drift guard needs its own drift guard.
 
 **Red-green before trusting.** Every regression test must be watched fail on the exact bug it claims to catch before merging:
 
@@ -234,8 +234,9 @@ code did Y, which structural review didn't surface. They live in `ci/` (not
 `scripts/`, since they're CI tooling rather than plugin runtime) and each
 ships with a demonstrated-drift unit test under `tests/` that proves the
 check actually fires on the bug class it targets (a guard you haven't
-watched fail is not yet a guard — see [`../CLAUDE.md`](../CLAUDE.md)
-"Review-discipline hindsight" principle #2).
+watched fail is not yet a guard — see the *Test-that-lies-about-coverage*
+principle (#2) in [`../CLAUDE.md`](../CLAUDE.md) "Review-discipline
+hindsight").
 
 ### Executable doc examples (docs-ci)
 
@@ -304,10 +305,11 @@ the "One-time setup" block above (the `render-balance` example resolves
 3. **RED-GREEN it before trusting it.** Mutate the underlying code or the
    example so the documented behavior breaks, confirm `npm run test:docs`
    fails with a clear message, then revert. A directive you haven't watched
-   fail is not yet a guard — see [`../CLAUDE.md`](../CLAUDE.md)
-   "Review-discipline hindsight" principle #2 and the "Regression tests for
-   documentation invariants" section above for the worked examples.
-   `tests/docs-ci.test.cjs` pins this for the harness itself.
+   fail is not yet a guard — see the *Test-that-lies-about-coverage*
+   principle (#2) in [`../CLAUDE.md`](../CLAUDE.md) "Review-discipline
+   hindsight" and the "Regression tests for documentation invariants"
+   section above for the worked examples. `tests/docs-ci.test.cjs` pins
+   this for the harness itself.
 
 `docs/scripts.md` has no copy-pasteable examples today, so it isn't targeted;
 the harness is file-parameterized (`node ci/docs-ci.cjs <file>`) and can
@@ -318,8 +320,8 @@ target it later.
 `ci/policy-completeness.cjs` treats the `hooks/hooks.json` PreToolUse matcher
 as the source of truth and asserts the gated-tool enumeration hasn't drifted
 across the sites that restate it. It closes the R3 gap (a tool in the matcher
-but missing from the runtime policy) and, per ENG-214 principle #6, sweeps
-every site carrying the same enumeration.
+but missing from the runtime policy) and, per ENG-214's *Sweep-discipline*
+principle (#6), sweeps every site carrying the same enumeration.
 
 **What it asserts:**
 
@@ -368,7 +370,7 @@ allowlist — it must match exactly.
 3. `JSON.parse` on every tracked `.json` file.
 4. Version consistency: `package.json` and `.claude-plugin/plugin.json` must match.
 5. PreToolUse matcher: every alternative is `^...$`-anchored, the matcher gates exactly the expected broadcast tools (no missing, no extra), AND it does NOT accidentally match any of the `mcp__manifest-agent__*_orchestrated` wrapper tools. The negative-match list guards against double-prompt: the orchestrated wrappers dispatch the inner broadcast tools internally, which already trigger the hook on their own — a regex that matched both would prompt the user twice for one logical broadcast. Edit the expected list (and the negative-match list, if a new orchestrated tool ships) in `ci.yml` when the surface changes.
-6. PreToolUse policy completeness (`npm run test:policy-completeness` → `ci/policy-completeness.cjs`): every matcher-gated tool is named in the `scripts/session-start.sh` runtime policy (the R3 fix), AND the `CLAUDE.md` "Tools gated by the PreToolUse hook" list set-equals the matcher (principle #6). See "Doc/code drift checks" above for the matching contract and allowlist rules.
+6. PreToolUse policy completeness (`npm run test:policy-completeness` → `ci/policy-completeness.cjs`): every matcher-gated tool is named in the `scripts/session-start.sh` runtime policy (the R3 fix), AND the `CLAUDE.md` "Tools gated by the PreToolUse hook" list set-equals the matcher (the *Sweep-discipline* principle, #6). See "Doc/code drift checks" above for the matching contract and allowlist rules.
 7. SessionStart policy: `bash scripts/session-start.sh` must produce non-empty stdout that contains `cosmos_estimate_fee`.
 8. MCP binary presence: `manifest-mcp-{chain,lease,fred,cosmwasm,agent}` are installed and executable.
 9. `NODE_PATH` resolution: `@cosmjs/proto-signing` is reachable from the install dir.

@@ -5,9 +5,10 @@
  * PreToolUse policy-completeness check (ENG-213 Check 2).
  *
  * Closes the PR #9 R3 gap (a tool present in the PreToolUse matcher but
- * missing from the runtime-policy heredoc) AND — per ENG-214 principle #6
- * (sweep ALL sites with the same enumeration) — machine-enforces that the
- * gated-tool list stays in sync across the doc sites that restate it.
+ * missing from the runtime-policy heredoc) AND — per ENG-214's
+ * Sweep-discipline principle (#6, sweep ALL sites with the same
+ * enumeration) — machine-enforces that the gated-tool list stays in sync
+ * across the doc sites that restate it.
  *
  * SOURCE OF TRUTH: the `hooks/hooks.json` PreToolUse matcher.
  *
@@ -23,10 +24,11 @@
  *          false RED on a clean repo.
  *        - plain substring on the short name WRONGLY matches inside
  *          `deploy_app_orchestrated` → a lying guard that stays green after
- *          the real mention is deleted (ENG-214 #2).
+ *          the real mention is deleted (the Test-that-lies-about-coverage
+ *          principle, ENG-214 #2).
  *      The ALLOW_MISSING_FROM_POLICY allowlist applies to this assertion.
  *
- *   2. CLAUDE.md gated-tools list parity (principle #6). The "Tools gated by
+ *   2. CLAUDE.md gated-tools list parity (Sweep-discipline principle, #6). The "Tools gated by
  *      the PreToolUse hook" bullet list in CLAUDE.md must set-equal the
  *      matcher's full names (no missing, no extra). No allowlist — the doc
  *      list must match exactly.
