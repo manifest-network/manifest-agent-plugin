@@ -1,0 +1,457 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * Executable-docs check (ENG-213 Check 1).
+ *
+ * Extracts the shell examples in a Markdown file that are explicitly
+ * marked for execution, runs each in an isolated tempdir, and asserts
+ * the documented expectations hold. This closes the doc/code drift class
+ * Copilot caught on PR #9 (R4b): a worked example in docs/testing.md used
+ * the wrong `render-balance.cjs` payload keys, so the rendered output
+ * showed "(unavailable)" while the process still exited 0 — invisible to
+ * an exit-code-only check. The `expect-not="(unavailable)"` directive is
+ * what catches that.
+ *
+ * Usage:
+ *   node ci/docs-ci.cjs docs/testing.md
+ *
+ * File-parameterized so it can target any doc later (docs/scripts.md has
+ * no copy-pasteable examples today, so it is out of scope for now).
+ *
+ * ## Directive grammar (HTML-comment, immediately preceding the fence)
+ *
+ * A block is opted in by an HTML comment that occupies its OWN LINE at
+ * column 0 (no leading indentation, nothing after `-->`), whose next
+ * non-blank line MUST open a fenced code block. The column-0 / whole-line
+ * requirement is deliberate: it lets prose ELSEWHERE in the doc mention or
+ * illustrate a `<!-- docs-ci ... -->` directive (inline in a sentence, or
+ * inside an indented example block) without that mention being extracted
+ * and executed. The comment is invisible in rendered Markdown (clean
+ * published doc) but carries structured assertion metadata a fence
+ * info-string can't, and is grep-able (`grep -n docs-ci docs/testing.md`):
+ *
+ *   <!-- docs-ci -->                  marker; run the next fence.
+ *   network                           skip unless env DOCS_CI_RUN_NETWORK=1
+ *                                     (inventoried-but-skipped: documents
+ *                                     intent rather than silently omitting).
+ *   expect="<substr>"                 repeatable; stdout MUST contain it.
+ *   expect-not="<substr>"             repeatable; stdout MUST NOT contain it.
+ *   allow-nonzero                     don't fail on a nonzero exit (for
+ *                                     examples that demonstrate errors).
+ *
+ * Default (no expect / expect-not): assert exit 0 AND non-empty stdout.
+ *
+ * ## Isolation
+ *
+ * Each block runs in its own fresh tempdir with:
+ *   MANIFEST_PLUGIN_DATA=<tmp>   (seeded with a minimal chains/testnet.json
+ *                                 so the render-balance example resolves
+ *                                 denom symbols offline)
+ *   NODE_PATH=<inherited>        (so CI's $HOME/.manifest-agent/node_modules
+ *                                 resolves @cosmjs/* etc.; locally you set
+ *                                 it per docs/testing.md's setup section)
+ *   cwd = repo root              (so `node scripts/...` resolves)
+ * The tempdir is removed after each block. Per-block, not shared — matches
+ * the hermetic-test convention (no real disk outside os.tmpdir()).
+ *
+ * Exit: 0 if every non-skipped block passed; 1 otherwise (or on a parse
+ * error in the directive grammar).
+ */
+
+const { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } = require('node:fs');
+const { join } = require('node:path');
+const { tmpdir } = require('node:os');
+const { spawnSync } = require('node:child_process');
+
+// Minimal chain-registry fixture for offline denom -> symbol humanization.
+// Shape matches the `feeTokens[]` array render-balance.cjs / humanize-denom.cjs
+// read (confirmed against tests/render-balance.test.cjs). Kept inline to
+// honor docs/testing.md's "no tests/fixtures/ dir" convention.
+const SEED_CHAIN = {
+  feeTokens: [
+    { denom: 'umfx', symbol: 'MFX' },
+    { denom: 'factory/manifest1xxx/upwr', symbol: 'PWR' },
+  ],
+};
+
+const KNOWN_FLAGS = new Set(['network', 'allow-nonzero']);
+
+// Per-block wall-clock cap so a hung example (infinite loop, a command
+// waiting on stdin) fails the run instead of stalling CI. 120s is generous:
+// the slowest legit block is the network-tagged `npm install` (skipped in CI;
+// 120s clears it in normal cache state). If a local DOCS_CI_RUN_NETWORK=1 run
+// ever hits the wall, a per-tag override is a follow-up.
+const SPAWN_TIMEOUT_MS = 120_000;
+
+/**
+ * Parse a directive comment body (everything after `docs-ci`) into a
+ * structured `{ network, allowNonzero, expect[], expectNot[] }`.
+ * Throws on an unrecognized token so a typo (`expct=`) FAILS loudly rather
+ * than silently degrading the block to default mode (anti-lying-guard).
+ */
+function parseDirectives(body) {
+  const expect = [...body.matchAll(/expect="([^"]*)"/g)].map((m) => m[1]);
+  const expectNot = [...body.matchAll(/expect-not="([^"]*)"/g)].map((m) => m[1]);
+  // An empty/whitespace expect or expect-not is a lying guard in opposite
+  // directions: `stdout.includes("")` is always true, so expect="" always
+  // passes and expect-not="" always "fails". Reject both loudly.
+  for (const val of expect) {
+    if (val.trim() === '') {
+      throw new Error('docs-ci directive: expect="" (empty or whitespace) always passes — invalid');
+    }
+  }
+  for (const val of expectNot) {
+    if (val.trim() === '') {
+      throw new Error('docs-ci directive: expect-not="" (empty or whitespace) always fails — invalid');
+    }
+  }
+  // Strip the key="value" tokens so only bare flags remain to validate.
+  // expect-not first (longer key) so the expect strip can't clip it.
+  const stripped = body
+    .replace(/expect-not="[^"]*"/g, ' ')
+    .replace(/expect="[^"]*"/g, ' ');
+  let network = false;
+  let allowNonzero = false;
+  for (const tok of stripped.split(/\s+/).filter(Boolean)) {
+    if (tok === 'network') network = true;
+    else if (tok === 'allow-nonzero') allowNonzero = true;
+    else if (!KNOWN_FLAGS.has(tok)) {
+      throw new Error(`Unknown docs-ci directive token: "${tok}"`);
+    }
+  }
+  return { network, allowNonzero, expect, expectNot };
+}
+
+/**
+ * Extract every docs-ci-tagged code block from Markdown text.
+ * Returns [{ lang, code, directives, line }] where `line` is the 1-based
+ * line number of the opening fence (used in failure messages).
+ */
+function extractBlocks(md) {
+  const lines = md.split('\n');
+  const blocks = [];
+  for (let i = 0; i < lines.length; i++) {
+    // Anchored: the directive must be the WHOLE line at column 0. This keeps
+    // inline mentions in prose, and indented illustrative examples, from
+    // being picked up as runnable blocks (the contributor docs show a
+    // `<!-- docs-ci ... -->` example, and that example must not execute).
+    const dm = lines[i].match(/^<!--\s*docs-ci\b(.*?)-->\s*$/);
+    if (!dm) continue;
+    const directives = parseDirectives(dm[1]);
+    // The directive's next non-blank line MUST open a fence.
+    let j = i + 1;
+    while (j < lines.length && lines[j].trim() === '') j++;
+    if (j >= lines.length || !/^\s*```/.test(lines[j])) {
+      throw new Error(
+        `docs-ci directive on line ${i + 1} is not followed by a fenced code block`,
+      );
+    }
+    const langMatch = lines[j].match(/^\s*```(\S*)/);
+    const lang = langMatch ? langMatch[1] : '';
+    const codeLines = [];
+    let k = j + 1;
+    while (k < lines.length && !/^\s*```\s*$/.test(lines[k])) {
+      codeLines.push(lines[k]);
+      k++;
+    }
+    if (k >= lines.length) {
+      throw new Error(
+        `docs-ci directive on line ${i + 1} opens an unterminated code fence`,
+      );
+    }
+    blocks.push({ lang, code: codeLines.join('\n'), directives, line: j + 1 });
+    i = k; // resume scanning after the closing fence
+  }
+  return blocks;
+}
+
+/** Seed an isolated MANIFEST_PLUGIN_DATA dir with the offline chain fixture. */
+function seedDataDir(dir) {
+  const chainsDir = join(dir, 'chains');
+  mkdirSync(chainsDir, { recursive: true });
+  writeFileSync(join(chainsDir, 'testnet.json'), JSON.stringify(SEED_CHAIN, null, 2), 'utf8');
+}
+
+function snippet(text, maxLines = 12) {
+  const out = (text || '').split('\n').slice(0, maxLines).join('\n');
+  return out.length ? out : '(no output)';
+}
+
+/**
+ * Run one extracted block in an isolated tempdir and evaluate its
+ * directives. Returns { ok, status, stdout, stderr, failures[], skipped? }.
+ *
+ * ctx: { repoRoot, sourceFile, runNetwork? }
+ *   - repoRoot   cwd for the command (so `node scripts/...` resolves)
+ *   - sourceFile label used in the `<file>:<line>` failure prefix
+ *   - runNetwork override for the network gate (defaults from env)
+ */
+function runBlock(block, ctx) {
+  const { repoRoot, sourceFile = 'doc' } = ctx;
+  const d = block.directives;
+  const loc = `${sourceFile}:${block.line}`;
+  const runNetwork = ctx.runNetwork !== undefined
+    ? ctx.runNetwork
+    : process.env.DOCS_CI_RUN_NETWORK === '1';
+
+  if (d.network && !runNetwork) {
+    return { ok: true, skipped: true, status: null, stdout: '', stderr: '', failures: [] };
+  }
+
+  const dataDir = mkdtempSync(join(tmpdir(), 'docs-ci-'));
+  seedDataDir(dataDir);
+  try {
+    // `-e` aborts on the first failing command and `-o pipefail` makes a
+    // pipeline fail if any stage fails — so a multi-command block whose
+    // earlier command/pipeline-stage fails but whose last command succeeds
+    // can't lie green (the same ENG-213 antipattern as the zero-blocks
+    // guard). `-u` (nounset) is deliberately omitted: examples legitimately
+    // use `${VAR:-default}`. Examples that intentionally tolerate a nonzero
+    // exit use the `allow-nonzero` directive.
+    const res = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', block.code], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: SPAWN_TIMEOUT_MS,
+      env: {
+        ...process.env,
+        MANIFEST_PLUGIN_DATA: dataDir,
+        // Inherit NODE_PATH untouched: `...process.env` already carries it
+        // when set, and when unset we must NOT inject `NODE_PATH=''` — a
+        // spurious empty var that differs from the natural unset state. (It
+        // doesn't mask the module-not-found hint — empty and absent are
+        // equivalent for Node resolution — but passing a bogus empty env var
+        // to every example block is wrong on its face.)
+        ...(process.env.NODE_PATH ? { NODE_PATH: process.env.NODE_PATH } : {}),
+      },
+    });
+    const failures = evaluateResult(res, d, loc);
+    return {
+      ok: failures.length === 0,
+      status: res.status,
+      stdout: res.stdout || '',
+      stderr: res.stderr || '',
+      failures,
+    };
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Pure failure-classification for a spawnSync result against a block's
+ * directives. Extracted from runBlock so the branches — spawn-error vs
+ * exit-status especially — are unit-testable with synthetic result objects
+ * (a real `bash -c` with a missing inner command exits 127 and never
+ * populates `res.error`, so the spawn-error branch is otherwise unreachable
+ * from an integration test).
+ *
+ * `res` is `{ error, status, stdout, stderr }` (the spawnSync shape).
+ * Returns a `failures[]` array; empty means the block passed.
+ */
+function evaluateResult(res, directives, loc) {
+  const d = directives;
+  const status = res.status;
+  const stdout = res.stdout || '';
+  const stderr = res.stderr || '';
+  const failures = [];
+  const hasExpectations = d.expect.length > 0 || d.expectNot.length > 0;
+
+  // A spawn failure or timeout sets res.error with status null. Classify it,
+  // then SHORT-CIRCUIT: stdout is empty either way, so the exit-status check
+  // (`null !== 0` would misfire) and the expect/expect-not loops would only
+  // pile on noise. A spawnSync timeout carries `code: 'ETIMEDOUT'` (+ signal
+  // SIGTERM) — surface that distinctly from a generic launch failure.
+  if (res.error) {
+    if (res.error.code === 'ETIMEDOUT') {
+      failures.push(
+        `${loc}: command exceeded ${SPAWN_TIMEOUT_MS / 1000}s timeout (hung command or interactive prompt?)`,
+      );
+    } else {
+      failures.push(`${loc}: failed to spawn command — ${res.error.message}`);
+    }
+    return failures;
+  }
+
+  // Reached only when res.error is null (spawn-error/timeout returned above).
+  // A signal kill gives status null with a signal set — special-case it FIRST
+  // so `null !== 0` doesn't misreport "command exited null". status===null is
+  // unconditional (no allow-nonzero override): a signal kill of an example
+  // block always signals a real problem.
+  if (status === null) {
+    failures.push(
+      `${loc}: command terminated by signal ${res.signal || '<unknown>'}\n`
+      + `  stderr: ${snippet(stderr)}`,
+    );
+  } else if (status !== 0 && !d.allowNonzero) {
+    failures.push(
+      `${loc}: command exited ${status} (expected 0; add \`allow-nonzero\` if intended)\n`
+      + `  stderr: ${snippet(stderr)}`,
+    );
+  }
+
+  for (const sub of d.expect) {
+    if (!stdout.includes(sub)) {
+      failures.push(
+        `${loc}: expected stdout to contain "${sub}" — got:\n  ${snippet(stdout).replace(/\n/g, '\n  ')}`,
+      );
+    }
+  }
+  for (const sub of d.expectNot) {
+    if (stdout.includes(sub)) {
+      failures.push(
+        `${loc}: expected stdout to NOT contain "${sub}" — got:\n  ${snippet(stdout).replace(/\n/g, '\n  ')}`,
+      );
+    }
+  }
+
+  // Default mode (no expect/expect-not): a clean exit must still produce
+  // output, otherwise the example silently did nothing.
+  if (!hasExpectations && !d.allowNonzero && status === 0 && stdout.trim().length === 0) {
+    failures.push(`${loc}: expected non-empty stdout (default mode) — command produced none`);
+  }
+
+  // Diagnostic hint: a Node MODULE_NOT_FOUND in a failed block almost always
+  // means deps aren't on the resolution path — the usual cause is a
+  // contributor running `npm run test:docs` without NODE_PATH set (the
+  // render-balance example needs ./humanize-denom.cjs; gen-agent-key needs
+  // @cosmjs/proto-signing). Point them at the setup rather than leaving a
+  // bare stack trace. Failure-message-only: never flips a pass to a fail.
+  if (failures.length > 0 && /Cannot find module/.test(stderr)) {
+    failures.push(
+      `${loc}: hint — "Cannot find module" usually means deps aren't resolvable; `
+      + 'set NODE_PATH to your install dir per docs/testing.md → "One-time setup" '
+      + '(CI sets it automatically).',
+    );
+  }
+
+  return failures;
+}
+
+// Env vars the harness injects into every block's child (see runBlock). A
+// docs-ci block that hardcodes one of these via an unconditional `export`
+// clobbers the harness injection — under DOCS_CI_RUN_NETWORK=1 that means
+// mkdir/npm-install escaping to the user's real $HOME. Append here when the
+// harness starts injecting another var (e.g. MANIFEST_CHAIN_DATA_FILE).
+const HARNESS_INJECTABLE = ['MANIFEST_PLUGIN_DATA', 'NODE_PATH'];
+
+/**
+ * Static-content lint: every `export <VAR>=...` for a harness-injectable VAR
+ * inside a docs-ci block MUST use the self-referential parameter-default
+ * `${VAR:-...}` so a harness-injected value is preserved. This is a TEXT
+ * check — it runs even on `network`-tagged blocks (skipped from execution)
+ * and even though CI keeps network off, so the convention can't silently
+ * regress. Returns a `failures[]` of human-readable strings.
+ */
+function lintInjectableEnvExports(md, sourceFile = 'docs/testing.md') {
+  const failures = [];
+  const blocks = extractBlocks(md);
+  const exportRe = /^\s*export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
+  for (const block of blocks) {
+    const codeLines = block.code.split('\n');
+    for (let i = 0; i < codeLines.length; i++) {
+      const m = codeLines[i].match(exportRe);
+      if (!m) continue;
+      const varName = m[1];
+      const rhs = m[2];
+      if (!HARNESS_INJECTABLE.includes(varName)) continue;
+      if (rhs.includes(`\${${varName}:-`)) continue; // correct parameter-default form
+      // The block's first body line sits at block.line + 1 (block.line is the
+      // fence opener), so this code line maps to block.line + 1 + i.
+      const docLine = block.line + 1 + i;
+      failures.push(
+        `${sourceFile}:${docLine}: 'export ${varName}=...' in a docs-ci block must use the `
+        + `\${${varName}:-...} parameter-default so a harness-injected ${varName} is preserved. `
+        + `Found: ${codeLines[i].trim()} | Expected: export ${varName}="\${${varName}:-<default>}"`,
+      );
+    }
+  }
+  return failures;
+}
+
+function main(argv) {
+  const file = argv[2];
+  if (!file) {
+    console.error('usage: node ci/docs-ci.cjs <markdown-file>');
+    process.exit(1);
+  }
+
+  let md;
+  try {
+    md = readFileSync(file, 'utf8');
+  } catch (err) {
+    console.error(`docs-ci: cannot read ${file}: ${err.message}`);
+    process.exit(1);
+  }
+
+  let blocks;
+  try {
+    blocks = extractBlocks(md);
+  } catch (err) {
+    console.error(`docs-ci: ${err.message}`);
+    process.exit(1);
+  }
+
+  // Meta-recursive lying-guard guard: this whole tool exists to catch doc/code
+  // drift, but with zero tagged blocks the run loop is empty and exits 0 —
+  // so accidentally removing or renaming every `<!-- docs-ci -->` tag would
+  // make the drift guard itself pass vacuously. Fail-fast instead, with an
+  // explicit bypass for the legitimate "intentionally removed all examples"
+  // case.
+  if (blocks.length === 0 && process.env.DOCS_CI_ALLOW_ZERO !== '1') {
+    console.error(
+      `docs-ci: no <!-- docs-ci --> tagged blocks found in ${file}. `
+      + 'If you intended to remove all examples, set DOCS_CI_ALLOW_ZERO=1 to bypass.',
+    );
+    process.exit(1);
+  }
+
+  // Static pre-check: lint injectable env exports across ALL tagged blocks
+  // (including network-tagged, which are skipped from execution below). Runs
+  // regardless of network gating because it's purely textual.
+  const lintFailures = lintInjectableEnvExports(md, file);
+  for (const f of lintFailures) console.error(`LINT ${f}`);
+
+  const ctx = { repoRoot: process.cwd(), sourceFile: file };
+  let ran = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const block of blocks) {
+    const r = runBlock(block, ctx);
+    if (r.skipped) {
+      skipped++;
+      console.log(`SKIP ${file}:${block.line} (network; set DOCS_CI_RUN_NETWORK=1 to run)`);
+      continue;
+    }
+    ran++;
+    if (r.ok) {
+      console.log(`PASS ${file}:${block.line}`);
+    } else {
+      failed++;
+      console.error(`FAIL ${file}:${block.line}`);
+      for (const f of r.failures) console.error(`  ${f}`);
+    }
+  }
+
+  console.log(
+    `docs-ci: ${ran} ran, ${skipped} skipped, ${failed} failed, `
+    + `${lintFailures.length} lint failure(s) (${blocks.length} tagged)`,
+  );
+  process.exit(failed > 0 || lintFailures.length > 0 ? 1 : 0);
+}
+
+if (require.main === module) {
+  main(process.argv);
+}
+
+module.exports = {
+  extractBlocks,
+  parseDirectives,
+  runBlock,
+  evaluateResult,
+  lintInjectableEnvExports,
+  seedDataDir,
+  SEED_CHAIN,
+  HARNESS_INJECTABLE,
+};
