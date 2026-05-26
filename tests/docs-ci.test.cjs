@@ -90,6 +90,18 @@ test('parseDirectives does not confuse expect-not with expect', () => {
   assert.deepEqual(d.expectNot, ['(unavailable)']);
 });
 
+test('parseDirectives rejects an empty expect="" (always-passes lying guard)', () => {
+  assert.throws(() => parseDirectives(' expect="" '), /always passes/);
+});
+
+test('parseDirectives rejects an empty expect-not="" (always-fails lying guard)', () => {
+  assert.throws(() => parseDirectives(' expect-not="" '), /always fails/);
+});
+
+test('parseDirectives rejects a whitespace-only expect="  "', () => {
+  assert.throws(() => parseDirectives(' expect="  " '), /always passes/);
+});
+
 test('extractBlocks ignores an INDENTED directive (illustrative example in prose is not extracted)', () => {
   // The contributor docs show a `<!-- docs-ci ... -->` example inside a
   // 4-space-indented block. That example must NOT be picked up and run.
@@ -273,6 +285,41 @@ test('evaluateResult: a timeout (ETIMEDOUT) yields the distinct timeout message 
   assert.match(msg, /docs\/testing\.md:42/);
   assert.doesNotMatch(msg, /command exited/, 'no "exited null" on a timeout');
   assert.doesNotMatch(msg, /expected stdout to contain/, 'short-circuit skips expect checks');
+});
+
+test('evaluateResult: a signal termination reports the signal distinctly, not "exited null"', () => {
+  // A signal kill gives {status:null, signal:'SIGTERM', error:null} — it
+  // falls past the res.error early-return to the exit-status branch, where
+  // `null !== 0` would misfire "command exited null". Special-case it.
+  const failures = evaluateResult(
+    { status: null, signal: 'SIGTERM', error: null, stdout: '', stderr: 'killed' },
+    CLEAN_DIRECTIVES,
+    'docs/testing.md:42',
+  );
+  const msg = failures.join('\n');
+  assert.match(msg, /terminated by signal SIGTERM/);
+  assert.match(msg, /docs\/testing\.md:42/);
+  assert.doesNotMatch(msg, /exited null/);
+});
+
+test('evaluateResult: a timeout (ETIMEDOUT, res.error set) still routes to the timeout message, not signal termination', () => {
+  // Ordering sanity: ETIMEDOUT carries res.error AND signal SIGTERM AND
+  // status null. The res.error early-return must win, so it must NOT fall
+  // through to the new status===null signal branch.
+  const failures = evaluateResult(
+    {
+      error: Object.assign(new Error('spawnSync /bin/bash ETIMEDOUT'), { code: 'ETIMEDOUT' }),
+      status: null,
+      signal: 'SIGTERM',
+      stdout: '',
+      stderr: '',
+    },
+    CLEAN_DIRECTIVES,
+    'docs/testing.md:42',
+  );
+  const msg = failures.join('\n');
+  assert.match(msg, /exceeded 120s timeout/);
+  assert.doesNotMatch(msg, /terminated by signal/);
 });
 
 test('evaluateResult: a generic spawn error short-circuits expect checks too', () => {

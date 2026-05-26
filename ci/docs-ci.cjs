@@ -93,6 +93,19 @@ const SPAWN_TIMEOUT_MS = 120_000;
 function parseDirectives(body) {
   const expect = [...body.matchAll(/expect="([^"]*)"/g)].map((m) => m[1]);
   const expectNot = [...body.matchAll(/expect-not="([^"]*)"/g)].map((m) => m[1]);
+  // An empty/whitespace expect or expect-not is a lying guard in opposite
+  // directions: `stdout.includes("")` is always true, so expect="" always
+  // passes and expect-not="" always "fails". Reject both loudly.
+  for (const val of expect) {
+    if (val.trim() === '') {
+      throw new Error('docs-ci directive: expect="" (empty or whitespace) always passes — invalid');
+    }
+  }
+  for (const val of expectNot) {
+    if (val.trim() === '') {
+      throw new Error('docs-ci directive: expect-not="" (empty or whitespace) always fails — invalid');
+    }
+  }
   // Strip the key="value" tokens so only bare flags remain to validate.
   // expect-not first (longer key) so the expect strip can't clip it.
   const stripped = body
@@ -260,7 +273,17 @@ function evaluateResult(res, directives, loc) {
     return failures;
   }
 
-  if (status !== 0 && !d.allowNonzero) {
+  // Reached only when res.error is null (spawn-error/timeout returned above).
+  // A signal kill gives status null with a signal set — special-case it FIRST
+  // so `null !== 0` doesn't misreport "command exited null". status===null is
+  // unconditional (no allow-nonzero override): a signal kill of an example
+  // block always signals a real problem.
+  if (status === null) {
+    failures.push(
+      `${loc}: command terminated by signal ${res.signal || '<unknown>'}\n`
+      + `  stderr: ${snippet(stderr)}`,
+    );
+  } else if (status !== 0 && !d.allowNonzero) {
     failures.push(
       `${loc}: command exited ${status} (expected 0; add \`allow-nonzero\` if intended)\n`
       + `  stderr: ${snippet(stderr)}`,
