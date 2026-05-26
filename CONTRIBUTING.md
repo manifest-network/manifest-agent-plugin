@@ -90,7 +90,7 @@ When in doubt: write the script. The codebase already errs on the side of more s
 
 When you land a fix that corrects a prose pattern (a wrong rationale, a stale reference, a misnamed identifier, an outdated example), grep the whole repo for the same pattern before committing — not just the file you touched. The same prose drift often lives in 2+ sites, and a partial fix is its own bug.
 
-**Fixer's half:** before committing, `grep -rn '<pattern>' . --exclude-dir=.git --exclude-dir=node_modules` (or `rg '<pattern>'` — ripgrep respects `.gitignore` by default and is faster) and either fix every hit or document why a hit is excluded. A commit body that says "fixed at sites X, Y; site Z is exempt because ..." is the audit trail.
+**Fixer's half:** before committing, `grep -rn --exclude-dir=.git --exclude-dir=node_modules '<pattern>' .` (options before pattern/path for BSD/macOS grep portability — GNU grep permutes, BSD doesn't; or use `rg '<pattern>'` — ripgrep respects `.gitignore` by default and is faster) and either fix every hit or document why a hit is excluded. A commit body that says "fixed at sites X, Y; site Z is exempt because ..." is the audit trail.
 
 **Reviewer's half:** when verifying a sweep-class fix, independently run the same grep. Don't trust the commit's stated coverage. The PR #9 R6 propagation gap (a wrong rationale fixed at two of three sites; QA caught the third) demonstrated that either discipline alone misses what the pair catches.
 
