@@ -197,62 +197,86 @@ function runBlock(block, ctx) {
         ...(process.env.NODE_PATH ? { NODE_PATH: process.env.NODE_PATH } : {}),
       },
     });
-    const status = res.status;
-    const stdout = res.stdout || '';
-    const stderr = res.stderr || '';
-    const failures = [];
-    const hasExpectations = d.expect.length > 0 || d.expectNot.length > 0;
-
-    if (res.error) {
-      failures.push(`${loc}: failed to spawn command — ${res.error.message}`);
-    }
-
-    if (status !== 0 && !d.allowNonzero) {
-      failures.push(
-        `${loc}: command exited ${status} (expected 0; add \`allow-nonzero\` if intended)\n`
-        + `  stderr: ${snippet(stderr)}`,
-      );
-    }
-
-    for (const sub of d.expect) {
-      if (!stdout.includes(sub)) {
-        failures.push(
-          `${loc}: expected stdout to contain "${sub}" — got:\n  ${snippet(stdout).replace(/\n/g, '\n  ')}`,
-        );
-      }
-    }
-    for (const sub of d.expectNot) {
-      if (stdout.includes(sub)) {
-        failures.push(
-          `${loc}: expected stdout to NOT contain "${sub}" — got:\n  ${snippet(stdout).replace(/\n/g, '\n  ')}`,
-        );
-      }
-    }
-
-    // Default mode (no expect/expect-not): a clean exit must still produce
-    // output, otherwise the example silently did nothing.
-    if (!hasExpectations && !d.allowNonzero && status === 0 && stdout.trim().length === 0) {
-      failures.push(`${loc}: expected non-empty stdout (default mode) — command produced none`);
-    }
-
-    // Diagnostic hint: a Node MODULE_NOT_FOUND in a failed block almost
-    // always means deps aren't on the resolution path — the usual cause is a
-    // contributor running `npm run test:docs` without NODE_PATH set (the
-    // render-balance example needs ./humanize-denom.cjs; gen-agent-key needs
-    // @cosmjs/proto-signing). Point them at the setup rather than leaving a
-    // bare stack trace. Failure-message-only: never flips a pass to a fail.
-    if (failures.length > 0 && /Cannot find module/.test(stderr)) {
-      failures.push(
-        `${loc}: hint — "Cannot find module" usually means deps aren't resolvable; `
-        + 'set NODE_PATH to your install dir per docs/testing.md → "One-time setup" '
-        + '(CI sets it automatically).',
-      );
-    }
-
-    return { ok: failures.length === 0, status, stdout, stderr, failures };
+    const failures = evaluateResult(res, d, loc);
+    return {
+      ok: failures.length === 0,
+      status: res.status,
+      stdout: res.stdout || '',
+      stderr: res.stderr || '',
+      failures,
+    };
   } finally {
     rmSync(dataDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Pure failure-classification for a spawnSync result against a block's
+ * directives. Extracted from runBlock so the branches — spawn-error vs
+ * exit-status especially — are unit-testable with synthetic result objects
+ * (a real `bash -c` with a missing inner command exits 127 and never
+ * populates `res.error`, so the spawn-error branch is otherwise unreachable
+ * from an integration test).
+ *
+ * `res` is `{ error, status, stdout, stderr }` (the spawnSync shape).
+ * Returns a `failures[]` array; empty means the block passed.
+ */
+function evaluateResult(res, directives, loc) {
+  const d = directives;
+  const status = res.status;
+  const stdout = res.stdout || '';
+  const stderr = res.stderr || '';
+  const failures = [];
+  const hasExpectations = d.expect.length > 0 || d.expectNot.length > 0;
+
+  // A spawn failure (res.error, status null) precludes the exit-status
+  // assertion: `else if` keeps `null !== 0` from also emitting a misleading
+  // "command exited null".
+  if (res.error) {
+    failures.push(`${loc}: failed to spawn command — ${res.error.message}`);
+  } else if (status !== 0 && !d.allowNonzero) {
+    failures.push(
+      `${loc}: command exited ${status} (expected 0; add \`allow-nonzero\` if intended)\n`
+      + `  stderr: ${snippet(stderr)}`,
+    );
+  }
+
+  for (const sub of d.expect) {
+    if (!stdout.includes(sub)) {
+      failures.push(
+        `${loc}: expected stdout to contain "${sub}" — got:\n  ${snippet(stdout).replace(/\n/g, '\n  ')}`,
+      );
+    }
+  }
+  for (const sub of d.expectNot) {
+    if (stdout.includes(sub)) {
+      failures.push(
+        `${loc}: expected stdout to NOT contain "${sub}" — got:\n  ${snippet(stdout).replace(/\n/g, '\n  ')}`,
+      );
+    }
+  }
+
+  // Default mode (no expect/expect-not): a clean exit must still produce
+  // output, otherwise the example silently did nothing.
+  if (!hasExpectations && !d.allowNonzero && status === 0 && stdout.trim().length === 0) {
+    failures.push(`${loc}: expected non-empty stdout (default mode) — command produced none`);
+  }
+
+  // Diagnostic hint: a Node MODULE_NOT_FOUND in a failed block almost always
+  // means deps aren't on the resolution path — the usual cause is a
+  // contributor running `npm run test:docs` without NODE_PATH set (the
+  // render-balance example needs ./humanize-denom.cjs; gen-agent-key needs
+  // @cosmjs/proto-signing). Point them at the setup rather than leaving a
+  // bare stack trace. Failure-message-only: never flips a pass to a fail.
+  if (failures.length > 0 && /Cannot find module/.test(stderr)) {
+    failures.push(
+      `${loc}: hint — "Cannot find module" usually means deps aren't resolvable; `
+      + 'set NODE_PATH to your install dir per docs/testing.md → "One-time setup" '
+      + '(CI sets it automatically).',
+    );
+  }
+
+  return failures;
 }
 
 function main(argv) {
@@ -308,4 +332,4 @@ if (require.main === module) {
   main(process.argv);
 }
 
-module.exports = { extractBlocks, parseDirectives, runBlock, seedDataDir, SEED_CHAIN };
+module.exports = { extractBlocks, parseDirectives, runBlock, evaluateResult, seedDataDir, SEED_CHAIN };

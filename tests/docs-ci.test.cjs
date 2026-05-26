@@ -23,7 +23,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { join } = require('node:path');
 
-const { extractBlocks, parseDirectives, runBlock, seedDataDir } = require('../ci/docs-ci.cjs');
+const { extractBlocks, parseDirectives, runBlock, seedDataDir, evaluateResult } = require('../ci/docs-ci.cjs');
 
 const REPO_ROOT = join(__dirname, '..');
 // A label, not a real read — runBlock only uses it to build the
@@ -200,6 +200,49 @@ test('RED (default mode): exit 0 but empty stdout fails', () => {
   const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
   assert.equal(r.ok, false, 'default mode requires non-empty stdout');
   assert.equal(r.status, 0);
+});
+
+// ---------------------------------------------------------------------------
+// evaluateResult — pure failure-classification (Copilot R2, finding 1)
+// ---------------------------------------------------------------------------
+
+const CLEAN_DIRECTIVES = { network: false, allowNonzero: false, expect: [], expectNot: [] };
+
+test('evaluateResult: a spawn error yields ONLY the spawn-error failure, never "exited <status>"', () => {
+  // res.error is set and status is null (spawnSync couldn't launch the
+  // process). The old two-independent-`if` form also fired the
+  // `null !== 0` exit-status branch, emitting a misleading
+  // "command exited null". The `else if` chaining suppresses that.
+  const failures = evaluateResult(
+    { error: new Error('spawn bash ENOENT'), status: null, stdout: '', stderr: '' },
+    CLEAN_DIRECTIVES,
+    'docs/testing.md:42',
+  );
+  const msg = failures.join('\n');
+  assert.match(msg, /failed to spawn command/);
+  assert.doesNotMatch(msg, /exited/, 'a spawn failure must NOT also assert "command exited null"');
+});
+
+test('evaluateResult: a 127 (missing inner command via bash -c) is a normal nonzero exit, not a spawn error', () => {
+  // The real-world path Copilot mislabeled as ENOENT: bash launches fine,
+  // the inner command is missing, exit 127, res.error is null.
+  const failures = evaluateResult(
+    { error: null, status: 127, stdout: '', stderr: 'bash: cmd: command not found' },
+    CLEAN_DIRECTIVES,
+    'docs/testing.md:42',
+  );
+  const msg = failures.join('\n');
+  assert.match(msg, /command exited 127/);
+  assert.doesNotMatch(msg, /failed to spawn command/);
+});
+
+test('evaluateResult: clean exit + non-empty stdout (default mode) -> no failures', () => {
+  const failures = evaluateResult(
+    { error: null, status: 0, stdout: 'output\n', stderr: '' },
+    CLEAN_DIRECTIVES,
+    'docs/testing.md:42',
+  );
+  assert.deepEqual(failures, []);
 });
 
 // ---------------------------------------------------------------------------
