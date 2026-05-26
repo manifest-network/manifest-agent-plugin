@@ -343,6 +343,20 @@ function main(argv) {
     process.exit(1);
   }
 
+  // Meta-recursive lying-guard guard: this whole tool exists to catch doc/code
+  // drift, but with zero tagged blocks the run loop is empty and exits 0 —
+  // so accidentally removing or renaming every `<!-- docs-ci -->` tag would
+  // make the drift guard itself pass vacuously. Fail-fast instead, with an
+  // explicit bypass for the legitimate "intentionally removed all examples"
+  // case.
+  if (blocks.length === 0 && process.env.DOCS_CI_ALLOW_ZERO !== '1') {
+    console.error(
+      `docs-ci: no <!-- docs-ci --> tagged blocks found in ${file}. `
+      + 'If you intended to remove all examples, set DOCS_CI_ALLOW_ZERO=1 to bypass.',
+    );
+    process.exit(1);
+  }
+
   // Static pre-check: lint injectable env exports across ALL tagged blocks
   // (including network-tagged, which are skipped from execution below). Runs
   // regardless of network gating because it's purely textual.

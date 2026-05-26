@@ -448,6 +448,51 @@ test('lintInjectableEnvExports scans network-tagged blocks too (text is linted e
 });
 
 // ---------------------------------------------------------------------------
+// main() CLI — fail-fast on zero tagged blocks (Copilot R3, meta-recursive)
+// ---------------------------------------------------------------------------
+
+const { spawnSync } = require('node:child_process');
+const DOCS_CI_CLI = join(__dirname, '..', 'ci', 'docs-ci.cjs');
+
+// Invoke the CLI on a temp markdown file. Hermetic: strips the two docs-ci
+// env knobs from the inherited env so the test controls them explicitly.
+function runDocsCiCli(mdContent, envOverrides = {}) {
+  const { mkdtempSync, writeFileSync, rmSync } = require('node:fs');
+  const { tmpdir } = require('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'docs-ci-cli-'));
+  const file = join(dir, 'doc.md');
+  writeFileSync(file, mdContent, 'utf8');
+  const env = { ...process.env };
+  delete env.DOCS_CI_ALLOW_ZERO;
+  delete env.DOCS_CI_RUN_NETWORK;
+  Object.assign(env, envOverrides);
+  try {
+    const res = spawnSync(process.execPath, [DOCS_CI_CLI, file], {
+      encoding: 'utf8',
+      cwd: join(__dirname, '..'),
+      env,
+    });
+    return { status: res.status, stdout: res.stdout, stderr: res.stderr };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('docs-ci CLI exits 1 when a doc has ZERO tagged blocks (the meta-recursive lying-guard)', () => {
+  // If every <!-- docs-ci --> tag is accidentally removed/renamed, the
+  // drift guard would otherwise pass vacuously. Fail-fast instead.
+  const r = runDocsCiCli('# Title\n\nJust prose, no tagged code blocks.\n');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /no <!-- docs-ci --> tagged blocks/);
+  assert.match(r.stderr, /DOCS_CI_ALLOW_ZERO/, 'error names the bypass env var');
+});
+
+test('docs-ci CLI with DOCS_CI_ALLOW_ZERO=1 allows zero tagged blocks (exit 0)', () => {
+  const r = runDocsCiCli('# Title\n\nJust prose.\n', { DOCS_CI_ALLOW_ZERO: '1' });
+  assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+});
+
+// ---------------------------------------------------------------------------
 // seedDataDir — offline render-balance fixture
 // ---------------------------------------------------------------------------
 
