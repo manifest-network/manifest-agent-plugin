@@ -189,7 +189,14 @@ function runBlock(block, ctx) {
   const dataDir = mkdtempSync(join(tmpdir(), 'docs-ci-'));
   seedDataDir(dataDir);
   try {
-    const res = spawnSync('bash', ['-c', block.code], {
+    // `-e` aborts on the first failing command and `-o pipefail` makes a
+    // pipeline fail if any stage fails — so a multi-command block whose
+    // earlier command/pipeline-stage fails but whose last command succeeds
+    // can't lie green (the same ENG-213 antipattern as the zero-blocks
+    // guard). `-u` (nounset) is deliberately omitted: examples legitimately
+    // use `${VAR:-default}`. Examples that intentionally tolerate a nonzero
+    // exit use the `allow-nonzero` directive.
+    const res = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', block.code], {
       cwd: repoRoot,
       encoding: 'utf8',
       timeout: SPAWN_TIMEOUT_MS,

@@ -327,6 +327,41 @@ test('runBlock does NOT append the NODE_PATH hint for an ordinary failure (no mo
 });
 
 // ---------------------------------------------------------------------------
+// runBlock — set -e -o pipefail mid-block failure detection (Copilot R4)
+// ---------------------------------------------------------------------------
+
+test('runBlock fails a multi-command block whose earlier command fails (set -e)', () => {
+  // Without -e, `false` is ignored and the block ends on `echo done` (exit 0)
+  // — a mid-block failure lies green. -e aborts on `false`.
+  const [block] = extractBlocks(md('<!-- docs-ci -->', '```bash', 'false', 'echo done', '```'));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, false, 'an earlier command failing must fail the block under set -e');
+});
+
+test('runBlock fails a pipeline whose non-final command fails (set -o pipefail)', () => {
+  // `/nonexistent | echo output` produces stdout "output" and, without
+  // pipefail, exits 0 (echo's status) — a broken pipeline lies green. With
+  // pipefail the leftmost 127 propagates.
+  const [block] = extractBlocks(md(
+    '<!-- docs-ci -->',
+    '```bash',
+    '/nonexistent-binary-xyz | echo output',
+    '```',
+  ));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, false, 'a failing non-final pipeline command must fail the block under pipefail');
+  assert.equal(r.status, 127, 'pipefail propagates the leftmost 127, not echo\'s 0');
+});
+
+test('runBlock: allow-nonzero tolerates a set -e-induced nonzero exit', () => {
+  // allow-nonzero must remain the escape valve even now that -e turns an
+  // ignored mid-block failure into a real nonzero exit.
+  const [block] = extractBlocks(md('<!-- docs-ci allow-nonzero -->', '```bash', 'false', 'echo done', '```'));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.equal(r.ok, true, 'allow-nonzero tolerates the -e-induced nonzero exit');
+});
+
+// ---------------------------------------------------------------------------
 // runBlock — NODE_PATH env-shape propagation (Copilot R1, finding 1)
 // ---------------------------------------------------------------------------
 

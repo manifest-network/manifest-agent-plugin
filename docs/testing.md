@@ -251,6 +251,14 @@ itself executed.)
 An unknown directive token (e.g. a typo like `expct=`) throws, so a mistagged
 block fails loudly instead of silently degrading to default mode.
 
+**Execution flags.** Blocks run under `bash -e -o pipefail` (a per-block 120s
+timeout also applies), so a mid-block failure — an earlier command, or a
+non-final pipeline stage — fails the block instead of being masked by a
+later command that happens to succeed. `-u` (nounset) is deliberately NOT
+set: examples legitimately use `${VAR:-default}`. For an example that
+intentionally tolerates a nonzero exit, use the `allow-nonzero` directive as
+the escape valve.
+
 **Isolation.** Each block runs in its own fresh tempdir:
 `MANIFEST_PLUGIN_DATA` points at it, pre-seeded with a minimal
 `chains/testnet.json` (so `render-balance.cjs` resolves denom symbols
