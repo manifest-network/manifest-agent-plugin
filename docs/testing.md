@@ -88,6 +88,26 @@ For schema-evolving wrappers (the post-deploy wrapper file written by `manifest-
 - A v(N) fixture asserting the new shape works.
 - A v(N-1) fixture asserting the reader still loads it (missing fields render as undefined, not throw).
 
+## Regression tests for documentation invariants
+
+A regression test that exists but doesn't fire on its negative-injection check manufactures false confidence — reviewers (human + AI) treat it as a guard when it isn't one. This is principle #2 in [`../CLAUDE.md`](../CLAUDE.md) "Review-discipline hindsight" and the most common failure mode caught by Copilot review on this repo. The drift-guard recursion corollary (a tool that catches drift can itself drift) compounds it: every drift guard needs its own drift guard.
+
+**Red-green before trusting.** Every regression test must be watched fail on the exact bug it claims to catch before merging:
+
+1. Inject the mutation the test is meant to catch (revert the fix, flip an enum value, drop a directive).
+2. Run the test; confirm it fails with a message that names the violated invariant.
+3. Revert; confirm it passes.
+4. Commit the test with a `git log` message that names the mutation it was red-green'd against, so a future contributor can audit the guarantee.
+
+**Worked examples from ENG-213** (`tests/docs-ci.test.cjs` + `tests/policy-completeness.test.cjs`):
+
+- **Zero-blocks lying-green.** `ci/docs-ci.cjs` originally exited 0 when `extractBlocks` returned `[]` — the drift guard had its own drift-failure mode for the empty-input case. Caught by Copilot R3 on PR #10. Fix added a fail-fast assertion + a regression test red-green'd against the mutation. Commit `0f1865c`.
+- **`set -e`/`pipefail` lying-green.** Blocks ran via `bash -c` without `-e -o pipefail`, so a multi-command block where an earlier command failed and the last succeeded exited 0 — docs-ci lied green. Caught by Copilot R4. Fix added the shell flags + two regression tests (`false\necho done` and `nonexistent | cat`) each independently red-green'd. Commit `e5008ed`.
+- **Empty `expect=""` lying-green.** `parseDirectives` allowed `expect=""` to parse to empty string; `stdout.includes("")` is always true → directive always satisfied. Caught by Copilot R5. Fix rejects empty / whitespace-only values at parse time + regression test red-green'd. Commit `8ce1595`.
+- **Planning-time lying-guard near-miss.** Architect's first matching-strategy proposal for the `policy-completeness` check (word-boundary regex on short tool names) would have lied-green inside `_orchestrated` names. Coordinator caught it pre-implementation by empirically running the proposed regex against the corpus, pinned the correct contract (full-name-substring OR snake-token-bounded short), and the regression test now meta-verifies by breaking the regex.
+
+The discipline applies to any test whose purpose is to *prevent* a class of bug, not just doc-drift checks. If the test wouldn't fire on the bug it claims to catch, it's a lying guard regardless of domain.
+
 ## Exercising scripts manually
 
 Useful for debugging without standing up a full Claude session.
@@ -213,8 +233,9 @@ Copilot review rounds caught on PR #9 — cases where the docs said X but the
 code did Y, which structural review didn't surface. They live in `ci/` (not
 `scripts/`, since they're CI tooling rather than plugin runtime) and each
 ships with a demonstrated-drift unit test under `tests/` that proves the
-check actually fires on the bug class it targets (ENG-214 principle #2 — a
-guard you haven't watched fail is not yet a guard).
+check actually fires on the bug class it targets (a guard you haven't
+watched fail is not yet a guard — see [`../CLAUDE.md`](../CLAUDE.md)
+"Review-discipline hindsight" principle #2).
 
 ### Executable doc examples (docs-ci)
 
@@ -283,8 +304,10 @@ the "One-time setup" block above (the `render-balance` example resolves
 3. **RED-GREEN it before trusting it.** Mutate the underlying code or the
    example so the documented behavior breaks, confirm `npm run test:docs`
    fails with a clear message, then revert. A directive you haven't watched
-   fail is not yet a guard (ENG-214 principle #2; the full principle lands in
-   ENG-214). `tests/docs-ci.test.cjs` pins this for the harness itself.
+   fail is not yet a guard — see [`../CLAUDE.md`](../CLAUDE.md)
+   "Review-discipline hindsight" principle #2 and the "Regression tests for
+   documentation invariants" section above for the worked examples.
+   `tests/docs-ci.test.cjs` pins this for the harness itself.
 
 `docs/scripts.md` has no copy-pasteable examples today, so it isn't targeted;
 the harness is file-parameterized (`node ci/docs-ci.cjs <file>`) and can

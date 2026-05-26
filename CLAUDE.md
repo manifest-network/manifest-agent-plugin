@@ -102,6 +102,42 @@ The motivation: deterministic logic in prose accumulates LLM-paraphrasing drift 
 
 The enumeration above is illustrative; see "Scripts inventory" below for the full per-script catalog.
 
+## Review-discipline hindsight (ENG-130 + ENG-213)
+
+Two consecutive PRs ([#9](https://github.com/manifest-network/manifest-agent-plugin/pull/9) ENG-130 — 6 Copilot review rounds; [#10](https://github.com/manifest-network/manifest-agent-plugin/pull/10) ENG-213 — 5 Copilot review rounds) plus their in-team critique cycles surfaced seven review-discipline principles worth carrying forward. The "delete orchestration; keep primitives" hindsight in the Scripts-vs-prose blockquote above is the first; the rest follow. Each principle: **rule**, **why** (worked example), **how to apply**.
+
+### Test discipline
+
+**1. Deleted helper test → orphaned invariant.** When deleting a helper test, the load-bearing invariant it pinned must either move with the logic or be explicitly retired. **Why:** PR #9 R1 caught an inverted `LEASE_STATE_ACTIVE === 1` in inlined skill prose after the original `tests/_lease-state.test.cjs` was deleted without replacement — the test was the invariant pin; removing it without coverage at the new home let the inversion slip past structural QA. **How to apply:** in a deletion PR, audit every removed test for "what assertion was this making, and does it still hold somewhere?"
+
+**2. A test that lies about its coverage is worse than no test.** A test that exists but doesn't fire on its negative-injection check manufactures false confidence — reviewers (human + AI) treat it as a guard when it isn't one. **Why:** PR #10 surfaced four recursive lying-guard scenarios (R3 zero-blocks exit 0, R4 missing `set -e`/`pipefail`, R5-1 empty `expect=""`, R5-2 signal-termination misclassified) plus two planning-time near-misses (architect's first matcher proposal would have lied-green inside `_orchestrated` names; team-lead's first timeout regression test would have never exercised the branch). All shipped as `tests/docs-ci.test.cjs` + `tests/policy-completeness.test.cjs` red-green proofs. **How to apply:** red-green every regression test against the exact bug it claims to catch before merging. **Corollary (recursive drift guards):** when building tooling whose purpose is to *catch drift*, the tooling itself can drift — every drift guard needs a drift guard. See [`docs/testing.md`](docs/testing.md) "Regression tests for documentation invariants".
+
+### Rationale discipline
+
+**3. A wrong rationale + a right design is silent failure.** When prose explains *why* a design is correct, the explanation must (a) be checkable against the same assertions that lock the design, AND (b) reflect the deepest actually-true reason, not the most-superficially-plausible one. A passing structural test is NOT evidence that the rationale is right. **Why:** DECISION 5 (the `manage-domain` lookup branch) went through three rationale rewrites on PR #9 before landing on the honest framing — see commit `ca762b7` and the DECISION 5 paragraph above. The design choice was correct throughout; only the *explanation* drifted. On PR #10, three of five Copilot review rounds (R1, R2, R3) had subtly-wrong stated mechanisms that the team's empirical rationale-check corrected before public reply (NODE_PATH/bash-c/timeout). R4 and R5 confirmed accurate. **How to apply:** before posting a rationale (in code comments, commit bodies, or review replies), verify the mechanism empirically — re-read the source, run a minimal repro, check the CI assertion. **Corollary (auto-generated review tool replies):** any auto-tool review (Copilot, Codacy, Sourcegraph) has a non-trivial wrong-rationale rate. Before echoing the tool's mechanism in a public reply, verify it — see operator memory `feedback_copilot_reply_rationale.md` for the discipline.
+
+**4. Prose-vs-prose review converges on plausibility, not correctness.** Every layer of prose review has the same failure mode (treating upstream prose as ground truth) unless verification ladders down to a non-prose source for machine-checkable claims. The "ground-truth boundary" for any rationale that asserts behavior must terminate at: a CI assertion, source code, or runtime observation. **Why:** QA's self-reflection during the DECISION 5 honest-rewrite cycle on PR #9 — they had propagated the pre-correction rationale into their own working artifact (`decision-matrix.md`) without independently verifying against source. When the rationale was caught as wrong, the derived prose had inherited the drift. **How to apply:** when reviewing rationale prose, ask "what would I check to know if this is true?" If the answer is "another prose document," keep laddering down until you reach a machine-checkable claim.
+
+### Sweep discipline
+
+**5. Reference by structural role, not by index.** Hardcoded indices into living lists ("branch 5," "the third bullet," "field 4") drift silently as the list grows. Describe items by semantic role ("the unknown-tool fallback," "the chain-state branch") instead. **Why:** PR #9 R5 caught `_journal.cjs:263` referencing "branch 5 in the header docstring" when the docstring had been updated to enumerate seven branches; same pattern caught in DECISION-4 wording and runtime-policy bullet positions. **How to apply:** when writing a cross-reference to a list element, prefer the semantic-role form over the index form.
+
+**6. Sweep discipline (paired fixer + reviewer).** When landing a drift-class fix, grep the entire repo for the same prose pattern — not just the touched file. When reviewing a drift-class fix, independently run the same grep — don't trust the commit's stated coverage. **Why:** PR #9 R6 fixed a wrong rationale at two of three sites; QA caught the third site (`CLAUDE.md:67`) where the same prose pattern lived. Either discipline alone misses what the pair catches. **How to apply:** see [`CONTRIBUTING.md`](CONTRIBUTING.md) "Sweep discipline".
+
+### Team-coordination discipline
+
+**7. Channel-auth precedence in multi-agent teams.** When spawning multi-agent teams via `TeamCreate`, the orchestrator's `SendMessage` shows up to teammates with sender `team-lead` (the reserved lead-slot name). If a separate team-lead agent is spawned, every teammate's brief must establish the precedence rule upfront: which channel is authoritative, the criterion for state-changing action, and the rejection posture for ambiguous cases. **Why:** ENG-130 saw QA correctly flag a `team-lead` message as suspicious; ENG-213 saw all 4 teammates correctly reject the first wave of shutdown_requests because the rule-lift plain-text was queued behind the shutdown_request in their inboxes. **How to apply:** see [`CONTRIBUTING.md`](CONTRIBUTING.md) "Multi-agent team coordination" and the operator memory entries `feedback_team_channel_auth.md` + `feedback_copilot_reply_rationale.md`.
+
+### How to add a new hindsight to this section
+
+When a future review cycle surfaces a durable principle:
+
+1. **Lead with the rule** in a single sentence. Imperative form, present tense.
+2. **`Why:`** one paragraph naming the worked example — commit hash, PR # / round, the symptom that surfaced it. The worked example pins the abstract rule to a concrete artifact a future reader can audit.
+3. **`How to apply:`** one sentence on when the rule fires and what to do. Cross-reference `docs/testing.md` / `CONTRIBUTING.md` if the detail lives there.
+4. If the principle has a related-but-distinct facet, add a **`Corollary:`** paragraph rather than a separate principle.
+5. Group under the existing thematic headers (Test, Rationale, Sweep, Team-coordination); add a new header only if the principle doesn't fit.
+
 ## Scripts inventory
 
 The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.cjs` helpers, hook scripts) lives in [`docs/scripts.md`](docs/scripts.md). Read that file when you need to know a specific script's flags, stdin contract, or call site rules. The conventions that apply to the catalog as a whole:
