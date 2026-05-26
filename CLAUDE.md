@@ -137,6 +137,7 @@ When a future review cycle surfaces a durable principle:
 3. **`How to apply:`** one sentence on when the rule fires and what to do. Cross-reference `docs/testing.md` / `CONTRIBUTING.md` if the detail lives there.
 4. If the principle has a related-but-distinct facet, add a **`Corollary:`** paragraph rather than a separate principle.
 5. Group under the existing thematic headers (Test, Rationale, Sweep, Team-coordination); add a new header only if the principle doesn't fit.
+6. **Sweep your own additions against every principle in this section before pushing.** Discipline-codifying PRs are the canonical first violators of the disciplines they codify: PR #11 (this very section's codifying PR) self-violated the *Reference-by-structural-role* principle in R1 (worked-example pointers cited line numbers — `_journal.cjs:263`, `CLAUDE.md:67` — in the prose teaching "don't cite indices"; fixed in commit `5fd733f`) and the *Sweep-discipline* principle in R3 (a R2 mechanism correction in `docs/testing.md` wasn't swept to the matching summary in CLAUDE.md; fixed in commit `05ea912`). Both were caught by Copilot review, not by the author. Before pushing a hindsight-codifying commit, re-read your own additions against each landed principle (by name, not just number — they're durable across renumbering) and grep the repo for any prose pattern you're fixing. The first reviewer of a hindsight is the hindsight itself — make it count.
 
 ## Scripts inventory
 
