@@ -77,6 +77,13 @@ const SEED_CHAIN = {
 
 const KNOWN_FLAGS = new Set(['network', 'allow-nonzero']);
 
+// Per-block wall-clock cap so a hung example (infinite loop, a command
+// waiting on stdin) fails the run instead of stalling CI. 120s is generous:
+// the slowest legit block is the network-tagged `npm install` (skipped in CI;
+// 120s clears it in normal cache state). If a local DOCS_CI_RUN_NETWORK=1 run
+// ever hits the wall, a per-tag override is a follow-up.
+const SPAWN_TIMEOUT_MS = 120_000;
+
 /**
  * Parse a directive comment body (everything after `docs-ci`) into a
  * structured `{ network, allowNonzero, expect[], expectNot[] }`.
@@ -185,6 +192,7 @@ function runBlock(block, ctx) {
     const res = spawnSync('bash', ['-c', block.code], {
       cwd: repoRoot,
       encoding: 'utf8',
+      timeout: SPAWN_TIMEOUT_MS,
       env: {
         ...process.env,
         MANIFEST_PLUGIN_DATA: dataDir,
@@ -229,12 +237,23 @@ function evaluateResult(res, directives, loc) {
   const failures = [];
   const hasExpectations = d.expect.length > 0 || d.expectNot.length > 0;
 
-  // A spawn failure (res.error, status null) precludes the exit-status
-  // assertion: `else if` keeps `null !== 0` from also emitting a misleading
-  // "command exited null".
+  // A spawn failure or timeout sets res.error with status null. Classify it,
+  // then SHORT-CIRCUIT: stdout is empty either way, so the exit-status check
+  // (`null !== 0` would misfire) and the expect/expect-not loops would only
+  // pile on noise. A spawnSync timeout carries `code: 'ETIMEDOUT'` (+ signal
+  // SIGTERM) — surface that distinctly from a generic launch failure.
   if (res.error) {
-    failures.push(`${loc}: failed to spawn command — ${res.error.message}`);
-  } else if (status !== 0 && !d.allowNonzero) {
+    if (res.error.code === 'ETIMEDOUT') {
+      failures.push(
+        `${loc}: command exceeded ${SPAWN_TIMEOUT_MS / 1000}s timeout (hung command or interactive prompt?)`,
+      );
+    } else {
+      failures.push(`${loc}: failed to spawn command — ${res.error.message}`);
+    }
+    return failures;
+  }
+
+  if (status !== 0 && !d.allowNonzero) {
     failures.push(
       `${loc}: command exited ${status} (expected 0; add \`allow-nonzero\` if intended)\n`
       + `  stderr: ${snippet(stderr)}`,

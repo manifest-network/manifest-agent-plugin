@@ -252,6 +252,47 @@ test('evaluateResult: clean exit + non-empty stdout (default mode) -> no failure
   assert.deepEqual(failures, []);
 });
 
+test('evaluateResult: a timeout (ETIMEDOUT) yields the distinct timeout message and short-circuits expect checks', () => {
+  // Real spawnSync timeout shape: error carries code ETIMEDOUT + signal
+  // SIGTERM, status null. Directives request an expect substring — the
+  // short-circuit must skip it (stdout is empty on a timeout, so an
+  // "expected stdout to contain" failure would be noise).
+  const failures = evaluateResult(
+    {
+      error: Object.assign(new Error('spawnSync /bin/bash ETIMEDOUT'), { code: 'ETIMEDOUT' }),
+      status: null,
+      signal: 'SIGTERM',
+      stdout: '',
+      stderr: '',
+    },
+    { network: false, allowNonzero: false, expect: ['foo'], expectNot: [] },
+    'docs/testing.md:42',
+  );
+  const msg = failures.join('\n');
+  assert.match(msg, /exceeded 120s timeout/, 'distinct timeout message');
+  assert.match(msg, /docs\/testing\.md:42/);
+  assert.doesNotMatch(msg, /command exited/, 'no "exited null" on a timeout');
+  assert.doesNotMatch(msg, /expected stdout to contain/, 'short-circuit skips expect checks');
+});
+
+test('evaluateResult: a generic spawn error short-circuits expect checks too', () => {
+  const failures = evaluateResult(
+    {
+      error: Object.assign(new Error('spawn bash ENOENT'), { code: 'ENOENT' }),
+      status: null,
+      signal: null,
+      stdout: '',
+      stderr: '',
+    },
+    { network: false, allowNonzero: false, expect: ['bar'], expectNot: [] },
+    'docs/testing.md:42',
+  );
+  const msg = failures.join('\n');
+  assert.match(msg, /failed to spawn command/);
+  assert.doesNotMatch(msg, /expected stdout to contain/, 'short-circuit skips expect checks');
+  assert.doesNotMatch(msg, /exceeded .*timeout/, 'ENOENT is not a timeout');
+});
+
 // ---------------------------------------------------------------------------
 // runBlock — NODE_PATH diagnostic hint (Finding C)
 // ---------------------------------------------------------------------------
