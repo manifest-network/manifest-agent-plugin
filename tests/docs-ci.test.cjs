@@ -23,7 +23,14 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { join } = require('node:path');
 
-const { extractBlocks, parseDirectives, runBlock, seedDataDir, evaluateResult } = require('../ci/docs-ci.cjs');
+const {
+  extractBlocks,
+  parseDirectives,
+  runBlock,
+  seedDataDir,
+  evaluateResult,
+  lintInjectableEnvExports,
+} = require('../ci/docs-ci.cjs');
 
 const REPO_ROOT = join(__dirname, '..');
 // A label, not a real read — runBlock only uses it to build the
@@ -372,6 +379,72 @@ test('setup block with an UNCONDITIONAL export clobbers the injected dir (the bu
   ));
   const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
   assert.match(r.stdout, /CLOBBERED/, 'unconditional export must demonstrably escape the injected tempdir');
+});
+
+// ---------------------------------------------------------------------------
+// lintInjectableEnvExports — static-content guard on injectable env exports
+// (Copilot R2, finding E)
+// ---------------------------------------------------------------------------
+
+test('lintInjectableEnvExports passes when injectable vars use the parameter-default form', () => {
+  const ok = md(
+    '<!-- docs-ci network -->',
+    '```bash',
+    'export MANIFEST_PLUGIN_DATA="${MANIFEST_PLUGIN_DATA:-$HOME/.manifest-agent-dev}"',
+    'export NODE_PATH="${NODE_PATH:-$MANIFEST_PLUGIN_DATA/node_modules}"',
+    '```',
+  );
+  assert.deepEqual(lintInjectableEnvExports(ok, 'docs/testing.md'), []);
+});
+
+test('lintInjectableEnvExports fails an unconditional injectable export, naming the var + line + expected form', () => {
+  const bad = md(
+    'intro',
+    '<!-- docs-ci network -->',
+    '```bash',
+    'export MANIFEST_PLUGIN_DATA="$HOME/.manifest-agent-dev"',
+    '```',
+  );
+  const failures = lintInjectableEnvExports(bad, 'docs/testing.md');
+  assert.equal(failures.length, 1, `unexpected failures: ${failures.join(' | ')}`);
+  const msg = failures[0];
+  assert.match(msg, /MANIFEST_PLUGIN_DATA/, 'names the offending var');
+  assert.match(msg, /docs\/testing\.md:4/, 'names the export line (block fence at :3, body at :4)');
+  assert.match(msg, /\$\{MANIFEST_PLUGIN_DATA:-/, 'shows the expected parameter-default form');
+});
+
+test('lintInjectableEnvExports also catches an unconditional NODE_PATH export', () => {
+  const bad = md(
+    '<!-- docs-ci network -->',
+    '```bash',
+    'export NODE_PATH="/opt/whatever/node_modules"',
+    '```',
+  );
+  const failures = lintInjectableEnvExports(bad, 'docs/testing.md');
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /NODE_PATH/);
+});
+
+test('lintInjectableEnvExports ignores non-injectable exports', () => {
+  const m = md(
+    '<!-- docs-ci -->',
+    '```bash',
+    'export SOME_OTHER_VAR="$HOME/whatever"',
+    '```',
+  );
+  assert.deepEqual(lintInjectableEnvExports(m, 'docs/testing.md'), []);
+});
+
+test('lintInjectableEnvExports scans network-tagged blocks too (text is linted even though execution is skipped)', () => {
+  // The real offender lives in a `network`-tagged block, which the runner
+  // skips from EXECUTION — the lint must still inspect its text.
+  const bad = md(
+    '<!-- docs-ci network -->',
+    '```bash',
+    'export MANIFEST_PLUGIN_DATA="$HOME/x"',
+    '```',
+  );
+  assert.equal(lintInjectableEnvExports(bad, 'docs/testing.md').length, 1);
 });
 
 // ---------------------------------------------------------------------------

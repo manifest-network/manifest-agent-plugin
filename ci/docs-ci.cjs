@@ -279,6 +279,47 @@ function evaluateResult(res, directives, loc) {
   return failures;
 }
 
+// Env vars the harness injects into every block's child (see runBlock). A
+// docs-ci block that hardcodes one of these via an unconditional `export`
+// clobbers the harness injection — under DOCS_CI_RUN_NETWORK=1 that means
+// mkdir/npm-install escaping to the user's real $HOME. Append here when the
+// harness starts injecting another var (e.g. MANIFEST_CHAIN_DATA_FILE).
+const HARNESS_INJECTABLE = ['MANIFEST_PLUGIN_DATA', 'NODE_PATH'];
+
+/**
+ * Static-content lint: every `export <VAR>=...` for a harness-injectable VAR
+ * inside a docs-ci block MUST use the self-referential parameter-default
+ * `${VAR:-...}` so a harness-injected value is preserved. This is a TEXT
+ * check — it runs even on `network`-tagged blocks (skipped from execution)
+ * and even though CI keeps network off, so the convention can't silently
+ * regress. Returns a `failures[]` of human-readable strings.
+ */
+function lintInjectableEnvExports(md, sourceFile = 'docs/testing.md') {
+  const failures = [];
+  const blocks = extractBlocks(md);
+  const exportRe = /^\s*export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
+  for (const block of blocks) {
+    const codeLines = block.code.split('\n');
+    for (let i = 0; i < codeLines.length; i++) {
+      const m = codeLines[i].match(exportRe);
+      if (!m) continue;
+      const varName = m[1];
+      const rhs = m[2];
+      if (!HARNESS_INJECTABLE.includes(varName)) continue;
+      if (rhs.includes(`\${${varName}:-`)) continue; // correct parameter-default form
+      // The block's first body line sits at block.line + 1 (block.line is the
+      // fence opener), so this code line maps to block.line + 1 + i.
+      const docLine = block.line + 1 + i;
+      failures.push(
+        `${sourceFile}:${docLine}: 'export ${varName}=...' in a docs-ci block must use the `
+        + `\${${varName}:-...} parameter-default so a harness-injected ${varName} is preserved. `
+        + `Found: ${codeLines[i].trim()} | Expected: export ${varName}="\${${varName}:-<default>}"`,
+      );
+    }
+  }
+  return failures;
+}
+
 function main(argv) {
   const file = argv[2];
   if (!file) {
@@ -302,6 +343,12 @@ function main(argv) {
     process.exit(1);
   }
 
+  // Static pre-check: lint injectable env exports across ALL tagged blocks
+  // (including network-tagged, which are skipped from execution below). Runs
+  // regardless of network gating because it's purely textual.
+  const lintFailures = lintInjectableEnvExports(md, file);
+  for (const f of lintFailures) console.error(`LINT ${f}`);
+
   const ctx = { repoRoot: process.cwd(), sourceFile: file };
   let ran = 0;
   let skipped = 0;
@@ -324,12 +371,24 @@ function main(argv) {
     }
   }
 
-  console.log(`docs-ci: ${ran} ran, ${skipped} skipped, ${failed} failed (${blocks.length} tagged)`);
-  process.exit(failed > 0 ? 1 : 0);
+  console.log(
+    `docs-ci: ${ran} ran, ${skipped} skipped, ${failed} failed, `
+    + `${lintFailures.length} lint failure(s) (${blocks.length} tagged)`,
+  );
+  process.exit(failed > 0 || lintFailures.length > 0 ? 1 : 0);
 }
 
 if (require.main === module) {
   main(process.argv);
 }
 
-module.exports = { extractBlocks, parseDirectives, runBlock, evaluateResult, seedDataDir, SEED_CHAIN };
+module.exports = {
+  extractBlocks,
+  parseDirectives,
+  runBlock,
+  evaluateResult,
+  lintInjectableEnvExports,
+  seedDataDir,
+  SEED_CHAIN,
+  HARNESS_INJECTABLE,
+};
