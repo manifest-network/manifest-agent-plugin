@@ -24,14 +24,14 @@
  *          false RED on a clean repo.
  *        - plain substring on the short name WRONGLY matches inside
  *          `deploy_app_orchestrated` → a lying guard that stays green after
- *          the real mention is deleted (the Test-that-lies-about-coverage
- *          principle, ENG-214 #2).
+ *          the real mention is deleted (ENG-214's
+ *          Test-that-lies-about-coverage principle, #2).
  *      The ALLOW_MISSING_FROM_POLICY allowlist applies to this assertion.
  *
- *   2. CLAUDE.md gated-tools list parity (Sweep-discipline principle, #6). The "Tools gated by
- *      the PreToolUse hook" bullet list in CLAUDE.md must set-equal the
- *      matcher's full names (no missing, no extra). No allowlist — the doc
- *      list must match exactly.
+ *   2. CLAUDE.md gated-tools list parity (ENG-214's Sweep-discipline
+ *      principle, #6). The "Tools gated by the PreToolUse hook" bullet
+ *      list in CLAUDE.md must set-equal the matcher's full names (no
+ *      missing, no extra). No allowlist — the doc list must match exactly.
  *
  *   3. docs/scripts.md is EXEMPT (documented, not silently skipped): it
  *      cross-references the CLAUDE.md list rather than enumerating the
@@ -61,7 +61,8 @@ const { join } = require('node:path');
  * direct mention. STARTS EMPTY: on baseline all gated tools are named under
  * the contract above, so the check is green with no exceptions.
  *
- * Strictness (anti-"lying-guard", ENG-214 #2), enforced by the check:
+ * Strictness (anti-"lying-guard", per ENG-214's
+ * Test-that-lies-about-coverage principle, #2), enforced by the check:
  *   - an entry with an empty/missing `reason` is a CI failure;
  *   - an entry for a tool NOT in the matcher (stale) is a CI failure;
  *   - an entry for a tool that IS actually named (dead weight) is a CI
