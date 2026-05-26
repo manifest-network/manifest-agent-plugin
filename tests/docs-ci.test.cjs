@@ -293,6 +293,45 @@ test('network block runs when ctx.runNetwork is true', () => {
 });
 
 // ---------------------------------------------------------------------------
+// runBlock — setup block must not clobber the injected MANIFEST_PLUGIN_DATA
+// (Copilot R2, finding 2)
+// ---------------------------------------------------------------------------
+
+// The harness seeds chains/testnet.json into the injected tempdir, so its
+// presence is a positive marker that the block's `$MANIFEST_PLUGIN_DATA`
+// resolved to the harness tempdir rather than a hardcoded default. Hermetic:
+// no network, no $HOME writes, no real npm install.
+const MPD_PROBE = 'test -f "$MANIFEST_PLUGIN_DATA/chains/testnet.json" && echo INJECTED || echo CLOBBERED';
+
+test('setup block with `${MANIFEST_PLUGIN_DATA:-default}` preserves the harness-injected dir', () => {
+  // The fix: parameter-default expansion yields to the injected value.
+  const [block] = extractBlocks(md(
+    '<!-- docs-ci -->',
+    '```bash',
+    'export MANIFEST_PLUGIN_DATA="${MANIFEST_PLUGIN_DATA:-/docs-ci-should-not-resolve-here}"',
+    MPD_PROBE,
+    '```',
+  ));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.match(r.stdout, /INJECTED/, 'parameter-default must keep MANIFEST_PLUGIN_DATA pointed at the injected tempdir');
+});
+
+test('setup block with an UNCONDITIONAL export clobbers the injected dir (the bug the fix prevents)', () => {
+  // Before-form: unconditional assignment escapes the harness tempdir —
+  // exactly why the real "One-time setup" block's mkdir + npm install would
+  // have landed in the user's real $HOME under DOCS_CI_RUN_NETWORK=1.
+  const [block] = extractBlocks(md(
+    '<!-- docs-ci -->',
+    '```bash',
+    'export MANIFEST_PLUGIN_DATA="/docs-ci-should-not-resolve-here"',
+    MPD_PROBE,
+    '```',
+  ));
+  const r = runBlock(block, { repoRoot: REPO_ROOT, sourceFile: SOURCE });
+  assert.match(r.stdout, /CLOBBERED/, 'unconditional export must demonstrably escape the injected tempdir');
+});
+
+// ---------------------------------------------------------------------------
 // seedDataDir — offline render-balance fixture
 // ---------------------------------------------------------------------------
 

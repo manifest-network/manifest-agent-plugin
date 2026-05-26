@@ -104,11 +104,11 @@ exercising the commands by hand.
 
 <!-- docs-ci network -->
 ```bash
-export MANIFEST_PLUGIN_DATA="$HOME/.manifest-agent-dev"
+export MANIFEST_PLUGIN_DATA="${MANIFEST_PLUGIN_DATA:-$HOME/.manifest-agent-dev}"
 mkdir -p "$MANIFEST_PLUGIN_DATA"
 cp package.json "$MANIFEST_PLUGIN_DATA/"
 npm install --omit=dev --prefix "$MANIFEST_PLUGIN_DATA"
-export NODE_PATH="$MANIFEST_PLUGIN_DATA/node_modules"
+export NODE_PATH="${NODE_PATH:-$MANIFEST_PLUGIN_DATA/node_modules}"
 ```
 
 ### Fetch chain registry
