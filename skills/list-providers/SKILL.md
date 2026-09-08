@@ -44,7 +44,7 @@ is a pure chain query that doesn't need agent state.
 Call:
 
 ```
-mcp__manifest-lease__get_providers({ active_only: ACTIVE_ONLY })
+mcp__plugin_manifest-agent_manifest-lease__get_providers({ active_only: ACTIVE_ONLY })
 ```
 
 Then pipe the JSON response through the renderer:

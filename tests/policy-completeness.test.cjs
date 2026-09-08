@@ -50,7 +50,16 @@ test('parseMatcher splits {full, short} from anchored alternation; short = after
   ]);
 });
 
-test('parseMatcher rejects an unanchored alternative (mirrors the ci.yml assertion)', () => {
+test('plugin-scoped callable names are extracted and retain the full policy contract', () => {
+  const full = 'mcp__plugin_manifest-agent_manifest-chain__cosmos_tx';
+  const tools = parseMatcher({ hooks: { PreToolUse: [{ matcher: `^${full}$` }] } });
+  assert.deepEqual(tools, [{ full, short: 'cosmos_tx' }]);
+  const md = `Tools gated by the PreToolUse hook\n\n- \`${full}\`\n\nRead-only tools are omitted.`;
+  assert.deepEqual(extractClaudeMdGatedList(md), [full]);
+  assert.equal(isNamed(tools[0], `Call \`${full}\`.`), true);
+});
+
+test('parseMatcher rejects an unanchored alternative', () => {
   const hooks = { hooks: { PreToolUse: [{ matcher: '^mcp__a__b$|mcp__c__d' }] } };
   assert.throws(() => parseMatcher(hooks), /unanchored/i);
 });

@@ -6,8 +6,8 @@ description: >
   FQDN. With no argument, asks which action and which lease. With a
   lease UUID argument, treats it as the target for set/clear. Lookup is
   a direct read-only chain query; set and clear flow through the
-  orchestrated MCP tool, which estimates the fee, asks the user to
-  confirm via elicitation, broadcasts, and verifies on-chain state.
+  orchestrated MCP tool, which requests native action confirmation,
+  broadcasts, and verifies on-chain state.
 allowed-tools: Bash(*), Read
 ---
 
@@ -48,7 +48,7 @@ query; set and clear go through the orchestrated tool.
 If `ACTION === "lookup"`, ask the user for the FQDN to look up. Then call:
 
 ```
-mcp__manifest-lease__lease_by_custom_domain({ custom_domain: <fqdn> })
+mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain({ custom_domain: <fqdn> })
 ```
 
 This is a direct call rather than `manage_domain_orchestrated({action:
@@ -111,7 +111,7 @@ user explicitly needs to scope the clear to one service.
 **Invoke the orchestrated tool**:
 
 ```
-mcp__manifest-agent__manage_domain_orchestrated({
+mcp__plugin_manifest-agent_manifest-agent__manage_domain_orchestrated({
   action: ACTION,
   lease_uuid: LEASE_UUID,
   fqdn: FQDN,          // set only
@@ -119,15 +119,18 @@ mcp__manifest-agent__manage_domain_orchestrated({
 })
 ```
 
-While the call runs, the wrapper raises one elicitation prompt with a
-text confirmation block (`Set custom domain on lease <uuid>: FQDN: …` or
-`Clear custom domain on lease <uuid>: Service: …`). **Print the message
-body verbatim** and forward the elicitation response unchanged — do
-NOT paraphrase. The orchestrated tool also runs the on-chain verifier
-after broadcast and surfaces any mismatch through the same response
-shape. The inner `mcp__manifest-lease__set_item_custom_domain`
-broadcast triggers the PreToolUse permission prompt on its own — that's
-expected.
+For set/clear, Claude Code evaluates the PreToolUse hook on this outer
+invocation before execution. Once allowed, the server requests native
+elicitation for the domain action. The pinned tool's action recap does
+not guarantee a numeric fee estimate. Claude Code renders
+the request and returns the user's answer; do not reprint the message,
+forward the answer yourself, or ask for a duplicate prose confirmation.
+The internal SDK write does not produce a separate host PreToolUse event.
+The orchestrated tool verifies the on-chain result and reports mismatches.
+
+`manage_domain_orchestrated` with `action: "lookup"` is read-only and is
+exempt from the mutating-call permission request. The skill's direct
+lookup path above is read-only too.
 
 On non-throw return, capture `MANAGE_RESULT`. The shape is
 `ManageDomainResult` — surface its `action`, `leaseUuid`, `fqdn` (set or
@@ -137,6 +140,11 @@ verbatim — the wrapper has already run its verify-and-recover dispatch.
 
 ## Step 3 — Record this run in the journal (set / clear only)
 
+The `tool_calls[].tool` strings below are historical journal keys used by
+`_journal.cjs` redaction reducers. Keep their `mcp__manifest-*` spelling;
+invoke tools with the scoped `mcp__plugin_manifest-agent_manifest-*`
+names shown in the workflow above. Journal keys are not callable host names.
+
 Append one record to `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`.
 The writer auto-fills `timestamp_iso`, `timestamp_unix`,
 `schema_version`, and `session_id`. The single `tool_calls[]` entry is
@@ -144,9 +152,8 @@ the orchestrated tool; `args_redacted` is produced by
 `scripts/_journal.cjs#redactArgs` (which normalizes snake_case input to
 camelCase output: `leaseUuid`, `customDomain`, `serviceName`).
 `result_summary` mines `MANAGE_RESULT` for `verifier_outcome` plus the
-load-bearing fields. Inner `cosmos_estimate_fee` +
-`set_item_custom_domain` + `leases_by_tenant` calls live in agent-core
-and are NOT enumerated.
+load-bearing fields. Internal domain writes and verification queries
+live in agent-core and are not enumerated as host tool calls.
 
 Set `outcome` to `"success"` when the orchestrated tool returned non-
 throw and the verifier outcome was `match`. Set `"partial"` if the
@@ -192,6 +199,6 @@ JOURNAL_EOF
 `$MANIFEST_PLUGIN_DATA/manifests/<LEASE_UUID>.json` is intentionally
 NOT refreshed by manage-domain — the on-chain state is canonical.
 The wrapper's `custom_domain` may go stale; consumers needing the live
-value should query `mcp__manifest-lease__leases_by_tenant` or
-`mcp__manifest-lease__lease_by_custom_domain`. The wrapper refreshes
+value should query `mcp__plugin_manifest-agent_manifest-lease__leases_by_tenant` or
+`mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain`. The wrapper refreshes
 naturally on the next `/manifest-agent:deploy-app` run for that lease.

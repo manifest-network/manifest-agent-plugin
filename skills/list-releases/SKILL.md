@@ -55,7 +55,7 @@ Store the chosen UUID as `LEASE_UUID`.
 
 ## Step 2 — Fetch + render
 
-Call `mcp__manifest-fred__app_releases({ lease_uuid: LEASE_UUID })`,
+Call `mcp__plugin_manifest-agent_manifest-fred__app_releases({ lease_uuid: LEASE_UUID })`,
 then pipe the JSON response through the renderer:
 
 ```bash

@@ -253,6 +253,11 @@ function isSafeTool(toolName) {
 }
 
 function redactArgs(toolName, rawArgs) {
+  // Claude registers plugin-scoped names; historical journal identifiers use
+  // the unscoped form. Both must select the same secret-safe reducer.
+  if (typeof toolName === 'string') {
+    toolName = toolName.replace(/^mcp__plugin_manifest-agent_/, 'mcp__');
+  }
   // Falsy values (null, undefined, 0, '', false) carry no information to
   // redact — pass through unchanged.
   if (!rawArgs) return rawArgs;

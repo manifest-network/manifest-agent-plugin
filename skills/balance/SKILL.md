@@ -64,13 +64,13 @@ from the heading address resolved above):
 - **Explicit tenant**: when `EXPLICIT_TENANT === true`, pass the
   argument through:
   ```
-  mcp__manifest-lease__credit_balance({ tenant: TENANT })
+  mcp__plugin_manifest-agent_manifest-lease__credit_balance({ tenant: TENANT })
   ```
 - **Implicit caller**: when `EXPLICIT_TENANT === false`, omit `tenant`
   entirely so the MCP tool defaults to the caller (avoids a redundant
   round-trip):
   ```
-  mcp__manifest-lease__credit_balance({})
+  mcp__plugin_manifest-agent_manifest-lease__credit_balance({})
   ```
 
 In both cases, `TENANT` is still used in Step 3 as the renderer's
@@ -100,6 +100,6 @@ rearrange.
 
 If the rendered burn rate is non-zero and `Hours remaining` is small
 (rough rule of thumb: under 24 hours), suggest topping up the credit
-account via `mcp__manifest-lease__fund_credit` (the runtime policy
+account via `mcp__plugin_manifest-agent_manifest-lease__fund_credit` (the runtime policy
 will gate the broadcast). Don't push the suggestion when credits are
 healthy or the credit account doesn't exist.

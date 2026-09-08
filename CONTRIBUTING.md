@@ -19,7 +19,7 @@ node -p "require('./package.json').version"
 node -p "require('./.claude-plugin/plugin.json').version"
 ```
 
-If you touched the broadcast-tool surface (added a new MCP tool that spends funds or mutates remote state), update three places in the same commit — `hooks/hooks.json`, the expected list in `.github/workflows/ci.yml`, and the "Tools gated by the PreToolUse hook" list in `CLAUDE.md`.
+If you change the published MCP tool surface, review its mutation classification, update `hooks/hooks.json` and the runtime policy where required, and keep the "Tools gated by the PreToolUse hook" list in `CLAUDE.md` consistent. `ci/mcp-tool-policy.cjs` checks the actual installed package inventory; the workflow no longer carries a separate expected tool list. Include argument-specific read-only exceptions, such as domain lookup, in hook tests. See [`docs/approval-validation.md`](docs/approval-validation.md) for the distinction between hook tests and actual host validation.
 
 ## Branch names
 
@@ -57,7 +57,7 @@ Issue references go in the subject (`(ENG-NN)`) when the change traces back to a
 - [ ] If you added a script, you also added a test file (see [`docs/testing.md`](docs/testing.md) for the branch-coverage checklist).
 - [ ] If you changed any user-visible flow, the corresponding `skills/<name>/SKILL.md` is updated.
 - [ ] If you added or renamed a script, the **Scripts inventory** section in `CLAUDE.md` is updated.
-- [ ] If you changed the broadcast-tool surface, `hooks/hooks.json`, the CI matcher list, and `CLAUDE.md` all match.
+- [ ] If you changed the MCP tool surface, the installed-inventory check and policy-completeness check pass; `hooks/hooks.json`, runtime policy, and the `CLAUDE.md` gated-tool list agree.
 - [ ] If you bumped `@manifest-network/manifest-mcp-node`, the env-var mapping in `CLAUDE.md` is still accurate (re-read `start-server.cjs`).
 - [ ] Plugin version is unchanged (a separate `chore: bump plugin version to X.Y.Z` commit handles releases — see [`docs/release.md`](docs/release.md)).
 - [ ] No secrets in the diff: keypairs, mnemonics, real chain RPC credentials.

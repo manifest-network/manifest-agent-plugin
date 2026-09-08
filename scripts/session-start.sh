@@ -57,53 +57,46 @@ The rules below apply to every session where these tools are available.
 
 ## Orchestrated agent-server tools (the preferred surface)
 
-The four tools under `mcp__manifest-agent__*_orchestrated`
+The four tools under `mcp__plugin_manifest-agent_manifest-agent__*_orchestrated`
 (`deploy_app_orchestrated`, `manage_domain_orchestrated`,
 `troubleshoot_deployment_orchestrated`, `close_lease_orchestrated`)
 wrap `manifest-agent-core` flows. They own plan, confirmation,
-progress, recovery, and post-broadcast verification end-to-end via
-the MCP elicitation + progress-notification protocols.
+progress, recovery, and post-broadcast verification via MCP elicitation.
 
 When you invoke one of these tools:
 
-- The wrapper **may** raise one or more `elicitInput` requests at
-  confirmation gates — deployment plan, set-domain confirm, close-
-  lease confirm, partial-success recovery choice, mainnet warning.
-  `deploy_app_orchestrated`, `manage_domain_orchestrated` (on its
-  `set` / `clear` sub-flows), and `close_lease_orchestrated` ALWAYS
-  elicit at least once. `troubleshoot_deployment_orchestrated` is a
-  read-only chain query and emits **ZERO** elicitations — handle its
-  `TroubleshootReport` return value directly without waiting for a
-  prompt. `manage_domain_orchestrated` on its `lookup` sub-flow also
-  emits zero (read-only). When elicitations DO fire, the host
-  renders each as a native UI prompt; the user's elicitation
-  response IS the binding confirmation.
-- **Print each elicitation prompt's `message` body verbatim. Do NOT
-  paraphrase, summarize, or splice in extra fields.** `agent-core`'s
-  internal `internals/render-*` modules pin the exact wording so
-  adjacent runs cannot drift.
-- **Do NOT compose your own `DeploymentPlan`, intent recap, or
-  fee-itemization block.** The wrapper owns those rendered texts.
-- **Do NOT call `cosmos_estimate_fee` yourself before invoking the
-  orchestrated tool.** The wrapper runs the estimate internally and
-  embeds the result in the elicitation prompt.
-- Progress notifications stream during the call; if the host renders
-  `notifications/progress`, surface them as inline status updates.
-- On thrown errors the wrapper returns a standard MCP error envelope.
-  Surface the message verbatim and follow any recovery branch the
-  wrapper points at.
-- The **inner** broadcast tools the wrapper dispatches
-  (`mcp__manifest-fred__deploy_app`,
-  `mcp__manifest-lease__set_item_custom_domain`,
-  `mcp__manifest-lease__close_lease`, etc.) still trigger the
-  PreToolUse permission prompt on their own — that's expected. One
-  prompt fires per inner tx.
+- For a mutating operation, the PreToolUse hook requests host permission
+  BEFORE the outer tool starts. This authorizes starting the operation;
+  its native action confirmation happens afterward, inside the tool call.
+- The server requests confirmation through native MCP elicitation for
+  deployment plans, domain changes, lease closure, mainnet warnings,
+  and recovery choices. The host renders these prompts and returns the
+  user's answer directly. Do not reconstruct or repeat the prompts or
+  treat a model-written answer as the user's confirmation.
+- Do not compose a separate DeploymentPlan or fee-itemization block,
+  or call `cosmos_estimate_fee` before an orchestrated operation. The
+  wrapper owns its confirmation content. The pinned deploy plan includes
+  estimated fees; domain and close recaps do not guarantee numeric fees.
+- `troubleshoot_deployment_orchestrated` and the pinned
+  `manage_domain_orchestrated` tool's `action: "lookup"` are read-only.
+  They need no plugin-forced permission or mutation confirmation.
+  Handle their returned reports directly.
+- If elicitation is unavailable, declined, or cancelled, stop and
+  surface the server's result. Do not fall back to a direct write to
+  bypass confirmation. During recovery, earlier steps may already have
+  succeeded; report that partial state.
+- Surface progress notifications and returned errors through the host's
+  supported presentation. Follow the recovery options the server offers.
+- Internal SDK calls (including `deploy_app`, `set_item_custom_domain`,
+  and `close_lease`) do not re-enter the host's MCP dispatcher and do
+  not trigger additional PreToolUse hooks. The outer tool is the host
+  permission boundary.
 
-For `deploy_app_orchestrated` specifically, the wrapper also handles
-the dual-tx case (`create-lease` + `set-item-custom-domain` when
-`customDomain` is set) — both fees are itemized in the plan
-elicitation, both inner txes fire under one MCP tool call, and the
-PreToolUse hook prompts once per inner tx.
+A deployment can execute sequential chain transactions, upload a
+manifest to a provider, and wait for readiness. It is not atomic:
+lease creation can succeed before a later domain or provider step
+fails. The wrapper's in-call confirmations and recovery reports cover
+these stages; there is no host permission prompt per internal step.
 
 ## Pre-broadcast confirmation for non-orchestrated billing txes
 
@@ -138,20 +131,20 @@ any non-orchestrated billing tx you find yourself about to broadcast.
 - **For provider-side write tools that do NOT broadcast on-chain**
   (`restart_app`, `update_app`): these are HTTPS calls to the
   provider, not Cosmos transactions. No gas, no estimate. The
-  PreToolUse permission prompt still fires; describe the action and
+  PreToolUse hook still requests host permission; describe the action and
   wait for textual confirmation, but do not query balances or call
   `cosmos_estimate_fee`.
 
 - **For matcher-gated lease / fred tools that an orchestrated wrapper
-  already covers (`mcp__manifest-lease__close_lease`,
-  `mcp__manifest-lease__set_item_custom_domain`,
-  `mcp__manifest-fred__update_app`):** these are gated by PreToolUse
+  already covers (`mcp__plugin_manifest-agent_manifest-lease__close_lease`,
+  `mcp__plugin_manifest-agent_manifest-lease__set_item_custom_domain`,
+  `mcp__plugin_manifest-agent_manifest-fred__update_app`):** these are gated by PreToolUse
   but should NOT be invoked directly under normal flows. Route through
   the orchestrated wrappers instead — `close_lease_orchestrated`,
   `manage_domain_orchestrated`, and `deploy_app_orchestrated`
   respectively (the last drives `update_app` internally as part of
   its partial-success recovery dispatch). The orchestrated wrappers
-  handle fee estimation, intent disclosure, and verify-and-recover
+  handle action confirmation and verify-and-recover
   via MCP elicitation; direct invocation skips all of that and
   surfaces only the raw PreToolUse permission prompt with no
   preceding fee or action summary, which violates the runtime policy
@@ -189,21 +182,20 @@ invocations.
 
 ## Enforcement note
 
-Claude Code also runs a PreToolUse hook that forces a user permission
-prompt before any broadcast tool runs, regardless of pre-existing
-permission settings. That prompt is a safety net — it does not replace
-the textual fee summary and confirmation you must provide first (for
-non-orchestrated broadcasts) or the elicitation flow the orchestrated
-wrappers drive (for the four orchestrated tools). The prompt fires on
-the **inner** broadcast tools, even when invoked through an
-orchestrated wrapper, so the user sees one prompt per inner tx. The
-orchestrated wrappers themselves do NOT trigger the hook — the
-matcher is anchored on the inner tool names.
+Claude Code dispatches this hook for the installed plugin's scoped MCP
+names. The hook asks before direct writes and mutating outer wrappers,
+including provider HTTP writes. A direct write still requires the
+preceding action and applicable fee summary described above. For an
+orchestrated write, host permission comes first, then the server's
+native action elicitation. Seeing the outer permission prompt before
+that elicitation is expected.
 
-If the user sees a permission prompt for a broadcast tool without
-having first seen either an elicitation prompt (orchestrated tools)
-or a fee/balance summary (direct tx) from you, you have violated
-this policy.
+The hook does not auto-approve any operation. Read-only tools and the
+testnet faucet keep the host's normal permission behavior; a domain
+lookup emits no plugin decision. Permission handling depends on the
+host version and configuration. Do not disable hooks or use unattended
+permission bypasses as a substitute for the user's confirmation.
+
 POLICY
 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
