@@ -299,6 +299,11 @@ target it later.
 list agree with the hook matcher. This is a documentation-consistency
 check, not evidence that Claude intercepted a call.
 
+Both policy checks use `matcherNames` from `ci/mcp-tool-policy.cjs` to
+require exact, individually anchored, unique tool names. The local check
+rejects permissive regexes and malformed matchers without installing or
+starting the MCP servers.
+
 **What it asserts:**
 
 1. **session-start.sh naming** — every matcher-gated tool is named in the

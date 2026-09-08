@@ -54,6 +54,8 @@ function prepareCase(directory, test) {
     config, join(directory, 'work'), join(directory, 'runtime'), join(directory, 'cache')]) {
     mkdirSync(path, { recursive: true, mode: 0o700 });
   }
+  // Claude's startup rg scan expects its plugin cache directory to exist.
+  mkdirSync(join(config, 'plugins', 'cache'), { recursive: true, mode: 0o700 });
   jsonFile(join(config, '.claude.json'), {});
   jsonFile(join(plugin, '.claude-plugin', 'plugin.json'), {
     name: 'manifest-agent', version: '0.0.0', description: 'Harmless isolated host characterization fixture.',

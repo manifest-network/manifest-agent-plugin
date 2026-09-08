@@ -38,7 +38,10 @@ node ci/mcp-tool-policy.cjs --data-dir <install-directory>
 
 The check combines `readOnlyHint` and Manifest `broadcasts` metadata,
 rejects missing/invalid or contradictory metadata, and handles the explicit
-testnet faucet exception. Tool source review remains necessary: a handler
+testnet faucet exception. A complete inventory survives an ordinary nonzero
+shutdown exit, but the network guard's exit code 97 always fails discovery
+and reports the blocked attempt, including during shutdown. Tool source
+review remains necessary: a handler
 incorrectly marked read-only and non-broadcasting can still mutate state.
 
 ## Actual-host evidence
@@ -69,6 +72,8 @@ node ci/claude-hook-smoke.cjs
 It writes a fresh `/tmp/manifest-claude-hook-smoke-*/report.json` and
 per-case logs. It uses local simulated API/MCP counterparts with dummy
 credentials, not the user's configured model account or chain signer.
+The isolated configuration includes an empty `plugins/cache` directory
+because Claude scans it at startup, even when loading via `--plugin-dir`.
 
 All **14 host-harness cases passed on Claude Code 2.1.263**:
 
@@ -113,7 +118,7 @@ remains pending.
 
 ## ENG-892 validation record
 
-The change passed 287 local unit tests, the documentation/policy checks,
+The change passed 291 local unit tests, the documentation/policy checks,
 and the installed-inventory check for 5 pinned servers exposing 32 tools
 and 11 gated mutation entry points. The 14 host cases above exercise
 Claude dispatch with local fixtures; they do not add live chain coverage.

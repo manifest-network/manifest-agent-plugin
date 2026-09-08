@@ -176,6 +176,26 @@ test('metadata discovery fails loudly when startup attempts network access', asy
   await assert.rejects(listTools(opts), /exited with code 97/);
 });
 
+test('network access during shutdown fails discovery even after a complete inventory', async (t) => {
+  const opts = fixture(t, `
+    setInterval(() => {}, 1000);
+    process.on('SIGTERM', () => {
+      require('node:fs').writeFileSync('shutdown.json', JSON.stringify({ signal: 'SIGTERM' }));
+      require('node:net').connect({ host: '127.0.0.1', port: 1 });
+    });
+    require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
+      const msg = JSON.parse(line);
+      if (!msg.id) return;
+      const result = msg.method === 'initialize'
+        ? { capabilities: { tools: {} } }
+        : { tools: [{ name: 'completed' }] };
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }) + '\\n');
+    });
+  `);
+  await assert.rejects(listTools(opts), /network access.*97/);
+  assert.deepEqual(JSON.parse(readFileSync(join(opts.cwd, 'shutdown.json'), 'utf8')), { signal: 'SIGTERM' });
+});
+
 test('metadata discovery rejects an unexpected server request instead of executing it', async (t) => {
   const opts = fixture(t, `process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:9,method:'elicitation/create'})+'\\n'); setInterval(()=>{},1000);`);
   await assert.rejects(listTools(opts), /requested an operation/);

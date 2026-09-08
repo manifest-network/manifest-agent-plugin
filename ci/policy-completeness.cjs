@@ -48,6 +48,7 @@
 
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
+const { matcherNames } = require('./mcp-tool-policy.cjs');
 
 /**
  * Allowlist for assertion 1 (session-start.sh naming) ONLY.
@@ -72,30 +73,15 @@ const CLAUDE_MD_HEADING = 'Tools gated by the PreToolUse hook';
 
 /**
  * Parse the PreToolUse matcher into [{ full, short }].
- * Splits on `|`, requires each alternative to be `^...$`-anchored (also
- * checked by the live inventory guard), strips the anchors to get the FULL
- * tool name, and derives SHORT = substring after the last `__`.
+ * Reuse the live inventory guard's exact, anchored, unique tool-name parser
+ * so both policy checks reject the same malformed or permissive matchers.
+ * SHORT is the substring after the last `__`.
  */
 function parseMatcher(hooksJson) {
-  const pre = (hooksJson && hooksJson.hooks && hooksJson.hooks.PreToolUse) || [];
-  if (pre.length === 0) {
-    throw new Error('parseMatcher: no PreToolUse hook entries in hooks.json');
-  }
-  const tools = [];
-  for (const entry of pre) {
-    if (!entry.matcher) {
-      throw new Error('parseMatcher: a PreToolUse entry is missing its matcher');
-    }
-    for (const alt of entry.matcher.split('|')) {
-      if (!/^\^.+\$$/.test(alt)) {
-        throw new Error(`parseMatcher: unanchored matcher alternative: ${alt}`);
-      }
-      const full = alt.replace(/^\^/, '').replace(/\$$/, '');
-      const short = full.includes('__') ? full.slice(full.lastIndexOf('__') + 2) : full;
-      tools.push({ full, short });
-    }
-  }
-  return tools;
+  return [...matcherNames(hooksJson)].map((full) => ({
+    full,
+    short: full.slice(full.lastIndexOf('__') + 2),
+  }));
 }
 
 /**

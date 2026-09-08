@@ -11,11 +11,12 @@ const { join, resolve } = require('node:path');
 
 const PACKAGE = '@manifest-network/manifest-mcp-node';
 const FAUCET = 'manifest-chain/request_faucet';
+const NETWORK_DENIED_EXIT = 97;
 const NETWORK_GUARD = `
 'use strict';
 const deny = () => {
   process.stderr.write('Metadata probe attempted network access; refusing.\\n');
-  process.exit(97);
+  process.exit(${NETWORK_DENIED_EXIT});
 };
 require('node:net').Socket.prototype.connect = deny;
 const dns = require('node:dns');
@@ -174,7 +175,12 @@ function listTools({ binaryPath, cwd, guardPath, timeoutMs = 20000 }) {
     child.on('close', (code) => {
       // A complete inventory triggers our SIGTERM cleanup. The server may
       // report a nonzero shutdown status without invalidating that response.
-      if (code && !failure && !result) failure = new Error(`MCP metadata server exited with code ${code}`);
+      // The network guard's sentinel always fails, including during cleanup.
+      if (code === NETWORK_DENIED_EXIT) {
+        failure = new Error(`MCP metadata server attempted network access (exited with code ${code})`);
+      } else if (code && !failure && !result) {
+        failure = new Error(`MCP metadata server exited with code ${code}`);
+      }
       finish();
     });
     child.stdin.on('error', (error) => stop(error));
