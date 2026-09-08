@@ -109,7 +109,7 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 - Underscore-prefixed files are sibling-only modules consumed via `require('./_X.cjs')` — skills MUST NOT shell out to them.
 - Non-underscore files are normally CLI entry points; `humanize-denom.cjs` is the post-ENG-130 documented exception (a denom→symbol renderer composed by `render-balance.cjs`).
 - CLI scripts exit `1` on argv/usage errors with a one-line stderr diagnostic.
-- `pre-tool-use.cjs` is the hook payload classifier, invoked by `pre-tool-use.sh`. It returns a host permission decision and exports `decidePermission` for tests; invalid events emit `deny` rather than relying on a nonzero exit status.
+- `pre-tool-use.cjs` is the hook payload classifier, invoked by `pre-tool-use.sh`. Its private output is `ask-direct`, `ask-orchestrated`, or `defer`; invalid events exit nonzero. The shell clears Node preload variables and maps only those tokens to fixed host JSON or no decision. Errors, empty output, and unexpected output produce `deny`. The helper exports `decidePermission` for tests.
 - Use `grep -rn '<script>.cjs' skills/ scripts/` to locate callers — the call graph drifts and isn't worth restating in prose.
 
 ## config.json → MCP env var mapping

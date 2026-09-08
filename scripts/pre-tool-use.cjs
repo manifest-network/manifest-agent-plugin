@@ -6,39 +6,40 @@
 // are needed to decide whether to request host permission.
 const { readFileSync } = require('node:fs');
 const hooks = require('../hooks/hooks.json');
-const matchers = hooks.hooks.PreToolUse.map(({ matcher }) => new RegExp(matcher));
+const entries = hooks?.hooks?.PreToolUse;
+if (!Array.isArray(entries) || entries.length === 0) throw new Error('Missing PreToolUse matchers');
+const matchers = entries.map((entry) => {
+  if (typeof entry?.matcher !== 'string' || !entry.matcher.trim()) {
+    throw new Error('Missing PreToolUse matcher');
+  }
+  return new RegExp(entry.matcher);
+});
 const AGENT_PREFIX = 'mcp__plugin_manifest-agent_manifest-agent__';
 
-function decision(permissionDecision, permissionDecisionReason) {
-  return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision, permissionDecisionReason } };
-}
-
+// Private protocol consumed by pre-tool-use.sh, which owns the host JSON.
 function decidePermission(event) {
   if (!event || event.hook_event_name !== 'PreToolUse' || typeof event.tool_name !== 'string') {
     throw new Error('Invalid hook event');
   }
-  if (!matchers.some((matcher) => matcher.test(event.tool_name))) return null;
+  if (!matchers.some((matcher) => matcher.test(event.tool_name))) return 'defer';
 
   // In the pinned 0.10.0 server this one tool also has a read-only lookup
   // branch. Omit a decision; never return "allow" and override host policy.
   // Invalid/missing actions remain gated and are validated by the server.
   if (event.tool_name === `${AGENT_PREFIX}manage_domain_orchestrated`
-      && event.tool_input?.action === 'lookup') return null;
+      && event.tool_input?.action === 'lookup') return 'defer';
 
-  if (event.tool_name.startsWith(AGENT_PREFIX)) {
-    return decision('ask', 'Allow this Manifest operation to start? The server will then request confirmation before changing remote state.');
-  }
-  return decision('ask', 'This Manifest operation can change remote state. Review the requested action and any applicable fee estimate before approving.');
+  return event.tool_name.startsWith(AGENT_PREFIX) ? 'ask-orchestrated' : 'ask-direct';
 }
 
 if (require.main === module) {
   try {
     const result = decidePermission(JSON.parse(readFileSync(0, 'utf8')));
-    if (result) process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.stdout.write(`${result}\n`);
   } catch {
     // Do not echo the event, parser errors, arguments, or secret-bearing data.
     process.stderr.write('manifest-agent permission hook received an invalid event; denying this operation\n');
-    process.stdout.write(`${JSON.stringify(decision('deny', 'Manifest permission hook could not validate this event. Repair the plugin before retrying.'))}\n`);
+    process.exitCode = 1; // The shell emits its constant deny response.
   }
 }
 

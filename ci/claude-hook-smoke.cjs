@@ -21,12 +21,15 @@ const DIRECT = `${PREFIX}manifest-chain__cosmos_tx`;
 const OUTER = `${PREFIX}manifest-agent__deploy_app_orchestrated`;
 const LOOKUP = `${PREFIX}manifest-agent__manage_domain_orchestrated`;
 const EXPECTED_TOOLS = [DIRECT, OUTER, LOOKUP].sort();
+const EXPECTED_API_CALLS = 2;
 const CASES = [
   { name: 'bare-name-misses', matcher: '^mcp__manifest-chain__cosmos_tx$', tool: DIRECT, mutations: 1, hooks: 0 },
   { name: 'scoped-deny', matcher: `^${DIRECT}$`, tool: DIRECT, mutations: 0, hooks: 1, decision: 'deny' },
+  { name: 'polluted-deny-drops-decision', matcher: `^${DIRECT}$`, polluteFixtureStdout: true, tool: DIRECT, mutations: 1, hooks: 1, decision: 'deny' },
   { name: 'inner-only-misses-outer', matcher: `^${DIRECT}$`, tool: OUTER, mutations: 1, hooks: 0 },
   { name: 'scoped-outer-deny', matcher: `^${OUTER}$`, tool: OUTER, mutations: 0, hooks: 1, decision: 'deny' },
   { name: 'project-direct-ask', project: true, tool: DIRECT, mutations: 0, hooks: 1, decision: 'ask' },
+  { name: 'project-stdout-pollution', project: true, polluteStdout: true, tool: DIRECT, mutations: 0, hooks: 1, decision: 'deny' },
   { name: 'project-direct-ask-bypass', project: true, mode: 'bypassPermissions', tool: DIRECT, mutations: 0, hooks: 1, decision: 'ask' },
   { name: 'scoped-deny-bypass', mode: 'bypassPermissions', matcher: `^${DIRECT}$`, tool: DIRECT, mutations: 0, hooks: 1, decision: 'deny' },
   { name: 'project-outer-ask', project: true, tool: OUTER, mutations: 0, hooks: 1, decision: 'ask' },
@@ -48,7 +51,7 @@ function prepareCase(directory, test) {
   const plugin = join(directory, 'plugin');
   const config = join(directory, 'config');
   for (const path of [plugin, join(plugin, '.claude-plugin'), join(plugin, 'hooks'), join(plugin, 'scripts'),
-    config, join(config, 'plugins', 'cache'), join(directory, 'work'), join(directory, 'runtime'), join(directory, 'cache')]) {
+    config, join(directory, 'work'), join(directory, 'runtime'), join(directory, 'cache')]) {
     mkdirSync(path, { recursive: true, mode: 0o700 });
   }
   jsonFile(join(config, '.claude.json'), {});
@@ -69,6 +72,11 @@ function prepareCase(directory, test) {
     for (const file of ['pre-tool-use.sh', 'pre-tool-use.cjs']) {
       copyFileSync(join(ROOT, 'scripts', file), join(plugin, 'scripts', file));
     }
+  }
+  if (test.polluteStdout) {
+    const shimDirectory = join(directory, 'node-shim');
+    mkdirSync(shimDirectory, { mode: 0o700 });
+    writeFileSync(join(shimDirectory, 'node'), `#!/bin/sh\nprintf '%s\\n' 'fixture node startup noise'\nexec ${shellQuote(process.execPath)} "$@"\n`, { mode: 0o700 });
   }
   return { plugin, config };
 }
@@ -92,6 +100,8 @@ function environment(directory, config, port, test) {
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     MANIFEST_HOST_FIXTURE_LOG: join(directory, 'events.jsonl'),
     ...(test.project ? { MANIFEST_HOST_FIXTURE_POLICY: join(directory, 'plugin', 'scripts', 'pre-tool-use.sh') } : {}),
+    ...(test.polluteStdout ? { MANIFEST_HOST_FIXTURE_NODE_SHIM: join(directory, 'node-shim') } : {}),
+    ...(test.polluteFixtureStdout ? { MANIFEST_HOST_FIXTURE_STDOUT_NOISE: '1' } : {}),
     ...(test.response ? { MANIFEST_HOST_FIXTURE_ELICIT: '1' } : {}),
   };
 }
@@ -143,7 +153,7 @@ async function runCase(claude, outputDirectory, test) {
       const names = (body.tools || []).map(({ name }) => name).sort();
       assert.deepEqual(names, EXPECTED_TOOLS, 'Host advertised unexpected or missing tools');
       apiCalls.push({ path: request.url, tools: names });
-      assert.ok(apiCalls.length <= 3, 'Unexpected repeated model requests');
+      assert.ok(apiCalls.length <= EXPECTED_API_CALLS, 'Unexpected repeated model requests');
       modelResponse(response, body, test);
     } catch (error) {
       apiError = error;
@@ -232,7 +242,7 @@ async function runCase(claude, outputDirectory, test) {
   if (protocolError) throw protocolError;
   assert.equal(timedOut, false, 'Claude host timed out');
   assert.equal(exitCode, 0, 'Claude host failed; inspect stderr.log and debug.log');
-  assert.equal(apiCalls.length, 2, 'Expected one tool decision and one final model response');
+  assert.equal(apiCalls.length, EXPECTED_API_CALLS, 'Expected one tool decision and one final model response');
   assert.equal(hooks.length, test.hooks, 'Unexpected PreToolUse hook count');
   assert.equal(mutations.length, test.mutations, 'Unexpected fixture mutation count');
   assert.equal(summary.reads, test.reads || 0, 'Unexpected read-only fixture count');

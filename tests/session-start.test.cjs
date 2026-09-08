@@ -2,12 +2,13 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, rmSync, readFileSync, existsSync, symlinkSync } = require('node:fs');
+const { mkdtempSync, rmSync, readFileSync, existsSync, symlinkSync, mkdirSync, cpSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const SCRIPT = join(__dirname, '..', 'scripts', 'session-start.sh');
+const hooks = require('../hooks/hooks.json');
 
 // Tools the session-start.sh hook needs available in PATH. Used to build a
 // jq-less PATH for testing the grep+sed fallback: we create a shim directory
@@ -111,6 +112,30 @@ test('exports MANIFEST_PLUGIN_ROOT, MANIFEST_PLUGIN_DATA, NODE_PATH to CLAUDE_EN
   assert.match(r.envContent, /export MANIFEST_PLUGIN_ROOT=/);
   assert.match(r.envContent, /export MANIFEST_PLUGIN_DATA=/);
   assert.match(r.envContent, /export NODE_PATH=/);
+});
+
+test('registered SessionStart command emits policy and usable exports from a spaced plugin path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'manifest session hook '));
+  try {
+    const root = join(dir, 'plugin root');
+    const data = join(dir, 'plugin data');
+    const envFile = join(dir, 'session env');
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    mkdirSync(data);
+    cpSync(SCRIPT, join(root, 'scripts/session-start.sh'));
+    const env = { PATH: process.env.PATH, CLAUDE_PLUGIN_ROOT: root, CLAUDE_PLUGIN_DATA: data, CLAUDE_ENV_FILE: envFile };
+    const command = hooks.hooks.SessionStart[0].hooks[0].command;
+    const result = spawnSync('/bin/bash', ['-c', command], {
+      env, input: '{"session_id":"spaced-path-session"}', encoding: 'utf8', timeout: 5000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /manifest-agent runtime transaction policy/);
+    const exports = spawnSync('/bin/bash', ['-c',
+      'source "$CLAUDE_ENV_FILE"\nprintf "%s\\n" "$MANIFEST_PLUGIN_ROOT" "$MANIFEST_PLUGIN_DATA" "$NODE_PATH" "$MANIFEST_SESSION_ID"',
+    ], { env, encoding: 'utf8', timeout: 5000 });
+    assert.equal(exports.status, 0, exports.stderr);
+    assert.deepEqual(exports.stdout.trimEnd().split('\n'), [root, data, join(data, 'node_modules'), 'spaced-path-session']);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('extracts session_id via jq when available and exports MANIFEST_SESSION_ID', () => {

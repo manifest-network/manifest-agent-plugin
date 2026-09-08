@@ -18,7 +18,7 @@ the in-call plan confirmation.
 
 | Check | Evidence | Limit |
 | --- | --- | --- |
-| Hook payload tests | Scoped direct writes and deploy/manage/close orchestrators request permission; exact domain lookup is exempt; malformed payloads fail closed | Invoking the script with JSON does not show how Claude delivers events or renders permission requests |
+| Hook payload tests | Scoped mutations request permission; exact domain lookup is exempt; malformed payloads, configuration, and child output fail closed; inherited Node preloads are disabled | Invoking the script with JSON does not show how Claude delivers events or renders permission requests |
 | Installed MCP inventory | `initialize` and `tools/list` from each configured server in the pinned package expose tool names and mutation metadata that agree with the matcher | Published metadata does not prove a handler has no unreported side effects |
 | Runtime-policy and documentation checks | The injected policy, hook matcher, and developer gated-tool list agree | Matching prose cannot prove the user saw a fee estimate or made a choice |
 | Protocol/transport fixtures, when run | Simulated denial prevents entry; native elicitation acceptance/decline controls a fixture's mutation path | A simulated host does not establish real Claude UI or bypass-mode behavior |
@@ -70,12 +70,14 @@ It writes a fresh `/tmp/manifest-claude-hook-smoke-*/report.json` and
 per-case logs. It uses local simulated API/MCP counterparts with dummy
 credentials, not the user's configured model account or chain signer.
 
-All **12 host-harness cases passed on Claude Code 2.1.263**:
+All **14 host-harness cases passed on Claude Code 2.1.263**:
 
 | Case | Observed result |
 | --- | --- |
 | Old unscoped matcher | Missed the host tool name; the fixture marker ran |
 | Scoped deny | Blocked handler entry |
+| Polluted deny output (negative control) | A banner before deny JSON made Claude drop the decision; normal preapproval allowed one marker |
+| Project hook with a printing Node shim | Unexpected child stdout produced a clean deny and zero markers despite preapproval |
 | Internal-only matcher | Missed the outer server-side dispatch |
 | Scoped outer deny | Blocked the outer handler |
 | Project hook, direct write | `ask` blocked despite exact `--allowedTools` preapproval with prompts disabled |
@@ -96,6 +98,13 @@ written to the temporary artifact directory printed by the command.
 The bypass cases do not establish whether bypass mode persists after an
 interactive permission prompt.
 
+The pollution cases reproduce the review finding and its correction.
+`pre-tool-use.sh` now emits fixed JSON from a closed set of private child
+tokens; it never forwards child stdout. It also clears inherited
+`NODE_OPTIONS` and `NODE_PATH`. A banner causes denial even when a Node
+shim exits successfully. A deliberately replaced interpreter remains
+outside this guard's trust boundary.
+
 All runs used isolated configuration, a local simulated Anthropic API,
 dummy API credentials, and harmless MCP fixtures. Live-model choices,
 production orchestrator behavior, chain/provider mutations, and native
@@ -104,9 +113,9 @@ remains pending.
 
 ## ENG-892 validation record
 
-The change passed 281 local unit tests, the documentation/policy checks,
+The change passed 287 local unit tests, the documentation/policy checks,
 and the installed-inventory check for 5 pinned servers exposing 32 tools
-and 11 gated mutation entry points. The 12 host cases above exercise
+and 11 gated mutation entry points. The 14 host cases above exercise
 Claude dispatch with local fixtures; they do not add live chain coverage.
 
 ## Scope of the boundary

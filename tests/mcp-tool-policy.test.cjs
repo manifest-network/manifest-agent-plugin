@@ -135,6 +135,42 @@ test('metadata client only initializes and lists every page, without invoking an
   assert.deepEqual(transcript.at(-1).params, { cursor: 'page-two' });
 });
 
+test('completed metadata survives a nonzero exit from the requested shutdown', async (t) => {
+  const opts = fixture(t, `
+    const fs = require('node:fs');
+    setInterval(() => {}, 1000);
+    process.on('SIGTERM', () => {
+      fs.writeFileSync('shutdown.json', JSON.stringify({ signal: 'SIGTERM', exitCode: 3 }));
+      process.exit(3);
+    });
+    require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
+      const msg = JSON.parse(line);
+      if (!msg.id) return;
+      const result = msg.method === 'initialize'
+        ? { capabilities: { tools: {} } }
+        : { tools: [{ name: 'completed' }] };
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }) + '\\n');
+    });
+  `);
+  assert.deepEqual(await listTools(opts), [{ name: 'completed' }]);
+  assert.deepEqual(JSON.parse(readFileSync(join(opts.cwd, 'shutdown.json'), 'utf8')), {
+    signal: 'SIGTERM', exitCode: 3,
+  });
+});
+
+test('a nonzero exit before metadata completes still fails discovery', async (t) => {
+  const opts = fixture(t, `
+    require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
+      const msg = JSON.parse(line);
+      if (msg.method === 'tools/list') process.exit(3);
+      if (msg.method === 'initialize') process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0', id: msg.id, result: { capabilities: { tools: {} } },
+      }) + '\\n');
+    });
+  `);
+  await assert.rejects(listTools(opts), /exited with code 3/);
+});
+
 test('metadata discovery fails loudly when startup attempts network access', async (t) => {
   const opts = fixture(t, `require('node:net').connect({ host: '127.0.0.1', port: 1 });`);
   await assert.rejects(listTools(opts), /exited with code 97/);

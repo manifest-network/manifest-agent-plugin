@@ -351,7 +351,7 @@ for the recorded version, observed behavior, and interactive UI limits.
 
 `.github/workflows/ci.yml`:
 
-1. `node --check` syntax check on every `scripts/*.cjs` and `ci/*.cjs`.
+1. `node --check` syntax check on every `scripts/*.cjs`, `ci/*.cjs`, and `tests/fixtures/*.cjs`.
 2. `bash -n` syntax check on every `scripts/*.sh`.
 3. `JSON.parse` on every tracked `.json` file.
 4. Version consistency: `package.json` and `.claude-plugin/plugin.json` must match.

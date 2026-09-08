@@ -19,9 +19,9 @@ jobs:
       - name: Syntax-check CJS scripts
         run: |
           shopt -s nullglob
-          files=(scripts/*.cjs ci/*.cjs)
+          files=(scripts/*.cjs ci/*.cjs tests/fixtures/*.cjs)
           if [ ${#files[@]} -eq 0 ]; then
-            echo "ERROR: no CJS scripts found in scripts/ or ci/" >&2
+            echo "ERROR: no CJS scripts found in scripts/, ci/, or tests/fixtures/" >&2
             exit 1
           fi
           for f in "${files[@]}"; do

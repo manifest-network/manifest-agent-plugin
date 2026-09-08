@@ -18,6 +18,11 @@ if (process.argv[2] === 'hook') {
   if (process.env.MANIFEST_HOST_FIXTURE_POLICY) {
     const result = spawnSync('bash', [process.env.MANIFEST_HOST_FIXTURE_POLICY], {
       input: raw, encoding: 'utf8', timeout: 5000,
+      // Pollute only the project hook's Node startup; fixture tracing and
+      // harmless MCP servers still run with the clean, explicit Node path.
+      env: process.env.MANIFEST_HOST_FIXTURE_NODE_SHIM
+        ? { ...process.env, PATH: `${process.env.MANIFEST_HOST_FIXTURE_NODE_SHIM}:${process.env.PATH || ''}` }
+        : process.env,
     });
     if (result.error || result.status !== 0) throw new Error('Project permission hook failed');
     output = result.stdout;
@@ -30,6 +35,9 @@ if (process.argv[2] === 'hook') {
   const parsed = output.trim() ? JSON.parse(output) : {};
   record({ kind: 'hook', event: event.hook_event_name, tool: event.tool_name,
     decision: parsed.hookSpecificOutput?.permissionDecision ?? null });
+  // Negative control: a banner before valid deny JSON prevents this host from
+  // reading the decision. The recorded decision is what the fixture emitted.
+  if (process.env.MANIFEST_HOST_FIXTURE_STDOUT_NOISE === '1') process.stdout.write('fixture hook startup noise\n');
   if (output) process.stdout.write(output);
 } else if (process.argv[2] === 'server') {
   const server = process.argv[3];

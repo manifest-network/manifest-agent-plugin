@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, rmSync, writeFileSync, chmodSync, mkdirSync, cpSync } = require('node:fs');
+const { mkdtempSync, rmSync, writeFileSync, chmodSync, mkdirSync, cpSync, existsSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -52,7 +52,7 @@ test('read-only tools, faucet and unrelated plugins are not matched', () => {
     `${name('fred', 'deploy_app')}_preview`, `prefix_${name('fred', 'deploy_app')}`,
   ]) {
     assert.equal(matches(full), false, full);
-    assert.equal(decidePermission(event(full)), null, 'a non-match must never override host permissions');
+    assert.equal(decidePermission(event(full)), 'defer', 'a non-match must never override host permissions');
   }
 });
 
@@ -63,12 +63,14 @@ test('the pinned read-only manage-domain lookup defers to host policy', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, '', 'omitting a decision must not auto-allow the tool');
   for (const action of ['set', 'clear', '', null, ['lookup'], { action: 'lookup' }]) {
-    assert.equal(decidePermission(event(full, { action })).hookSpecificOutput.permissionDecision, 'ask');
+    assert.equal(decidePermission(event(full, { action })), 'ask-orchestrated');
   }
 });
 
 test('host permission precedes the orchestrated plan, with no claim of per-inner-call hooks', () => {
-  const output = decidePermission(event(name('agent', 'deploy_app_orchestrated'))).hookSpecificOutput;
+  const result = runHook(event(name('agent', 'deploy_app_orchestrated')));
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout).hookSpecificOutput;
   assert.match(output.permissionDecisionReason, /then request confirmation/);
   assert.doesNotMatch(output.permissionDecisionReason, /showed|per transaction|inner/);
 });
@@ -124,6 +126,64 @@ test('a crashing handler cannot emit a partial allow ahead of the fallback deny'
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
     assert.doesNotMatch(result.stdout, /allow/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('inherited Node preloads cannot run or contaminate the host decision', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'manifest-hook-preload-'));
+  try {
+    const marker = join(dir, 'preload-ran');
+    const preload = join(dir, 'banner.cjs');
+    writeFileSync(preload, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran');\nconsole.log('SECRET_SENTINEL');\n`);
+    for (const required of [preload, 'banner.cjs']) {
+      const result = runHook(event(name('chain', 'cosmos_tx')), {
+        env: { NODE_OPTIONS: `--require ${required}`, NODE_PATH: dir },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'ask');
+      assert.equal(existsSync(marker), false, 'the inherited preload must never execute');
+      assert.doesNotMatch(result.stdout + result.stderr, /SECRET_SENTINEL/);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('successful child output must be a known token before the shell emits any host JSON', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'manifest-hook-output-'));
+  try {
+    const shim = join(dir, 'node');
+    const malformed = '{"hookSpecificOutput":{not JSON}}';
+    const json = '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}';
+    for (const output of ['', 'ask', malformed, json, 'ask-direct\nSECRET_SENTINEL',
+      'SECRET_SENTINEL\nask-direct', 'ask-orchestrated SECRET_SENTINEL}', 'defer\nSECRET_SENTINEL']) {
+      // Successful interpreter shim: this must exercise output validation,
+      // not the existing nonzero-exit fallback.
+      writeFileSync(shim, `#!/bin/bash\nprintf '%s' "$MANIFEST_TEST_NODE_OUTPUT"\n`);
+      chmodSync(shim, 0o755);
+      const result = runHook(event(name('chain', 'cosmos_tx')), {
+        env: { PATH: `${dir}:${process.env.PATH}`, MANIFEST_TEST_NODE_OUTPUT: output },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+      assert.doesNotMatch(result.stdout + result.stderr, /SECRET_SENTINEL|not JSON|allow/);
+      assert.equal(result.stdout.trim().split('\n').length, 1);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('missing or malformed matcher configuration is denied, never compiled as an empty regexp', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'manifest-hook-config-'));
+  try {
+    mkdirSync(join(dir, 'scripts'));
+    mkdirSync(join(dir, 'hooks'));
+    for (const file of ['pre-tool-use.sh', 'pre-tool-use.cjs']) {
+      cpSync(join(ROOT, 'scripts', file), join(dir, 'scripts', file));
+    }
+    for (const pre of [undefined, [], [null], [{}], [{ matcher: null }], [{ matcher: '' }], [{ matcher: '[' }]]) {
+      writeFileSync(join(dir, 'hooks/hooks.json'), JSON.stringify({ hooks: { PreToolUse: pre } }));
+      const result = runHook(event(name('chain', 'cosmos_tx')), { root: dir });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

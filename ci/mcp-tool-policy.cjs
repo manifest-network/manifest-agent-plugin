@@ -172,7 +172,9 @@ function listTools({ binaryPath, cwd, guardPath, timeoutMs = 20000 }) {
     }
     child.on('error', (error) => { failure = error; finish(); });
     child.on('close', (code) => {
-      if (code && !failure) failure = new Error(`MCP metadata server exited with code ${code}`);
+      // A complete inventory triggers our SIGTERM cleanup. The server may
+      // report a nonzero shutdown status without invalidating that response.
+      if (code && !failure && !result) failure = new Error(`MCP metadata server exited with code ${code}`);
       finish();
     });
     child.stdin.on('error', (error) => stop(error));
