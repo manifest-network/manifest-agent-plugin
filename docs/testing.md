@@ -350,7 +350,9 @@ Run `node ci/claude-hook-smoke.cjs` when Claude is installed and the
 environment permits loopback sockets. It uses an isolated configuration
 and local fixture API/MCP servers. This is a separate host check, not part
 of the standard CI unit suite. Read [`approval-validation.md`](approval-validation.md)
-for the recorded version, observed behavior, and interactive UI limits.
+for the recorded version, observed behavior, and the separate four-case
+native terminal validation. That terminal record used automated keystrokes;
+this stream-control harness does not itself exercise the terminal UI.
 
 ## What CI runs
 

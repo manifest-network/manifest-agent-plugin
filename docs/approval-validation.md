@@ -110,18 +110,49 @@ tokens; it never forwards child stdout. It also clears inherited
 shim exits successfully. A deliberately replaced interpreter remains
 outside this guard's trust boundary.
 
-All runs used isolated configuration, a local simulated Anthropic API,
-dummy API credentials, and harmless MCP fixtures. Live-model choices,
-production orchestrator behavior, chain/provider mutations, and native
-interactive UI rendering were not tested. Interactive UI validation
-remains pending.
+These stream-control runs used isolated configuration, a local simulated
+Anthropic API, dummy API credentials, and harmless MCP fixtures. They do
+not test interactive rendering. The terminal checks below cover that
+separately; neither set exercises production orchestrators or live chains.
+
+## Native terminal UI validation
+
+On 2026-09-09, Claude Code 2.1.263 was also exercised in an actual Linux
+terminal at plugin revision `0314a34`. The sessions reused the isolated
+plugin, local API, and harmless MCP fixtures from the harness, with
+`--permission-mode manual` and the exact outer tool preallowed through
+`--allowedTools`. Terminal input was sent through automated keystrokes.
+The print-mode stream control interface was not used for these choices.
+The [recorded event sequences](evidence/claude-terminal-2.1.263.json) include
+the configuration, boundary counts, and reproduction procedure.
+
+The host displayed a **Tool use** permission prompt with **Yes/No** and
+the plugin's permission reason. No `tools/call` or mutation marker existed
+while it awaited an answer. After **Yes**, the terminal displayed the
+MCP server's input request, the fixture's question, an **Approve marker**
+checkbox, **Accept/Decline**, and **Esc to cancel**. At this second prompt,
+`tools/call` had started but no mutation marker existed.
+
+| Terminal choice | Fixture tool calls | Mutation markers | Result |
+| --- | ---: | ---: | --- |
+| Host permission No | 0 | 0 | Denied before server entry |
+| Host Yes, then Esc | 1 | 0 | Native elicitation returned `cancel` |
+| Host Yes, then Decline | 1 | 0 | Native elicitation returned `decline` |
+| Host Yes, check the box, then Accept | 1 | 1 | Native elicitation returned `accept` before the marker |
+
+All four sessions and the local API were stopped after capture. This
+validates terminal prompt rendering and ordering with automated input.
+It does not constitute a human usability assessment, maintainer security
+review, or verification of production SDK/chain behavior. Interactive
+bypass-mode persistence and other host versions remain untested.
 
 ## ENG-892 validation record
 
 The change passed 291 local unit tests, the documentation/policy checks,
 and the installed-inventory check for 5 pinned servers exposing 32 tools
 and 11 gated mutation entry points. The 14 host cases above exercise
-Claude dispatch with local fixtures; they do not add live chain coverage.
+Claude dispatch with local fixtures; the four separate terminal checks
+verify native rendering and choices. Neither adds live chain coverage.
 
 ## Scope of the boundary
 
