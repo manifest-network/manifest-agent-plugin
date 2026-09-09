@@ -237,6 +237,28 @@ test('lock contention reports its path immediately and returns within the config
   } finally { console.error = previous; release(); }
 });
 
+test('the default lock wait holds a live owner for 60 seconds before reporting timeout', async (t) => {
+  const f = fixture(t);
+  const release = await acquireLock(f.dataDir);
+  const initialOwner = readFileSync(join(f.dataDir, LOCK_FILE), 'utf8');
+  let clock = 0;
+  let waited = 0;
+  const diagnostic = [];
+  const previous = console.error;
+  console.error = (message) => diagnostic.push(message);
+  try {
+    await assert.rejects(acquireLock(f.dataDir, {
+      now: () => clock,
+      sleep: async (ms) => { clock += ms; waited += ms; },
+    }), /Timed out waiting/);
+    assert.equal(waited, 60000, 'exercise the default deadline without a timeout override');
+    assert.equal(clock, 60000);
+    assert.equal(diagnostic.length, 1);
+    assert.match(diagnostic[0], /waiting up to 60 seconds/);
+    assert.equal(readFileSync(join(f.dataDir, LOCK_FILE), 'utf8'), initialOwner, 'a timed-out waiter must preserve the live owner');
+  } finally { console.error = previous; release(); }
+});
+
 test('rejects plugin-root and symlinked child data paths before modifying the plugin', async (t) => {
   const f = fixture(t);
   await assert.rejects(setupRuntime({ ...f, dataDir: f.pluginRoot }), /outside the installed plugin/);
@@ -406,6 +428,41 @@ test('CLI invokes locked npm ci and keeps npm output in a private failure log', 
   assert.equal(statSync(join(f.dataDir, '.last-install.log')).mode & 0o777, 0o600);
   assert.equal(existsSync(join(f.dataDir, COMPLETION_FILE)), false);
   assert.equal(existsSync(join(f.dataDir, LOCK_FILE)), false);
+});
+
+for (const [name, script, mode, expected] of [
+  ['npm lacks execute permission', '#!/bin/sh\nexit 17\n', 0o600, /Could not run npm ci:.*EACCES/],
+  ['npm exits silently', '#!/bin/sh\nexit 17\n', 0o700, /npm ci failed \(exit 17\)/],
+  ['npm receives a signal without output', '#!/bin/sh\nkill -TERM "$$"\n', 0o700, /npm ci failed \(SIGTERM\)/],
+  ['npm silently leaves an incomplete install', '#!/bin/sh\nexit 0\n', 0o700, /Missing or invalid installed dependency/],
+]) {
+  test(`CLI removes the empty log and avoids a missing-log diagnostic when ${name}`, async (t) => {
+    const f = fixture(t);
+    const shim = join(f.root, 'npm shim');
+    mkdirSync(shim);
+    writeFileSync(join(shim, 'npm'), script, { mode });
+    const result = await cli(f, { PATH: shim });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, expected);
+    assert.doesNotMatch(result.stderr, /\.last-install\.log/);
+    assert.equal(existsSync(join(f.dataDir, '.last-install.log')), false);
+    assert.equal(existsSync(join(f.dataDir, COMPLETION_FILE)), false);
+    assert.equal(existsSync(join(f.dataDir, LOCK_FILE)), false);
+  });
+}
+
+test('CLI preserves and references nonempty npm output after signal termination', async (t) => {
+  const f = fixture(t);
+  const shim = join(f.root, 'npm shim');
+  mkdirSync(shim);
+  writeFileSync(join(shim, 'npm'), '#!/bin/sh\nprintf "BEFORE_SIGNAL_SENTINEL\\n"\nkill -TERM "$$"\n', { mode: 0o700 });
+  const result = await cli(f, { PATH: shim });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /npm ci failed \(SIGTERM\)/);
+  assert.ok(result.stderr.includes(join(f.dataDir, '.last-install.log')));
+  assert.doesNotMatch(result.stderr, /BEFORE_SIGNAL_SENTINEL/);
+  assert.equal(readFileSync(join(f.dataDir, '.last-install.log'), 'utf8'), 'BEFORE_SIGNAL_SENTINEL\n');
 });
 
 test('CLI reports missing npm, unsupported arguments and unsupported Node without succeeding', async (t) => {

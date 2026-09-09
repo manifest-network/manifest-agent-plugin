@@ -116,7 +116,11 @@ fresh host test of every 0.22.0 tool.
 
 Review follow-up: MCP launchers await concurrent SessionStart setup with bounded
 failure diagnostics; supported stable Node majors share the installed JavaScript
-runtime. Linux process identity prevents PID reuse from preserving stale locks.
-Setup contention is visible, npm absence has a direct remedy, and unsupported
-prerelease Node builds receive a distinct diagnostic. Host evidence distinguishes
-historical and current source hashes and is checked in CI.
+runtime; `.node` addons are rejected until Node-specific runtime support exists.
+Setup and launchers share process-owner checks, so dead owners no longer delay
+startup. Linux process identity also distinguishes reused PIDs. Setup contention
+is visible, handled npm failures retain only nonempty logs, and completion errors
+identify the invalid metadata. Unsupported prerelease Node builds receive a
+distinct diagnostic. Tests exercise the actual timing defaults. Host evidence
+checks require substantive case results as well as historical/current source
+hashes; historical byte validation requires the recorded Git object locally.

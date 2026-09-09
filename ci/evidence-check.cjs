@@ -7,6 +7,7 @@ const { createHash } = require('node:crypto');
 const { readdirSync, readFileSync } = require('node:fs');
 const { join, resolve } = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { isDeepStrictEqual } = require('node:util');
 
 const SOURCE_FILES = [
   'hooks/hooks.json',
@@ -16,6 +17,94 @@ const SOURCE_FILES = [
   'tests/fixtures/claude-host-mcp.cjs',
 ];
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+const DIRECT = 'mcp__plugin_manifest-agent_manifest-chain__cosmos_tx';
+const OUTER = 'mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated';
+// The committed current report is the complete 14-case run. These expectations
+// mirror CASES and the summary assertions in claude-hook-smoke.cjs, including
+// its deliberately failing-boundary negative controls. Never infer success
+// solely from passed:true, or count a partial --case run as the complete run.
+const HOST_CASES = [
+  { name: 'bare-name-misses', mutations: 1 },
+  { name: 'scoped-deny', mutations: 0, tool: DIRECT, decision: 'deny' },
+  { name: 'polluted-deny-drops-decision', mutations: 1, tool: DIRECT, decision: 'deny' },
+  { name: 'inner-only-misses-outer', mutations: 1 },
+  { name: 'scoped-outer-deny', mutations: 0, tool: OUTER, decision: 'deny' },
+  { name: 'project-direct-ask', mutations: 0, tool: DIRECT, decision: 'ask' },
+  { name: 'project-stdout-pollution', mutations: 0, tool: DIRECT, decision: 'deny' },
+  { name: 'project-direct-ask-bypass', mutations: 0, tool: DIRECT, decision: 'ask', mode: 'bypassPermissions' },
+  { name: 'scoped-deny-bypass', mutations: 0, tool: DIRECT, decision: 'deny', mode: 'bypassPermissions' },
+  { name: 'project-outer-ask', mutations: 0, tool: OUTER, decision: 'ask' },
+  { name: 'project-lookup', mutations: 0, reads: 1 },
+  { name: 'elicitation-decline', mutations: 0, tool: OUTER, decision: 'ask', elicitation: true },
+  { name: 'elicitation-cancel', mutations: 0, tool: OUTER, decision: 'ask', elicitation: true },
+  { name: 'elicitation-accept', mutations: 1, tool: OUTER, decision: 'ask', elicitation: true },
+];
+const TERMINAL_CASES = ['outer-permission-deny', 'elicitation-cancel', 'elicitation-decline', 'elicitation-accept'];
+const hookEvent = (tool, decision) => ({ kind: 'hook', event: 'PreToolUse', tool, decision });
+
+function expectValue(actual, expected, label) {
+  if (!isDeepStrictEqual(actual, expected)) throw new Error(`${label} does not match the expected recorded outcome.`);
+}
+
+function caseRecords(value, names, label) {
+  if (!Array.isArray(value) || value.length !== names.length
+      || value.some((item) => !item || typeof item.name !== 'string')
+      || !isDeepStrictEqual(value.map((item) => item.name).sort(), [...names].sort())) {
+    throw new Error(`${label} must contain exactly the ${names.length} expected named cases, without omissions or duplicates.`);
+  }
+  return new Map(value.map((item) => [item.name, item]));
+}
+
+function validateObservations(record) {
+  for (const field of ['date', 'claudeVersion', 'scope']) {
+    if (typeof record[field] !== 'string' || !record[field].trim()) {
+      throw new Error(`Evidence requires its recorded ${field}.`);
+    }
+  }
+  if (record.source_status === 'current') {
+    const results = caseRecords(record.results, HOST_CASES.map(({ name }) => name), 'Current results');
+    for (const expected of HOST_CASES) {
+      const result = results.get(expected.name);
+      const fields = { passed: true, exitCode: 0, timedOut: false, apiCalls: 2,
+        permissionMode: expected.mode || 'manual', mutations: expected.mutations, reads: expected.reads || 0,
+        hooks: expected.decision ? [hookEvent(expected.tool, expected.decision)] : [],
+        controlEvents: expected.elicitation ? [
+          { subtype: 'can_use_tool', tool: OUTER },
+          { subtype: 'elicitation', server: 'plugin:manifest-agent:manifest-agent' },
+        ] : [],
+      };
+      for (const [field, value] of Object.entries(fields)) expectValue(result[field], value, `${expected.name}.${field}`);
+      // The summary records the ordered control requests and marker counts.
+      // It does not retain elicitation_result actions; do not invent those.
+    }
+  } else {
+    const cases = caseRecords(record.cases, TERMINAL_CASES, 'Historical terminal cases');
+    expectValue(record.permissionMode, 'manual', 'Historical permissionMode');
+    expectValue(record.toolPreallowed, true, 'Historical toolPreallowed');
+    expectValue(record.tool, OUTER, 'Historical tool');
+    for (const [name, result] of cases) {
+      const denied = name === 'outer-permission-deny';
+      const accepted = name === 'elicitation-accept';
+      const sequence = [hookEvent(OUTER, 'ask')];
+      if (!denied) sequence.push(
+        { kind: 'mcp_request', server: 'agent', method: 'tools/call', tool: 'deploy_app_orchestrated' },
+        { kind: 'elicitation_request' },
+        { kind: 'elicitation_result', action: name.slice('elicitation-'.length) },
+      );
+      if (accepted) sequence.push({ kind: 'internal_mutation_marker', server: 'agent', tool: 'deploy_app_orchestrated' });
+      expectValue(result.sequence, sequence, `${name}.sequence`);
+      expectValue(result.toolCalls, denied ? 0 : 1, `${name}.toolCalls`);
+      expectValue(result.mutationMarkers, accepted ? 1 : 0, `${name}.mutationMarkers`);
+      expectValue(result.beforeOuterPermissionAnswer, { toolCalls: 0, mutationMarkers: 0 }, `${name}.beforeOuterPermissionAnswer`);
+      if (!denied) expectValue(result.atNativeElicitationBeforeAnswer, { toolCalls: 1, mutationMarkers: 0 }, `${name}.atNativeElicitationBeforeAnswer`);
+      if (!Array.isArray(result.keys) || result.keys.length === 0
+          || result.keys.some((key) => typeof key !== 'string' || !key.trim())) {
+        throw new Error(`${name}.keys must retain the recorded terminal input.`);
+      }
+    }
+  }
+}
 
 function readHistoricalSources(root, commit) {
   // Squashed PR source commits need not exist in a shallow checkout, or even
@@ -66,6 +155,7 @@ function checkEvidence(root, { requireHistory = false, historicalSources = readH
     try {
       const record = JSON.parse(readFileSync(join(root, 'docs/evidence', filename), 'utf8'));
       validateMetadata(record);
+      validateObservations(record);
       if (record.source_status === 'current') {
         currentCount++;
         for (const file of SOURCE_FILES) {

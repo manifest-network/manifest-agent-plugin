@@ -438,6 +438,45 @@ test('malformed config diagnostic never repeats source text containing a passwor
   });
 });
 
+test('non-object config JSON reports the invalid root shape without exposing its contents', () => {
+  for (const config of [null, [], 42, true, 'CONFIG_ROOT_SECRET']) {
+    withData((data) => {
+      writeFileSync(join(data, 'config.json'), JSON.stringify(config));
+      const r = runWrapper('agent', { data });
+      assert.equal(r.status, 1);
+      assert.equal(r.stdout, '');
+      assert.match(r.stderr, /Invalid config: config\.json must contain a JSON object/);
+      assert.match(r.stderr, /manifest-agent:init-agent/);
+      assert.doesNotMatch(r.stderr, /CONFIG_ROOT_SECRET|Manifest MCP startup failed|TypeError/);
+    });
+  }
+});
+
+test('unexpected startup failures identify the phase and only allowlisted error codes', () => {
+  for (const code of ['EACCES', 'UNKNOWN_PASSWORD_SECRET', 'getter']) {
+    withData((data) => {
+      const preload = join(data, 'throw-on-spawn.cjs');
+      writeFileSync(preload, `
+        require('node:child_process').spawn = () => {
+          const error = new Error('UNEXPECTED_PASSWORD_SECRET');
+          ${code === 'getter'
+            ? "Object.defineProperty(error, 'code', { get() { throw new Error('GETTER_PASSWORD_SECRET'); } });"
+            : `error.code = ${JSON.stringify(code)};`}
+          throw error;
+        };
+      `);
+      const r = runWrapper('agent', { data, extraEnv: { NODE_OPTIONS: `--require=${JSON.stringify(preload)}` } });
+      assert.equal(r.status, 1);
+      assert.equal(r.stdout, '');
+      assert.match(r.stderr, /Manifest MCP startup failed while launching manifest-mcp-agent/);
+      assert.match(r.stderr, /Check config\.json and runtime setup/);
+      if (code === 'EACCES') assert.match(r.stderr, /\(EACCES\)/);
+      else assert.doesNotMatch(r.stderr, /\(EACCES\)/);
+      assert.doesNotMatch(r.stderr, /UNEXPECTED_PASSWORD_SECRET|UNKNOWN_PASSWORD_SECRET|GETTER_PASSWORD_SECRET|\n\s+at /);
+    });
+  }
+});
+
 test('child uses an empty private cwd and wrapper removes it after the child exits', () => {
   withData((data) => {
     writeFileSync(join(data, '.env'), 'COSMOS_MNEMONIC=must-not-load\n');
@@ -512,7 +551,7 @@ test('all five launchers wait for delayed setup with missing binaries and preser
   }
   await Promise.all(launched.map((run) => run.waiting));
   assert.equal(existsSync(join(data, LOCK_FILE)), false, 'launchers must never start their own installer');
-  writeFileSync(join(data, LOCK_FILE), '{}');
+  writeFileSync(join(data, LOCK_FILE), JSON.stringify({ pid: process.pid }));
   await new Promise((done) => setTimeout(done, 150));
   for (const { child } of launched) assert.equal(child.exitCode, null);
   for (const server of servers) {
@@ -532,7 +571,7 @@ test('SIGTERM during startup wait exits promptly without touching the setup lock
   const data = buildPluginData();
   t.after(() => rmSync(data, { recursive: true, force: true }));
   rmSync(join(data, COMPLETION_FILE));
-  writeFileSync(join(data, LOCK_FILE), '{}');
+  writeFileSync(join(data, LOCK_FILE), JSON.stringify({ pid: process.pid }));
   const run = launchAsync(data);
   t.after(() => { if (run.child.exitCode === null) run.child.kill('SIGKILL'); });
   await run.waiting;

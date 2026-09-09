@@ -44,7 +44,11 @@ with configuration and saved records preserved. Launcher tests cover chain
 switches, omitted optional fields, inherited wallet values and empty passwords.
 Startup regressions cover delayed lock creation, missing binaries, all five
 concurrent launchers, preserved queued input, bounded failure and SIGTERM.
-Lock tests distinguish reused PIDs from live parent/worker processes.
+Lock tests distinguish dead or reused PIDs from live parent/worker processes,
+including a ready runtime with a stale lock. Injected-clock tests exercise the
+unmodified two-second grace, 25-second launcher bound and 60-second setup bound.
+Failure tests verify empty-log cleanup, useful-log retention, distinct completion
+diagnostics, native-addon rejection and secret-safe startup errors.
 
 ## Test file layout
 

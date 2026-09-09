@@ -20,7 +20,7 @@ try {
 
 const { existsSync, mkdtempSync, readFileSync, rmSync } = require('node:fs');
 const { join, resolve } = require('node:path');
-const { tmpdir, constants: { signals } } = require('node:os');
+const { tmpdir, constants: { signals, errno } } = require('node:os');
 const { spawn } = require('node:child_process');
 const { getDataDir } = require('./_io.cjs');
 
@@ -61,7 +61,15 @@ process.on('SIGTERM', () => forwardSignal('SIGTERM'));
 process.on('SIGINT', () => forwardSignal('SIGINT'));
 process.on('SIGHUP', () => forwardSignal('SIGHUP'));
 
+// Error messages/stacks may contain config values. Only known diagnostic codes
+// and phase labels defined by this launcher may accompany an unexpected error.
+const SAFE_ERROR_CODES = new Set([
+  ...Object.keys(errno), 'ERR_INVALID_ARG_TYPE', 'ERR_INVALID_ARG_VALUE', 'ERR_OUT_OF_RANGE',
+]);
+let startupPhase = 'initializing the launcher';
+
 async function startServer() {
+  startupPhase = 'reading config.json';
   // --- Pre-flight: config.json ---
   if (!existsSync(CONFIG_PATH)) {
     console.error(`Config not found at ${CONFIG_PATH}`);
@@ -80,6 +88,11 @@ async function startServer() {
   }
 
   // --- Validate config fields ---
+  startupPhase = 'validating config.json';
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+    console.error('Invalid config: config.json must contain a JSON object. Re-run /manifest-agent:init-agent.');
+    process.exit(1);
+  }
   const { activeChain, gasPrice, gasMultiplier, chains, agent } = config;
   if (!activeChain || !chains || !chains[activeChain]) {
     console.error(`Invalid config: missing activeChain or chains.${activeChain}`);
@@ -113,6 +126,7 @@ async function startServer() {
   }
 
   // --- Pre-flight: runtime setup may still be starting in SessionStart ---
+  startupPhase = 'checking runtime dependencies';
   const binaryPath = join(AGENT_DIR, 'node_modules', '.bin', `manifest-mcp-${serverName}`);
   let runtime;
   try {
@@ -130,6 +144,7 @@ async function startServer() {
   }
 
   // --- Build env from the selected config, including deliberately absent fields ---
+  startupPhase = 'building the MCP environment';
   // Deleting first prevents stale testnet endpoints, gas settings, or a different
   // wallet from surviving when the selected config omits an optional field.
   const env = { ...process.env };
@@ -208,6 +223,7 @@ async function startServer() {
   // plugin data directory; only this disposable cwd is removed at exit.
   // SIGKILL cannot run cleanup and may leave an empty 0700 directory for the OS
   // temp cleaner. Do not sweep other sessions' directories from this process.
+  startupPhase = 'creating the MCP working directory';
   let serverCwd;
   try {
     serverCwd = mkdtempSync(join(tmpdir(), 'manifest-mcp-cwd-'));
@@ -216,6 +232,7 @@ async function startServer() {
     process.exit(1);
   }
   process.on('exit', () => rmSync(serverCwd, { recursive: true, force: true }));
+  startupPhase = `launching manifest-mcp-${serverName}`;
   child = spawn(binaryPath, [], { stdio: 'inherit', env, cwd: serverCwd });
 
   child.on('error', (err) => {
@@ -241,7 +258,11 @@ async function startServer() {
 
 }
 
-startServer().catch(() => {
-  console.error('Manifest MCP startup failed. Check runtime setup and reconnect the server.');
+startServer().catch((error) => {
+  // Inspect an own data property rather than invoking an arbitrary getter.
+  const code = error && typeof error === 'object'
+    ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
+  const detail = SAFE_ERROR_CODES.has(code) ? ` (${code})` : '';
+  console.error(`Manifest MCP startup failed while ${startupPhase}${detail}. Check config.json and runtime setup, then reconnect the server.`);
   process.exitCode = 1;
 });

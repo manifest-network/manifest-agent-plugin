@@ -2,7 +2,7 @@
 
 // Shared, dependency-free runtime checks. This file is not a CLI.
 const { createHash } = require('node:crypto');
-const { readFileSync, lstatSync, readdirSync, readlinkSync, statSync, accessSync, constants, existsSync } = require('node:fs');
+const { readFileSync, lstatSync, readdirSync, readlinkSync, statSync, accessSync, constants } = require('node:fs');
 const { join, posix } = require('node:path');
 
 const MIN_NODE_VERSION = '22.19.0';
@@ -11,6 +11,54 @@ const LOCK_FILE = '.runtime-setup.lock';
 // The locked runtime is JavaScript-only and install scripts are disabled.
 // Supported Node majors share it; revisit this if native addons are introduced.
 const RUNTIME_PLATFORM = `${process.platform}/${process.arch}`;
+
+function parseProcessStartTime(stat) {
+  // comm (field 2) may itself contain spaces or parentheses. Fields after
+  // its closing parenthesis begin with state (3), so starttime (22) is 19.
+  const end = stat.lastIndexOf(')');
+  if (end < 0) return undefined;
+  const fields = stat.slice(end + 1).trim().split(/\s+/);
+  return /^\d+$/.test(fields[19] || '') ? fields[19] : undefined;
+}
+
+function processStartTime(pid) {
+  if (process.platform !== 'linux') return undefined;
+  try { return parseProcessStartTime(readFileSync(`/proc/${pid}/stat`, 'utf8')); }
+  catch { return undefined; }
+}
+
+function ownerAlive(pid, expectedStartTime) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); }
+  catch (error) {
+    if (error.code === 'ESRCH') return false;
+    if (error.code !== 'EPERM') return true;
+  }
+  const currentStartTime = processStartTime(pid);
+  // Unknown identity (including pre-upgrade locks) is conservative: an
+  // existing process may be an installer. Never evict it merely by age.
+  return !currentStartTime || typeof expectedStartTime !== 'string' ||
+    !/^\d+$/.test(expectedStartTime) || currentStartTime === expectedStartTime;
+}
+
+
+// Shared read-only lock observation. Only setup may reclaim an inactive lock.
+// Allow a creator one second to write its owner record after exclusive open.
+function readSetupLock(dataDir, { now = Date.now } = {}) {
+  const path = join(dataDir, LOCK_FILE);
+  let stat;
+  try { stat = statSync(path); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  let owner;
+  try { owner = JSON.parse(readFileSync(path, 'utf8')); }
+  catch (error) {
+    if (error.code === 'ENOENT') return null;
+    if (!(error instanceof SyntaxError)) return { active: true, stat };
+    return { active: now() - stat.mtimeMs <= 1000, stat };
+  }
+  return { active: owner ? ownerAlive(owner.pid, owner.pidStartTime) ||
+    ownerAlive(owner.childPid, owner.childStartTime) : now() - stat.mtimeMs <= 1000, stat };
+}
 
 function assertNodeVersion(version = process.versions.node) {
   if (/^\d+\.\d+\.\d+-/.test(version)) {
@@ -67,6 +115,7 @@ function snapshotDependencies(dataDir) {
   const files = [];
   function visit(relative) {
     const absolute = join(dataDir, relative);
+    if (relative.endsWith('.node')) throw new Error(`Native addon requires Node-specific runtime support: ${relative}`);
     const stat = lstatSync(absolute);
     if (stat.isSymbolicLink()) files.push([relative, 'link', readlinkSync(absolute)]);
     else if (stat.isDirectory()) {
@@ -87,12 +136,19 @@ function inspectRuntime(dataDir, pluginRoot) {
       throw new Error('The runtime dependency definition changed.');
     }
     const completion = JSON.parse(readFileSync(join(dataDir, COMPLETION_FILE), 'utf8'));
-    const compatiblePlatform = completion.runtime === RUNTIME_PLATFORM ||
-      (typeof completion.runtime === 'string' && completion.runtime.startsWith(`${RUNTIME_PLATFORM}/node-`) &&
+    const compatiblePlatform = completion?.runtime === RUNTIME_PLATFORM ||
+      (typeof completion?.runtime === 'string' && completion.runtime.startsWith(`${RUNTIME_PLATFORM}/node-`) &&
        /^\d+$/.test(completion.runtime.slice(`${RUNTIME_PLATFORM}/node-`.length)));
-    if (completion.schema !== 1 || completion.fingerprint !== definition.fingerprint || !compatiblePlatform ||
-        !Array.isArray(completion.files) || !completion.files.length) {
-      throw new Error('The runtime install has no matching completion record.');
+    if (!completion || typeof completion !== 'object' || Array.isArray(completion)) {
+      throw new Error('The runtime completion record must be a JSON object.');
+    }
+    if (completion.schema !== 1) throw new Error('The runtime completion record uses an unsupported schema.');
+    if (completion.fingerprint !== definition.fingerprint) {
+      throw new Error('The runtime completion fingerprint differs from the plugin package/lock.');
+    }
+    if (!compatiblePlatform) throw new Error(`The runtime completion record belongs to a different or invalid platform; expected ${RUNTIME_PLATFORM}.`);
+    if (!Array.isArray(completion.files) || !completion.files.length) {
+      throw new Error('The runtime completion record has no valid dependency file inventory.');
     }
     verifyInstalledPackages(dataDir, definition);
     for (const entry of completion.files) {
@@ -100,6 +156,7 @@ function inspectRuntime(dataDir, pluginRoot) {
         throw new Error('The runtime completion record is invalid.');
       }
       const [relative, type, expected] = entry;
+      if (relative.endsWith('.node')) throw new Error(`Native addon requires Node-specific runtime support: ${relative}`);
       const absolute = join(dataDir, relative);
       const stat = lstatSync(absolute);
       if (type === 'file' ? !stat.isFile() || stat.size !== expected :
@@ -125,7 +182,7 @@ async function waitForRuntime(dataDir, pluginRoot, {
   let sawSetup = false;
   let notified = false;
   while (true) {
-    const active = existsSync(join(dataDir, LOCK_FILE));
+    const active = readSetupLock(dataDir)?.active === true;
     const runtime = inspectRuntime(dataDir, pluginRoot);
     if (runtime.ready && !active) return runtime;
     sawSetup ||= active;
@@ -141,6 +198,7 @@ async function waitForRuntime(dataDir, pluginRoot, {
 }
 
 module.exports = {
+  parseProcessStartTime, processStartTime, ownerAlive, readSetupLock,
   MIN_NODE_VERSION, COMPLETION_FILE, LOCK_FILE, RUNTIME_PLATFORM, waitForRuntime, assertNodeVersion, readRuntimeDefinition,
   verifyInstalledPackages, snapshotDependencies, inspectRuntime,
 };

@@ -10,43 +10,17 @@ const { spawn, fork } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { atomicWrite } = require('./_io.cjs');
 const { assertNodeVersion, COMPLETION_FILE, LOCK_FILE, RUNTIME_PLATFORM, readRuntimeDefinition,
-  verifyInstalledPackages, snapshotDependencies, inspectRuntime } = require('./_runtime.cjs');
+  verifyInstalledPackages, snapshotDependencies, inspectRuntime, readSetupLock,
+  parseProcessStartTime, processStartTime } = require('./_runtime.cjs');
 
-const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+const delay = (ms) => new Promise((done) => setTimeout(done, ms));
 
-function parseProcessStartTime(stat) {
-  // comm (field 2) may itself contain spaces or parentheses. Fields after
-  // its closing parenthesis begin with state (3), so starttime (22) is 19.
-  const end = stat.lastIndexOf(')');
-  if (end < 0) return undefined;
-  const fields = stat.slice(end + 1).trim().split(/\s+/);
-  return /^\d+$/.test(fields[19] || '') ? fields[19] : undefined;
-}
-
-function processStartTime(pid) {
-  if (process.platform !== 'linux') return undefined;
-  try { return parseProcessStartTime(readFileSync(`/proc/${pid}/stat`, 'utf8')); }
-  catch { return undefined; }
-}
-
-function ownerAlive(pid, expectedStartTime) {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); }
-  catch (error) {
-    if (error.code === 'ESRCH') return false;
-    if (error.code !== 'EPERM') return true;
-  }
-  const currentStartTime = processStartTime(pid);
-  // Unknown identity (including pre-upgrade locks) is conservative: an
-  // existing process may be an installer. Never evict it merely by age.
-  return !currentStartTime || typeof expectedStartTime !== 'string' ||
-    !/^\d+$/.test(expectedStartTime) || currentStartTime === expectedStartTime;
-}
-
-async function acquireLock(dataDir, { timeoutMs = 60000, pollMs = 100 } = {}) {
+async function acquireLock(dataDir, {
+  timeoutMs = 60000, pollMs = 100, now = () => performance.now(), sleep = delay,
+} = {}) {
   const path = join(dataDir, LOCK_FILE);
   const token = randomUUID();
-  const started = Date.now();
+  const started = now();
   const pidStartTime = processStartTime(process.pid);
   let reportedWait = false;
   while (true) {
@@ -70,17 +44,16 @@ async function acquireLock(dataDir, { timeoutMs = 60000, pollMs = 100 } = {}) {
       if (error.code !== 'EEXIST') throw error;
     }
     try {
-      const before = statSync(path);
-      let owner;
-      try { owner = JSON.parse(readFileSync(path, 'utf8')); } catch { /* interrupted initial write */ }
-      const stale = owner ? !ownerAlive(owner.pid, owner.pidStartTime) && !ownerAlive(owner.childPid, owner.childStartTime) : Date.now() - before.mtimeMs > 1000;
-      if (stale) {
+      const owner = readSetupLock(dataDir);
+      if (!owner) continue;
+      if (!owner.active) {
+        const before = owner.stat;
         const after = statSync(path);
         if (before.ino === after.ino && before.mtimeMs === after.mtimeMs) unlinkSync(path);
         continue;
       }
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    if (Date.now() - started >= timeoutMs) {
+    if (now() - started >= timeoutMs) {
       throw new Error('Timed out waiting for another runtime setup process. Retry after that process finishes.');
     }
     if (!reportedWait) {
@@ -89,6 +62,16 @@ async function acquireLock(dataDir, { timeoutMs = 60000, pollMs = 100 } = {}) {
     }
     await sleep(pollMs);
   }
+}
+
+function failureLogHint(logFile) {
+  try {
+    if (statSync(logFile).size > 0) return ` See ${logFile} for details.`;
+    rmSync(logFile, { force: true });
+  } catch (error) {
+    if (error.code !== 'ENOENT') return ` Could not inspect npm output (${error.code}).`;
+  }
+  return '';
 }
 
 function runNpmCi(dataDir, logFile) {
@@ -110,17 +93,17 @@ function runNpmCi(dataDir, logFile) {
     };
     child.once('error', (error) => {
       clean();
+      const logHint = failureLogHint(logFile);
       if (error.code === 'ENOENT') {
-        rmSync(logFile, { force: true });
-        reject(new Error('npm was not found on PATH. Install npm alongside the supported Node version, then rerun setup-runtime.cjs.'));
-      } else reject(new Error(`Could not run npm ci: ${error.message}. See ${logFile}`));
+        reject(new Error(`npm was not found on PATH. Install npm alongside the supported Node version, then rerun setup-runtime.cjs.${logHint}`));
+      } else reject(new Error(`Could not run npm ci: ${error.message}.${logHint}`));
     });
     child.once('close', (code, signal) => {
       // A spawn error emits close afterward; its cleanup has already run.
       if (child.pid === undefined) return;
       clean();
       if (code === 0) resolveInstall();
-      else reject(new Error(`npm ci failed (${signal || `exit ${code}`}). See ${logFile}; rerun setup-runtime.cjs to retry.`));
+      else reject(new Error(`npm ci failed (${signal || `exit ${code}`}).${failureLogHint(logFile)} Rerun setup-runtime.cjs to retry.`));
     });
   });
 }
@@ -144,7 +127,7 @@ function npmCi(dataDir, logFile, { recordChild } = {}) {
     worker.once('close', (code, signal) => {
       clean();
       if (code === 0) resolveInstall();
-      else reject(new Error(reportedError || `Runtime installer failed (${signal || `exit ${code}`}). See ${logFile}; rerun setup-runtime.cjs.`));
+      else reject(new Error(reportedError || `Runtime installer failed (${signal || `exit ${code}`}).${failureLogHint(logFile)} Rerun setup-runtime.cjs.`));
     });
     worker.once('spawn', () => {
       try {
@@ -213,12 +196,19 @@ async function setupRuntime({ dataDir, pluginRoot = resolve(__dirname, '..'), in
     atomicWrite(join(target, 'package-lock.json'), definition.lockText);
     const logFile = join(target, '.last-install.log');
     console.error('manifest-agent: installing locked runtime dependencies; this may take several minutes.');
-    await install(target, logFile, { recordChild: release.recordChild });
-    verifyInstalledPackages(target, definition);
-    const files = snapshotDependencies(target);
-    atomicWrite(join(target, COMPLETION_FILE), JSON.stringify({ schema: 1, fingerprint: definition.fingerprint, runtime: RUNTIME_PLATFORM, files }) + '\n');
-    rmSync(logFile, { force: true });
-    return { installed: true };
+    try {
+      await install(target, logFile, { recordChild: release.recordChild });
+      verifyInstalledPackages(target, definition);
+      const files = snapshotDependencies(target);
+      atomicWrite(join(target, COMPLETION_FILE), JSON.stringify({ schema: 1, fingerprint: definition.fingerprint, runtime: RUNTIME_PLATFORM, files }) + '\n');
+      rmSync(logFile, { force: true });
+      return { installed: true };
+    } catch (error) {
+      // A worker-start or completion-verification failure can bypass npm's
+      // own error handlers. Keep useful output, but never retain an empty log.
+      failureLogHint(logFile);
+      throw error;
+    }
   } finally { release(); }
 }
 

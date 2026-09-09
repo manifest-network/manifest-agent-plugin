@@ -196,6 +196,14 @@ Each record explicitly declares `source_status: current` or
 `source_status: historical` and SHA-256 hashes for the five hook and host
 fixture source files. Current records must match the checked-out files;
 missing files, incomplete hash coverage, and source changes fail the check.
+Reports must also retain all 14 named host cases or all four named historical
+terminal cases and their expected measurements. The check validates exit and
+timeout status, hook decisions, read/mutation counts, and ordered host control
+requests in current reports; historical reports retain terminal event order,
+response actions, boundary snapshots, and recorded input. It preserves the
+negative controls' expected mutations. A hash-only record, `passed: true`
+stubs, missing cases, or changed outcomes fail validation. These assertions
+check the retained observations; they do not authenticate their capture.
 At least one current host record is required. A source change requires a
 new host run before replacing the current report and its hashes. Matching
 hashes bind a report to source bytes; this check does not itself run Claude
@@ -213,6 +221,9 @@ A shallow checkout may omit that commit, and a full checkout of the main
 branch need not include an unmerged source commit from a squashed PR. In
 that case the default check explicitly reports historical validation as
 metadata only, with historical source bytes unverified. It does not fetch
-objects automatically. Use `node ci/evidence-check.cjs --require-history`
+objects automatically. The default depth-one CI checkout therefore validates
+historical metadata and outcomes, while a local checkout containing the
+recorded commit additionally verifies its source bytes. Both verify current
+source hashes and outcomes. Use `node ci/evidence-check.cjs --require-history`
 when the recorded commit is available locally, or fetch that exact commit
 first, to require verification against the historical source as well.
