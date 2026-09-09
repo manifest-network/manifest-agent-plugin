@@ -1,0 +1,287 @@
+{
+  "date": "2026-09-09",
+  "mcp_contract": "0.22.0",
+  "scope": "Real Claude host with local deterministic API and harmless marker MCP fixtures; no live chain or upstream orchestrator calls. Native terminal UI was not repeated.",
+  "files_sha256": {
+    "hooks/hooks.json": "c83b78ac26694ee9a49710d828922dad18a5490076169fcd4568b1f298c0476d",
+    "scripts/pre-tool-use.cjs": "5751786575c7c1d563b4bcf99779881777a2bac9454bcaf432ed4c155fd3e03c",
+    "scripts/pre-tool-use.sh": "a9aa07b4b2fff19053d3249ab86e52ebcce99a38d35d5c4cc78b97da50f2fb19",
+    "ci/claude-hook-smoke.cjs": "b30a6ae86c7604484dd27a031b9a295037eaef9a0dec1daa1f2b6e0c50fd321c",
+    "tests/fixtures/claude-host-mcp.cjs": "8ab43d104057bf14ad3164203f84a1c5230e8a60f654296141216cfdbaa3b895"
+  },
+  "claudeVersion": "2.1.263 (Claude Code)",
+  "results": [
+    {
+      "name": "bare-name-misses",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [],
+      "mutations": 1,
+      "reads": 0,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "scoped-deny",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-chain__cosmos_tx",
+          "decision": "deny"
+        }
+      ],
+      "mutations": 0,
+      "reads": 0,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "polluted-deny-drops-decision",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-chain__cosmos_tx",
+          "decision": "deny"
+        }
+      ],
+      "mutations": 1,
+      "reads": 0,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "inner-only-misses-outer",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [],
+      "mutations": 1,
+      "reads": 0,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "scoped-outer-deny",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated",
+          "decision": "deny"
+        }
+      ],
+      "mutations": 0,
+      "reads": 0,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "project-direct-ask",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-chain__cosmos_tx",
+          "decision": "ask"
+        }
+      ],
+      "mutations": 0,
+      "reads": 0,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "project-stdout-pollution",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-chain__cosmos_tx",
+          "decision": "deny"
+        }
+      ],
+      "mutations": 0,
+      "reads": 0,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "project-direct-ask-bypass",
+      "permissionMode": "bypassPermissions",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-chain__cosmos_tx",
+          "decision": "ask"
+        }
+      ],
+      "mutations": 0,
+      "reads": 0,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "scoped-deny-bypass",
+      "permissionMode": "bypassPermissions",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-chain__cosmos_tx",
+          "decision": "deny"
+        }
+      ],
+      "mutations": 0,
+      "reads": 0,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "project-outer-ask",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated",
+          "decision": "ask"
+        }
+      ],
+      "mutations": 0,
+      "reads": 0,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "project-lookup",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [],
+      "mutations": 0,
+      "reads": 1,
+      "controlEvents": [],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "elicitation-decline",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated",
+          "decision": "ask"
+        }
+      ],
+      "mutations": 0,
+      "reads": 0,
+      "controlEvents": [
+        {
+          "subtype": "can_use_tool",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated"
+        },
+        {
+          "subtype": "elicitation",
+          "server": "plugin:manifest-agent:manifest-agent"
+        }
+      ],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "elicitation-cancel",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated",
+          "decision": "ask"
+        }
+      ],
+      "mutations": 0,
+      "reads": 0,
+      "controlEvents": [
+        {
+          "subtype": "can_use_tool",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated"
+        },
+        {
+          "subtype": "elicitation",
+          "server": "plugin:manifest-agent:manifest-agent"
+        }
+      ],
+      "apiCalls": 2,
+      "passed": true
+    },
+    {
+      "name": "elicitation-accept",
+      "permissionMode": "manual",
+      "exitCode": 0,
+      "timedOut": false,
+      "hooks": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated",
+          "decision": "ask"
+        }
+      ],
+      "mutations": 1,
+      "reads": 0,
+      "controlEvents": [
+        {
+          "subtype": "can_use_tool",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated"
+        },
+        {
+          "subtype": "elicitation",
+          "server": "plugin:manifest-agent:manifest-agent"
+        }
+      ],
+      "apiCalls": 2,
+      "passed": true
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 ---
+name: restart-app
 description: >
   Restart a deployed app on Manifest via the provider, without closing
   its lease. Useful to apply config changes or recover from a crash.
@@ -75,7 +76,9 @@ Store the chosen UUID as `LEASE_UUID`.
 ## Step 2 — Show pre-restart context
 
 Call `mcp__plugin_manifest-agent_manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
-Capture `chainState.state` as `STATE` (the chain may return integer,
+Read `structuredContent` or parse its JSON text fallback. Check for
+MCP `isError: true` or JSON `error: true`; report a failed status query
+and stop before requesting a restart. Capture `chainState.state` as `STATE` (the chain may return integer,
 stringy-int, or canonical `LEASE_STATE_*` form depending on the
 encoding path). Decode via the canonical helper:
 
@@ -87,7 +90,7 @@ The script's stdout is `{"name":"<LEASE_STATE_*>","terminal":<bool>}`.
 Bind `STATE_NAME` to the `name` field. Restart is eligible iff
 `STATE_NAME === "LEASE_STATE_ACTIVE"`.
 
-Surface `STATE_NAME`, the response's `provision_status`, and (when
+Surface `STATE_NAME`, `fredStatus.provision_status`, and (when
 present) `IMAGE` from the saved-manifest summary:
 
 ```bash
@@ -137,46 +140,53 @@ not a Cosmos broadcast, because it's still a state-changing
 operation). Step 4 supplies the action recap for this direct tool;
 the hook cannot verify that prose or the user's response.
 
-If the call throws, surface the error and stop. Do not retry
-automatically.
+`restart_app` returns JSON text `{ lease_uuid, status }`; it does not
+wait for the app to become ready. Check for `isError: true` / `error:
+true` even when the host does not throw. Capture the returned status
+as `RESTART_STATUS`. On error or a lost response, report the code/message
+and the uncertain outcome, then journal the attempted call without
+claiming success. Do not retry automatically: each restart call starts
+a fresh provider operation.
 
 ## Step 6 — Post-restart verification
 
 Re-call `mcp__plugin_manifest-agent_manifest-fred__app_status({ lease_uuid: LEASE_UUID })`
-once. Capture `chainState.state` as `POST_STATE` (same encoding
-ambiguity as Step 2), plus `provision_status` and `fail_count` for
-the provider-side narrative.
-
-Decode via the canonical helper (same script, same shape as Step 2):
+once. After checking for an error envelope, capture `chainState.state`
+as `POST_STATE`, plus `fredStatus.provision_status` and
+`fredStatus.fail_count`. Decode the state with the same helper as Step 2:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/decode-lease-state.cjs" --state "$POST_STATE" --json
 ```
 
-Bind `POST_STATE_NAME` to the `name` field. Restart is healthy iff
-`POST_STATE_NAME === "LEASE_STATE_ACTIVE"`.
+Bind `POST_STATE_NAME` to the `name` field. Interpret the provider and
+chain observations together:
 
-- **ACTIVE** (`POST_STATE_NAME === "LEASE_STATE_ACTIVE"`): surface
-  `provision_status` and `fail_count` from the `app_status` response
-  in plain prose. If `provision_status` looks healthy (`provisioned`,
-  `running`, etc.), tell the user the restart was accepted and the
-  provider is bringing the container back up. TLS / ingress can take
-  a few seconds to settle. If `provision_status` itself reports a
-  failure even while the chain state is ACTIVE, tell the user the
-  chain registered the restart but the provider reports
-  `<provision_status>` (and `fail_count: <n>`); suggest
-  `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` for a full
-  report. Bind `JOURNAL_RECOVERY_ACTIONS = []`.
-- **Anything else** (regression — `POST_STATE_NAME !== "LEASE_STATE_ACTIVE"`):
-  tell the user:
-  > Restart was sent but the lease state is now `<POST_STATE_NAME>`
-  > (not LEASE_STATE_ACTIVE). Run
-  > `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` for a full
-  > diagnostics report.
-  Bind `JOURNAL_RECOVERY_ACTIONS = ["restart-post-verify-not-active"]`.
+- If chain state is ACTIVE and the provider reports `ready` or `running`,
+  report the restart response (`RESTART_STATUS`) and current provider
+  status. This single snapshot does not prove that the restart cycle
+  completed; describe the observed state without making that claim.
+- If chain state is ACTIVE but provisioning is still underway, report
+  the restart response and current phase. Keep readiness unconfirmed.
+- If the provider reports `failed`, surface `fredStatus.reason` and
+  `fredStatus.message` when present, with `fail_count`, and suggest
+  `/manifest-agent:troubleshoot-deployment <LEASE_UUID>`. An unknown
+  reason is still useful; pass through its message. A reason retained
+  alongside a healthy current status may describe an earlier failed
+  update, so its presence alone does not establish current failure.
+- If chain state is no longer ACTIVE, report the actual state and suggest
+  troubleshooting. The restart call did not itself change chain state.
+- If the query fails or provider data is missing, report verification as
+  unavailable, including `providerError` / `connectionError` when present.
+  Missing fields are not healthy defaults.
 
-Do not poll. One verify pass is enough; the user can re-run this skill
-or troubleshoot-deployment if they want a fresher snapshot.
+Bind `JOURNAL_RECOVERY_ACTIONS` to a concise applicable tag such as
+`restart-readiness-unconfirmed`, `restart-provider-failed`,
+`restart-post-verify-not-active`, or `restart-verification-unavailable`;
+use an empty array when the provider reports healthy status on ACTIVE.
+
+Do not poll or repeat the restart. The user can request a later status
+check; diagnose the existing lease before proposing another mutation.
 
 ## Step 7 — Record this run in the journal
 
@@ -208,33 +218,45 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "tool": "mcp__manifest-fred__app_status",
       "args_redacted": { "lease_uuid": "<LEASE_UUID>" },
       "outcome": "ok",
-      "result_summary": { "pre_state": "<decoded-name from Step 2>", "pre_provision_status": "<from Step 2>" }
+      "result_summary": { "pre_state": "<decoded-name from Step 2>", "pre_provision_status": "<Step 2 fredStatus.provision_status or null>" }
     },
     {
       "tool": "mcp__manifest-fred__restart_app",
       "args_redacted": { "lease_uuid": "<LEASE_UUID>" },
-      "outcome": "<ok|error>"
+      "outcome": "<ok|error>",
+      "result_summary": { "status": "<RESTART_STATUS or null>" }
     },
     {
       "tool": "mcp__manifest-fred__app_status",
       "args_redacted": { "lease_uuid": "<LEASE_UUID>" },
-      "outcome": "ok",
-      "result_summary": { "post_state_name": "<POST_STATE_NAME from decode-lease-state.cjs in Step 6>", "post_provision_status": "<from Step 6 app_status response>", "fail_count": "<n>" }
+      "outcome": "<ok|error>",
+      "result_summary": { "post_state_name": "<POST_STATE_NAME from decode-lease-state.cjs in Step 6>", "post_provision_status": "<Step 6 fredStatus.provision_status or null>", "fail_count": "<fredStatus.fail_count or null>" }
     }
   ],
-  "outcome": "<'success' if Step 5 restart_app call did not throw AND POST_STATE_NAME === 'LEASE_STATE_ACTIVE'; otherwise 'failed'. restart_app is a provider HTTPS call, NOT a Cosmos broadcast — see CLAUDE.md restart-app runtime policy note.>",
+  "outcome": "<success|partial|failed|cancelled per guidance below>",
   "final_state": {
     "lease_uuid": "<LEASE_UUID>",
     "action": "restart_app",
     "post_state_name": "<POST_STATE_NAME>",
-    "post_provision_status": "<from Step 6>",
-    "fail_count": "<n>"
+    "post_provision_status": "<Step 6 fredStatus.provision_status or null>",
+    "fail_count": "<fredStatus.fail_count or null>"
   },
   "errors": [],
-  "recovery_actions": <JOURNAL_RECOVERY_ACTIONS — [] on ACTIVE, ["restart-post-verify-not-active"] on regression>
+  "recovery_actions": <JOURNAL_RECOVERY_ACTIONS from Step 6>
 }
 JOURNAL_EOF
 ```
+
+Use `success` when the restart returned successfully and the one status
+snapshot reports ACTIVE with a healthy provider; this records acceptance
+and the observed state, not proof of a completed restart cycle. Use
+`partial` for a successful restart response with readiness still pending
+or verification unavailable, and `failed` for a tool error or observed
+provider/chain failure. Include the concise error code/message in
+`errors` without copying the envelope's `input`. Keep the lease UUID in
+all attempted runs. Only include calls actually executed: if Step 5
+failed, omit the Step 6 status call. Host denial before Step 5 is
+`cancelled` and has no executed restart call.
 
 If the user cancelled at the Step 3 mainnet warning or the Step 4
 textual confirm, set `outcome` to `"cancelled"`, truncate `tool_calls[]`

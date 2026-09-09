@@ -1,11 +1,12 @@
 ---
+name: manage-domain
 description: >
   Set, clear, or look up the custom domain (FQDN) attached to a Manifest
   lease item. Use after a lease exists when the user wants to attach a
   hostname, free a reservation, or reverse-resolve which lease owns an
   FQDN. With no argument, asks which action and which lease. With a
   lease UUID argument, treats it as the target for set/clear. Lookup is
-  a direct read-only chain query; set and clear flow through the
+  a read-only orchestrated chain query; set and clear flow through the
   orchestrated MCP tool, which requests native action confirmation,
   broadcasts, and verifies on-chain state.
 allowed-tools: Bash(*), Read
@@ -40,38 +41,29 @@ Use `AskUserQuestion`:
 - **Lookup** — find which lease (and which service inside it) currently
   owns a given FQDN.
 
-Store as `ACTION`. Lookup is read-only and routes through a direct chain
-query; set and clear go through the orchestrated tool.
+Store as `ACTION`. Lookup uses the dedicated read-only orchestrated tool;
+set and clear use the mutating orchestrated tool.
 
 ## Step 2a — Lookup branch (read-only)
 
 If `ACTION === "lookup"`, ask the user for the FQDN to look up. Then call:
 
 ```
-mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain({ custom_domain: <fqdn> })
+mcp__plugin_manifest-agent_manifest-agent__lookup_custom_domain_orchestrated({ fqdn: <fqdn> })
 ```
 
-This is a direct call rather than `manage_domain_orchestrated({action:
-"lookup", fqdn})` because the pre-rewire skill already used the direct
-form and the rewire took the minimum-change path. Both work correctly:
-`manage_domain_orchestrated`'s lookup sub-flow has an explicit
-elicitation-capability carve-out (the MCP wrapper skips
-`assertElicitationCapability` when `action === "lookup"`) and is
-functionally a pure chain query through `leaseByCustomDomain` — the
-same call this skill makes directly. No substantive design distinction
-supports one form over the other today; this branch is process drift,
-not design intent. Once `ENG-212` lands and splits lookup into its
-own orchestrated MCP tool, this branch collapses to that form — a
-contributor implementing ENG-212 should treat the collapse as pure
-cleanup, not as undoing a design choice. (See CLAUDE.md DECISION 5
-for the full discipline trail and the "wrong rationale + right design
-= silent failure" retro principle this rewrite operationalizes.)
+This tool performs no broadcast and requests no elicitation.
+`manage_domain_orchestrated` accepts only `set` and `clear`.
 
-Render the response:
-- If the lease exists, surface `lease.uuid`, `lease.tenant`,
-  `lease.providerUuid`, and `service_name`. Suggest
-  `/manifest-agent:troubleshoot-deployment <uuid>` for follow-up.
-- If the lease is empty / not found, tell the user the FQDN is not
+Read `structuredContent` or parse the JSON text fallback; check for
+`isError: true` / `error: true` before interpreting a result. An error
+does not mean the domain is unclaimed. The successful result is
+`{ action: "lookup", fqdn, lease: { leaseUuid } | null }`:
+
+- If the lease exists, surface `fqdn` and `lease.leaseUuid`. Suggest
+  `/manifest-agent:troubleshoot-deployment <leaseUuid>` for its inventory.
+  This result does not contain tenant, provider, or service details.
+- If `lease` is null, tell the user the FQDN is not
   currently claimed and that `/manifest-agent:manage-domain` → "set"
   can attach it to a lease they own.
 
@@ -100,13 +92,12 @@ Do NOT pre-validate client-side — the orchestrated tool runs
 `validateArgs` server-side (RFC 1123 hostname check, scheme rejection,
 ≤253 chars) and the chain validates reserved-suffix rules.
 
-**Collect service name (stacks only)**: ask via `AskUserQuestion`:
-"Is this lease a multi-service stack? If yes, which service does the
-domain attach to?" If the lease is single-item, the user picks "single
-item lease" and `serviceName` is omitted. If they're unsure, suggest
-`/manifest-agent:troubleshoot-deployment <LEASE_UUID>` to see the
-service inventory. Skip this question entirely on `clear` unless the
-user explicitly needs to scope the clear to one service.
+**Select the lease item for set or clear**: use the lease's service
+inventory when available. For multiple items, ask which service is the
+target and pass its `serviceName`; clearing is scoped to an item too.
+For a single item the name may be omitted. If the inventory is unknown,
+use `/manifest-agent:troubleshoot-deployment <LEASE_UUID>` to resolve it
+before asking the user to choose; do not guess a service.
 
 **Invoke the orchestrated tool**:
 
@@ -115,7 +106,7 @@ mcp__plugin_manifest-agent_manifest-agent__manage_domain_orchestrated({
   action: ACTION,
   lease_uuid: LEASE_UUID,
   fqdn: FQDN,          // set only
-  service_name: SERVICE_NAME   // optional; stacks only
+  service_name: SERVICE_NAME   // required to disambiguate multiple lease items
 })
 ```
 
@@ -128,15 +119,19 @@ forward the answer yourself, or ask for a duplicate prose confirmation.
 The internal SDK write does not produce a separate host PreToolUse event.
 The orchestrated tool verifies the on-chain result and reports mismatches.
 
-`manage_domain_orchestrated` with `action: "lookup"` is read-only and is
-exempt from the mutating-call permission request. The skill's direct
-lookup path above is read-only too.
+Read `structuredContent` or parse the JSON text fallback; check for
+`isError: true` / `error: true` before interpreting success. Capture a
+successful `MANAGE_RESULT` with shape
+`{ action, leaseUuid, verified, finalCustomDomain }`. Surface the action,
+lease UUID, verification result, and final domain (`null` when cleared).
 
-On non-throw return, capture `MANAGE_RESULT`. The shape is
-`ManageDomainResult` — surface its `action`, `leaseUuid`, `fqdn` (set or
-the resolved cleared FQDN), `serviceName?`, and `verifier_outcome` to
-the user in plain prose. On throw, surface the MCP error envelope
-verbatim — the wrapper has already run its verify-and-recover dispatch.
+For a tool error or host exception, report the code/message. Classify
+`OPERATION_CANCELLED` as cancellation; `INVALID_CONFIG` is an input or
+configuration failure. A `TX_FAILED` or `QUERY_FAILED` error can occur
+after broadcast while verifying the chain, so do not claim the domain
+was left unchanged. Query the existing lease before offering a retry;
+do not automatically repeat a write or cleanup. If a host cancellation
+loses the final response, report the unknown outcome and inspect state.
 
 ## Step 3 — Record this run in the journal (set / clear only)
 
@@ -151,17 +146,19 @@ The writer auto-fills `timestamp_iso`, `timestamp_unix`,
 the orchestrated tool; `args_redacted` is produced by
 `scripts/_journal.cjs#redactArgs` (which normalizes snake_case input to
 camelCase output: `leaseUuid`, `customDomain`, `serviceName`).
-`result_summary` mines `MANAGE_RESULT` for `verifier_outcome` plus the
-load-bearing fields. Internal domain writes and verification queries
+`result_summary` uses `MANAGE_RESULT.verified` and `finalCustomDomain`.
+Internal domain writes and verification queries
 live in agent-core and are not enumerated as host tool calls.
 
-Set `outcome` to `"success"` when the orchestrated tool returned non-
-throw and the verifier outcome was `match`. Set `"partial"` if the
-verifier outcome was `mismatch` (broadcast accepted but chain shows the
-wrong value — likely a settling delay). Set `"failed"` for any throw
-that isn't a user cancellation. Set `"cancelled"` if the orchestrated
-tool threw `INVALID_CONFIG` with a cancellation message
-(`User declined to proceed with manage-domain …`).
+Set `outcome` to `"success"` only for a successful result with
+`verified === true`; use `"partial"` if a successful response reports
+`verified === false`. The current server reports verification failures
+as errors, not as a mismatch result. Use `"failed"` for other errors
+and `"cancelled"` for `OPERATION_CANCELLED` or a host denial. Preserve
+`LEASE_UUID` in all attempted runs and record the code plus concise
+safe message in `errors`; do not copy the error envelope's `input`.
+An error is not evidence of rollback. If permission was denied before
+the invocation began, leave `tool_calls` empty.
 
 Do NOT mention the journal write in your reply to the user.
 
@@ -178,14 +175,14 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "tool": "mcp__manifest-agent__manage_domain_orchestrated",
       "args_redacted": <reduced via _journal.cjs#redactArgs against the input args>,
       "outcome": "<ok|error>",
-      "result_summary": { "verifier_outcome": "<MANAGE_RESULT.verifier_outcome or null>", "leaseUuid": "<LEASE_UUID>", "customDomain": "<FQDN or null>", "serviceName": "<SERVICE_NAME or null>" }
+      "result_summary": { "verified": "<MANAGE_RESULT.verified or null>", "leaseUuid": "<LEASE_UUID>", "finalCustomDomain": "<MANAGE_RESULT.finalCustomDomain or null>", "serviceName": "<SERVICE_NAME or null>" }
     }
   ],
   "outcome": "<success|partial|failed|cancelled>",
   "final_state": {
     "lease_uuid": "<LEASE_UUID>",
     "action": "<set|clear>",
-    "fqdn": "<FQDN or null>",
+    "fqdn": "<MANAGE_RESULT.finalCustomDomain or null>",
     "service_name": "<SERVICE_NAME or null>",
     "verified": <true if outcome === 'success' else false>
   },
@@ -199,6 +196,7 @@ JOURNAL_EOF
 `$MANIFEST_PLUGIN_DATA/manifests/<LEASE_UUID>.json` is intentionally
 NOT refreshed by manage-domain — the on-chain state is canonical.
 The wrapper's `custom_domain` may go stale; consumers needing the live
-value should query `mcp__plugin_manifest-agent_manifest-lease__leases_by_tenant` or
-`mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain`. The wrapper refreshes
-naturally on the next `/manifest-agent:deploy-app` run for that lease.
+value should query the lease or use
+`mcp__plugin_manifest-agent_manifest-agent__lookup_custom_domain_orchestrated`
+for reverse lookup. A later deployment creates a new lease and a new
+saved record; it does not refresh this lease's historical snapshot.

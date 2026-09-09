@@ -1,6 +1,12 @@
 # Approval boundary validation
 
-The plugin remains pinned to `@manifest-network/manifest-mcp-node@0.10.0`.
+The plugin now pins `@manifest-network/manifest-mcp-node@0.22.0`. The Claude
+host evidence below was collected for 0.10.0 in ENG-892; it remains historical
+host-boundary evidence, not a new end-to-end validation of 0.22.0. The current
+release adds the gated `restore_app` mutation and a dedicated read-only
+`lookup_custom_domain_orchestrated`; every manage-domain call stays gated.
+ENG-893 runs the installed-inventory and real-launcher transport checks against
+the new locked package.
 Approval applies to host-visible MCP entry points. Claude Code evaluates
 PreToolUse before starting an outer orchestrated mutation. Once allowed,
 the server requests native elicitation for the plan or action, mainnet
@@ -18,7 +24,7 @@ the in-call plan confirmation.
 
 | Check | Evidence | Limit |
 | --- | --- | --- |
-| Hook payload tests | Scoped mutations request permission; exact domain lookup is exempt; malformed payloads, configuration, and child output fail closed; inherited Node preloads are disabled | Invoking the script with JSON does not show how Claude delivers events or renders permission requests |
+| Hook payload tests | Scoped mutations request permission; dedicated read-only lookup is outside the matcher; malformed payloads, configuration, and child output fail closed; inherited Node preloads are disabled | Invoking the script with JSON does not show how Claude delivers events or renders permission requests |
 | Installed MCP inventory | `initialize` and `tools/list` from each configured server in the pinned package expose tool names and mutation metadata that agree with the matcher | Published metadata does not prove a handler has no unreported side effects |
 | Runtime-policy and documentation checks | The injected policy, hook matcher, and developer gated-tool list agree | Matching prose cannot prove the user saw a fee estimate or made a choice |
 | Protocol/transport fixtures, when run | Simulated denial prevents entry; native elicitation acceptance/decline controls a fixture's mutation path | A simulated host does not establish real Claude UI or bypass-mode behavior |
@@ -27,13 +33,14 @@ the in-call plan confirmation.
 The inventory check uses synthetic credentials in an isolated temporary
 environment with outbound network operations blocked. It invokes no
 transaction or provider tools. The probe sets `DOTENV_CONFIG_QUIET=true`
-to suppress dependency banners on MCP stdout; it does not establish that
-an ordinary plugin startup has a clean transport. The startup correction
-is tracked separately under ENG-893. Run it against installed
-runtime dependencies:
+to suppress dependency banners on MCP stdout. ENG-893 also tests ordinary
+startup through the shipped launcher with a public encrypted wallet, full
+runtime completion validation, dotenv isolation and outbound network denial.
+Run both checks against the installed runtime:
 
 ```bash
 node ci/mcp-tool-policy.cjs --data-dir <install-directory>
+node ci/launcher-transport.cjs --data-dir <install-directory>
 ```
 
 The check combines `readOnlyHint` and Manifest `broadcasts` metadata,
@@ -166,3 +173,18 @@ assignment, and manifest upload are sequential operations. Host permission
 and plan elicitation do not make those operations atomic; failure reporting
 and recovery must preserve the lease and transaction outcomes already
 observed.
+
+## ENG-893 compatibility rerun (2026-09-09)
+
+All 14 isolated host cases passed again on Claude Code 2.1.263 using the
+current hook and fixture tool names. Dedicated domain lookup produced one
+read, zero hook events and zero mutations. Decline/cancel produced zero
+mutations; accepted fixture elicitation produced one. The
+[machine-readable report](evidence/claude-runtime-0.22.0.json) records tested
+file hashes. These are local fixture calls through the real host, not live
+chain transactions or end-to-end upstream workflows; terminal UI evidence
+above remains the earlier ENG-892 run.
+
+The final locked 0.22.0 package exposes 34 tools across five servers, including
+12 gated mutation entry points. All five also initialize through the shipped
+launcher with strict JSON-RPC stdout and outbound networking blocked.

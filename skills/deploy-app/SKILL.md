@@ -1,4 +1,5 @@
 ---
+name: deploy-app
 description: >
   Deploy a complete container deployment spec to the Manifest blockchain
   via the orchestrated MCP tool. Argument: path to a spec JSON produced
@@ -41,6 +42,13 @@ authoring path through this skill.
   re-run `/manifest-agent:deploy-app <path>` with the saved file."
   Stop without invoking the tool.
 
+`SPEC.size` must be a non-empty SKU name, and exactly one of `image` or
+`services` must be present. If an older saved spec omitted `size`, stop
+and ask the user to select a SKU through `/manifest-agent:author-manifest`;
+do not guess a tier. Preserve any `skuUuid` and `providerUuid` supplied
+in the spec. A `services` map requires `serviceName` when `customDomain`
+is set, even when the map contains only one service.
+
 ## Step 2 — Invoke the orchestrated tool
 
 Call `mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated({ spec: SPEC })`.
@@ -61,19 +69,52 @@ atomic or infer success from a single completed transaction.
 
 ## Step 3 — Render the result
 
-On non-throw return, capture the response as `DEPLOY_RESULT`. The shape
-is `{ leaseUuid, providerUuid, leaseState, urls, customDomain?, manifestPath }`.
+Read a successful response from `structuredContent`, or parse its JSON
+text fallback. Before treating it as success, check for MCP `isError:
+true` or a JSON error envelope with `error: true`; a tool error need not
+throw in the host. Capture success as `DEPLOY_RESULT` with shape
+`{ leaseUuid, providerUuid, leaseState, urls, customDomain?, manifestPath }`.
 Surface:
 
 - Lease: `<leaseUuid>` · Provider: `<providerUuid>` · State: `<leaseState>`
-- URL(s): `<urls.join(", ")>` when populated, else `(internal-only — no public ingress)`
+- URL(s): `<urls.join(", ")>` when populated. Otherwise report that no
+  public URL was returned; do not infer network isolation from an empty list.
 - Custom domain: `<customDomain>` when present
-- Saved manifest: `<manifestPath>`
+- Saved manifest: `<manifestPath>` when non-empty. Otherwise state that
+  the deployment completed but no saved local manifest was reported.
 - Follow-up: `/manifest-agent:troubleshoot-deployment <leaseUuid>`
 
-On throw, surface the MCP error envelope verbatim. The wrapper has
-already run its recovery dispatch (if a `RecoveryChoice` applied) — you
-just display the final error.
+For an error envelope, capture its `code`, `message`, and `details` as
+`DEPLOY_ERROR`. Explain the returned outcome using those fields:
+
+- `OPERATION_CANCELLED` without a reported lease or recovery outcome:
+  the operation was cancelled. Use an explicit pre-broadcast message to
+  state that no transaction was sent; cancellation alone is not proof.
+- `DEPLOY_READINESS_UNCONFIRMED` or `details.partial === true`: remote
+  work may have completed. Preserve `details.lease_uuid` and any
+  transaction hash; report readiness as unconfirmed and diagnose that
+  existing lease with `/manifest-agent:troubleshoot-deployment`.
+- `OPERATION_CANCELLED` with `details.recovery_outcome ===
+  "salvage_without_domain"`: the paid lease was preserved without the
+  requested domain. Report partial success and the existing lease UUID.
+- `OPERATION_CANCELLED` with recovery outcome `cancel_lease` or
+  `close_lease`: the selected cleanup completed. Report `stop_outcome`
+  and the authoritative `lease_state`; `already_inactive` means no new
+  cleanup transaction. Include `transaction_hash` only when provided.
+- Other errors: report the code and message with any known lease UUID.
+  A failed tool call does not establish that earlier writes were undone.
+
+The wrapper has already handled its native recovery choice. Do not run
+another deployment, close a lease, or retry a write automatically. Each
+deployment creates a new paid lease; inspect an existing lease before
+deciding what to do next.
+
+If the host cancels the request and provides no final response, use any
+exposed server warning (`deploy_cancelled_after_broadcast` or
+`recovery_dismissed`) to retain the lease UUID and reported outcome.
+Absence of a response or warning does not prove that no lease was
+created. Report the uncertainty and check the user's leases before
+offering another deployment.
 
 ## Step 4 — Record this run in the journal
 
@@ -86,11 +127,26 @@ Append one record to `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`.
 The writer auto-fills `timestamp_iso`, `timestamp_unix`,
 `schema_version`, and `session_id`; the per-tool reducer in
 `scripts/_journal.cjs#redactArgs` produces `args_redacted` for the
-orchestrated tool (env values reduced to keys-only). Pass `outcome`
-`"success"` on non-throw, `"failed"` on throw, or `"cancelled"` when
-the wrapper threw `INVALID_CONFIG` with a cancellation-shaped message
-(`User cancelled deployment at plan step.` etc.). Do NOT mention the
-journal write in your reply to the user.
+orchestrated tool (env values reduced to keys-only). Classify the run
+from the structured outcome, not whether the host threw:
+
+- `success`: a successful `DEPLOY_RESULT`.
+- `partial`: readiness unconfirmed, a partial error, or
+  `salvage_without_domain` recovery preserving the lease.
+- `cancelled`: cancellation before work, or completed user-selected
+  cancel/close recovery. Retain the cleanup's terminal state separately.
+- `failed`: other errors, including an unresolved transport failure.
+
+Use the known lease UUID from `DEPLOY_RESULT.leaseUuid`,
+`DEPLOY_ERROR.details.lease_uuid`, or an exposed server warning in
+`final_state`; never discard it just because success was not returned.
+Include only the returned code and a concise message in `errors`, with
+safe machine fields such as `recovery_outcome`, `stop_outcome`,
+`lease_state`, `transaction_hash`, and `readiness_unconfirmed` in result
+summaries/recovery actions. Do not journal the error envelope's `input`
+or copy a spec/environment into error prose. A host denial before
+execution has no executed tool call; leave `tool_calls` empty.
+Do NOT mention the journal write in your reply to the user.
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
@@ -105,13 +161,13 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
       "tool": "mcp__manifest-agent__deploy_app_orchestrated",
       "args_redacted": <reduced via _journal.cjs#redactArgs against {spec: SPEC}>,
       "outcome": "<ok|error>",
-      "result_summary": { "leaseUuid": "<DEPLOY_RESULT.leaseUuid or null>", "providerUuid": "<DEPLOY_RESULT.providerUuid or null>", "url": "<DEPLOY_RESULT.urls[0] or null>", "customDomain": "<DEPLOY_RESULT.customDomain or null>", "manifestPath": "<DEPLOY_RESULT.manifestPath or null>" }
+      "result_summary": { "leaseUuid": "<known lease UUID or null>", "providerUuid": "<DEPLOY_RESULT.providerUuid or null>", "url": "<DEPLOY_RESULT.urls[0] or null>", "customDomain": "<DEPLOY_RESULT.customDomain or null>", "manifestPath": "<non-empty DEPLOY_RESULT.manifestPath or null>", "code": "<DEPLOY_ERROR.code or null>", "recovery_outcome": "<reported recovery outcome or null>", "stop_outcome": "<reported stop outcome or null>", "transaction_hash": "<reported transaction hash or null>" }
     }
   ],
-  "outcome": "<success|failed|cancelled>",
-  "final_state": { "leaseUuid": "<DEPLOY_RESULT.leaseUuid or null>", "providerUuid": "<DEPLOY_RESULT.providerUuid or null>", "leaseState": "<DEPLOY_RESULT.leaseState or null>", "manifestPath": "<DEPLOY_RESULT.manifestPath or null>", "customDomain": "<DEPLOY_RESULT.customDomain or null>", "chain_id": "<chainId from Step 0>" },
-  "errors": [],
-  "recovery_actions": []
+  "outcome": "<success|partial|failed|cancelled>",
+  "final_state": { "leaseUuid": "<known lease UUID or null>", "providerUuid": "<DEPLOY_RESULT.providerUuid or null>", "leaseState": "<DEPLOY_RESULT.leaseState or reported cleanup lease_state or null>", "manifestPath": "<non-empty DEPLOY_RESULT.manifestPath or null>", "customDomain": "<DEPLOY_RESULT.customDomain or null>", "chain_id": "<chainId from Step 0>", "readiness_unconfirmed": "<reported readiness_unconfirmed or null>" },
+  "errors": [{ "class": "<error class>", "mcp_error_code": "<returned code>", "message": "<concise safe error message; omit this object on success>" }],
+  "recovery_actions": ["<completed recovery outcome, omit entry when none>"]
 }
 JOURNAL_EOF
 ```

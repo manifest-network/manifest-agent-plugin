@@ -30,7 +30,9 @@ node -e "
     fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
   }
 "
-git add package.json .claude-plugin/plugin.json
+# Refresh root package metadata in the tracked lock, preserving resolutions.
+npm install --package-lock-only --ignore-scripts
+git add package.json package-lock.json .claude-plugin/plugin.json
 git commit -m "chore: bump plugin version to $NEW_VERSION"
 
 # 2. Push the commit and let CI run. Don't tag yet — if CI fails, you'd need
@@ -58,7 +60,7 @@ There's no fixed cadence. Cut a release when:
 
 ## Pre-release checklist
 
-- [ ] Both version manifests bumped in one commit.
+- [ ] Both version manifests and the lockfile root version updated in one commit.
 - [ ] CI is green on `main` at the commit you're about to tag.
 - [ ] `manifest-mcp-node` version in `package.json` is the one you intend to ship (CLAUDE.md "Custom domains" mentions a minimum version — confirm it's still accurate after the bump).
 - [ ] No undocumented breaking changes — check `git log` since the previous tag for any commit that renamed a script, removed a flag, or changed a skill argument shape.
@@ -80,3 +82,34 @@ Don't tag the hotfix branch directly. The release workflow refuses to release a 
 ## Yanking a release
 
 GitHub Releases can be deleted; the underlying tag can be deleted with `git push origin :v<version>`. Marketplace caches may still serve the yanked version until Claude Code refreshes them. Prefer cutting a new patch release with the fix over deleting; the bump path is faster and surfaces the fix in changelogs.
+
+## Next release: runtime compatibility (ENG-893)
+
+- Requires Node 22.19.0+; CI covers that floor and Node 24. MCP is pinned to
+  0.22.0 with a tracked lockfile. Consumer overrides carry upstream ENG-269/270/748
+  dependency fixes (axios 1.19.0, protobufjs 7.6.5, ipaddr.js 2.4.0 and the
+  Manifest stargate fork). The feature commit does not bump the plugin version.
+- SessionStart, onboarding and repair share `setup-runtime.cjs`. Incomplete or
+  removed dependencies trigger a locked reinstall in the data directory. Config,
+  keys, drafts, journals and saved deployments survive upgrades and repair.
+- Config owns the selected chain/gas/wallet environment, dotenv is isolated from
+  workspace files, and stdout stays MCP JSON-RPC. Empty passwords are preserved;
+  upstream 0.22.0 rejects encrypted keyfiles with an empty password.
+- Skills use required deployment size, current service port constraints, separate
+  read-only domain lookup, typed domain results, and OPERATION_CANCELLED/partial
+  recovery outcomes. A cancellation can follow a paid lease creation; preserve
+  recovery identifiers and query existing state before retrying. Close may cancel
+  a pending lease or find an already-terminal one.
+- The new `restore_app` mutation is permission-gated. It creates a new paid lease,
+  has no fee-estimation interface, and must not be blindly retried.
+- Published saved records remain schema 3; v2/v3 summaries stay readable and
+  redacted. No local record migration or deletion accompanies this update.
+- Existing ENG-158 still owns the plugin helper's numeric terminal-state mapping;
+  current orchestrated flows decode states upstream. ENG-260 still owns full
+  SKU/provider UUID selection and persistence; authoring saves required size and
+  stops on ambiguous names. MCP 0.22.0's saved wrapper still lacks UUID selectors.
+
+Record final package/launcher checks and any outstanding upstream dependency
+advisories in the PR. The prior Claude host evidence is recorded separately in
+[approval-validation.md](approval-validation.md); it must not be presented as a
+fresh host test of every 0.22.0 tool.

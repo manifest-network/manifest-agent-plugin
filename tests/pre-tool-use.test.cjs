@@ -29,7 +29,7 @@ function runHook(input, { root = ROOT, env = {} } = {}) {
 
 for (const [server, tool] of [
   ['chain', 'cosmos_tx'], ['cosmwasm', 'convert_mfx_to_pwr'],
-  ['fred', 'deploy_app'], ['fred', 'restart_app'], ['fred', 'update_app'],
+  ['fred', 'deploy_app'], ['fred', 'restart_app'], ['fred', 'restore_app'], ['fred', 'update_app'],
   ['lease', 'fund_credit'], ['lease', 'close_lease'], ['lease', 'set_item_custom_domain'],
   ['agent', 'deploy_app_orchestrated'], ['agent', 'manage_domain_orchestrated'],
   ['agent', 'close_lease_orchestrated'],
@@ -56,13 +56,14 @@ test('read-only tools, faucet and unrelated plugins are not matched', () => {
   }
 });
 
-test('the pinned read-only manage-domain lookup defers to host policy', () => {
-  const full = name('agent', 'manage_domain_orchestrated');
-  assert.ok(matches(full), 'the host sends both read and write actions to the handler');
-  const result = runHook(event(full, { action: 'lookup', customDomain: 'example.com' }));
+test('dedicated domain lookup defers while every manage-domain action stays gated', () => {
+  const lookup = name('agent', 'lookup_custom_domain_orchestrated');
+  assert.equal(matches(lookup), false);
+  const result = runHook(event(lookup, { fqdn: 'example.com' }));
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout, '', 'omitting a decision must not auto-allow the tool');
-  for (const action of ['set', 'clear', '', null, ['lookup'], { action: 'lookup' }]) {
+  assert.equal(result.stdout, '', 'read-only lookup must not override host permission');
+  const full = name('agent', 'manage_domain_orchestrated');
+  for (const action of ['lookup', 'set', 'clear', '', null, ['lookup'], { action: 'lookup' }]) {
     assert.equal(decidePermission(event(full, { action })), 'ask-orchestrated');
   }
 });

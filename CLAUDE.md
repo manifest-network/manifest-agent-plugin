@@ -16,10 +16,11 @@ Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
 ├── skills/*/SKILL.md            ├── keys/agent-*.json            (0600, encrypted wallets)
 ├── hooks/hooks.json             ├── chains/{mainnet,testnet}.json
 ├── .mcp.json                    ├── manifests/<lease-uuid>.json  (0600, post-deploy records)
-└── package.json                 ├── manifests-drafts/*.json      (0600, user-managed drafts)
+├── package.json                 ├── manifests-drafts/*.json      (0600, user-managed drafts)
                                  ├── journal/<YYYY-MM-DD>.jsonl   (0600, append-only audit trail)
                                  ├── node_modules/                (deps installed here)
-                                 └── package.json                 (copied from plugin root)
+└── package-lock.json            ├── package.json + package-lock.json (copied)
+                                 └── .runtime-install.json         (completion record)
 ```
 
 **Data flow**: Skills run scripts → scripts write to `$MANIFEST_PLUGIN_DATA` → MCP wrapper reads `config.json` at startup → spawns MCP binary with computed env vars.
@@ -28,7 +29,7 @@ Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
 
 **Plugin root + data discovery**: The SessionStart hook exports `MANIFEST_PLUGIN_ROOT` and `MANIFEST_PLUGIN_DATA` via `CLAUDE_ENV_FILE`, mirroring Claude Code's `${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_PLUGIN_DATA}` substitutions (which only expand inside `.mcp.json`, hooks, etc., not in scripts). Skills use `$MANIFEST_PLUGIN_ROOT` to locate scripts and `$MANIFEST_PLUGIN_DATA` for runtime files. Scripts read `process.env.MANIFEST_PLUGIN_DATA` (the `_io.cjs` `getDataDir()` helper centralizes the lookup + missing-var error).
 
-**Dependency bootstrap**: The SessionStart hook also runs the docs' diff-check + `npm install` pattern automatically when `package.json` differs between plugin root and `${CLAUDE_PLUGIN_DATA}`. First-run users don't need to call `init-agent` to get a working MCP wrapper.
+**Dependency bootstrap**: SessionStart runs `scripts/setup-runtime.cjs`, the same command used by onboarding and repair. It copies both tracked manifests into the data directory and runs `npm ci --omit=dev --ignore-scripts` when the package/lock fingerprint or installed dependency files fail validation. A completion record is written only after successful verification. Setup uses an exclusive process lock and preserves config, keys, journals, drafts, and saved deployments. It never installs into the plugin root. Node 22.19.0+ is required; CI tests that floor and Node 24. Root dependency overrides mirror the released upstream 0.22.0 fixes (ENG-269/270/748), which npm does not propagate from a dependency: axios 1.19.0, protobufjs 7.6.5, ipaddr.js 2.4.0, and the Manifest stargate fork. Keep them aligned when upgrading.
 
 ## Key Patterns
 
@@ -40,7 +41,7 @@ Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
 
 **MCP wrapper** (`start-server.cjs`) — Reads `config.json`, builds env vars, spawns `$MANIFEST_PLUGIN_DATA/node_modules/.bin/manifest-mcp-<name>` directly (not npx — 30ms vs 800ms startup). Forwards SIGTERM/SIGINT/SIGHUP. Uses `stdio: 'inherit'` so MCP JSON-RPC passes through transparently.
 
-**Falsy env vars** — The wrapper omits optional env vars when falsy rather than setting them to `''`. Empty `MANIFEST_KEY_PASSWORD` causes the MCP server to throw.
+**Configuration precedence** — Config owns chain, gas-price/multiplier and wallet variables. The launcher removes inherited values before applying the selected config, including stale optional endpoints and mnemonic fallback. `agent.keyFile` must exist and `agent.keyPassword` must be a string; an explicit empty password is preserved, although upstream 0.22.0 rejects empty-password encrypted wallets. The child runs from an owned empty temporary directory so dotenv cannot load a workspace `.env`, and `DOTENV_CONFIG_QUIET=true` keeps stdout protocol-only. The temporary directory is removed on exit; generic transport settings such as proxies remain inherited. `COSMOS_MAX_GAS` remains an explicit operator override of the upstream gas ceiling; it is not a config-owned field. Invalid values are rejected upstream.
 
 ## Open question decisions (ENG-130 rewire)
 
@@ -48,9 +49,9 @@ The ENG-130 rewire left five non-obvious decisions documented here so future rea
 
 - **DECISION 1 — `author-manifest` stays plugin-side.** `manifest-mcp-agent` ships no `build_manifest_preview_orchestrated` tool (would have been an upstream ENG-204-tier ticket). The standalone draft-creation flow remains in the plugin over the surviving `save-manifest-draft.cjs` + `merge-env.cjs` helpers. The rewired `deploy-app` skill takes one input (a file path) and points non-file input at `/manifest-agent:author-manifest`; `deploy_app_orchestrated`'s `validateSpec()` requires a complete `DeploySpec` up front, so the rewire converged on author → deploy as two explicit steps rather than the pre-rewire one-shot "deploy with inline author" UX.
 - **DECISION 2 — saved-manifest read surface stays; write surface moves.** Deleted: `save-manifest.cjs`, `remove-manifest.cjs` (agent-core's `saveManifest()` owns persistence end-to-end via `MANIFEST_AGENT_DATA_DIR`; cleanup is inside `closeLease`'s recovery dispatch). Kept: `list-saved-manifests.cjs` + `summarize-manifest.cjs` (read-only discovery surface used by the lease-UUID pickers in `manage-domain` Step 2b and `troubleshoot-deployment` Step 1) and `save-manifest-draft.cjs` (for `author-manifest`'s draft creation).
-- **DECISION 3 — FQDN validation + DNS pre-check move into agent-core.** Deleted: `validate-domain.cjs`, `dns-precheck.cjs`. agent-core's `manageDomain` runs `validateArgs` (RFC 1123 hostname + scheme rejection + ≤253 char cap) server-side and runs the warn-only DNS probe internally. `build_manifest_preview` validates FQDN format at the spec layer.
+- **DECISION 3 — FQDN validation + DNS pre-check move into agent-core.** Deleted: `validate-domain.cjs`, `dns-precheck.cjs`. agent-core's `manageDomain` runs `validateArgs` (RFC 1123 hostname + scheme rejection + ≤253 char cap) server-side and runs the warn-only DNS probe internally. `build_manifest_preview` validates container manifest fields only; custom-domain metadata is validated during orchestrated deployment.
 - **DECISION 4 — journal mechanism is option-a (skill-side, single-entry-per-orchestrated-call).** The skill prose pipes a record to `journal-write.cjs` with ONE `tool_calls[]` entry per orchestrated invocation. `args_redacted` is produced by `_journal.cjs#redactArgs`'s per-tool reducer (added in ENG-130 for the four new tools). `result_summary` is mined from the orchestrated tool's structured return value. The journal does NOT enumerate inner broadcasts the wrapper dispatches — see "Operation journal" below for the full fidelity-trade-off discussion. `troubleshoot-deployment` is the documented exception: it writes two `tool_calls[]` entries when the cleanup branch fires, because the close call is a separate skill-driven orchestrated tool call after the diagnostic returns (still one entry per orchestrated invocation; the skill just makes two invocations in that branch). The alternative (wrapper-side journal writes) was rejected to keep the plugin's secret-key denylist + record schema out of the upstream package.
-- **DECISION 5 — `manage-domain` lookup branches in skill prose.** Set/clear route through `mcp__plugin_manifest-agent_manifest-agent__manage_domain_orchestrated`; lookup calls `mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain` directly. **Honest rationale: there is no substantive design distinction supporting the direct call over `manage_domain_orchestrated({action: "lookup"})` today — this is process drift, not design intent.** agent-core's `manageDomain` on `action: "lookup"` has an explicit elicitation-capability carve-out (the MCP wrapper at `manifest-mcp-agent/dist/index.js` skips `assertElicitationCapability` when `args.action === "lookup"`) and dispatches to `lookupDomain`, which is functionally identical to the direct `leaseByCustomDomain` query the skill already used pre-rewire — same chain query, same result, no elicitation ceremony to avoid on either path. The branch survives because the pre-rewire skill called `lease_by_custom_domain` directly and the rewire took the minimum-change path; ENG-212 will land a dedicated `lookup_custom_domain_orchestrated` tool, at which point both branches collapse to that form (and a future contributor implementing ENG-212 is free to treat this as pure cleanup, not as undoing a design choice). The branch was justified through three rounds of plausible-but-incorrect rationale before being honestly grounded here — see commit history for the discipline applied.
+- **DECISION 5 — lookup is a dedicated read-only orchestrator.** MCP 0.22.0 provides `lookup_custom_domain_orchestrated({fqdn})`. `manage_domain_orchestrated` accepts set/clear only; there is no action-specific permission exemption.
 
 ## Skills
 
@@ -64,7 +65,7 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **author-manifest** — Plugin-side draft creation. Builds + validates a Fred spec via `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview`, saves via `save-manifest-draft.cjs` to `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json` (or a user-chosen path). No readiness pre-flight — the orchestrated deploy tool re-checks at broadcast time. No client-side image inspection or domain validation — both moved upstream. See DECISION 1.
 - **troubleshoot-deployment** — Picker (`$ARGUMENTS` → `manifest://leases/active` → `list-saved-manifests.cjs` → lookup-by-FQDN → user-paste) plus a thin invocation of `mcp__plugin_manifest-agent_manifest-agent__troubleshoot_deployment_orchestrated`, which is a pure chain query returning pre-rendered Markdown. The cleanup elicitation, when the user opts in, drives `mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated` as a separate tool call. The outer close invocation is gated before execution; its internal SDK operations do not trigger separate host PreToolUse events.
 - **deploy-app** — Thin invocation of `mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated` over a complete spec JSON file. `/manifest-agent:deploy-app <path>` is the only input mode — the orchestrated tool requires a fully-formed `DeploySpec` (`validateSpec()` runs first), so non-file input directs the user at `/manifest-agent:author-manifest`. The wrapper owns plan rendering, fee itemization, partial-success recovery, and manifest persistence (via `MANIFEST_AGENT_DATA_DIR`) end-to-end through MCP elicitation. The skill resolves the file, invokes the tool, renders the typed `DeployResult`, and journals the run.
-- **manage-domain** — `lookup` calls `mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain` directly; `set` and `clear` route through `mcp__plugin_manifest-agent_manifest-agent__manage_domain_orchestrated` (which handles native action confirmation, broadcast, and on-chain verification). The lookup branch is process drift, not design intent — the orchestrated wrapper's lookup sub-flow has the same elicitation-capability carve-out and dispatches to the same chain query under the hood, so neither form is substantively better. The pre-rewire skill used the direct call and the rewire kept it. See DECISION 5; collapses to a future `lookup_custom_domain_orchestrated` form when ENG-212 lands.
+- **manage-domain** — Lookup uses `mcp__plugin_manifest-agent_manifest-agent__lookup_custom_domain_orchestrated({fqdn})`, returning `{action:"lookup",fqdn,lease:{leaseUuid}|null}`. Set/clear use `manage_domain_orchestrated`, returning `{action,leaseUuid,verified,finalCustomDomain}` after native confirmation and verification. Errors may follow a successful broadcast; query the existing lease before proposing a retry.
 - **restart-app** — Restart a running app via `restart_app` without closing the lease. Per the `scripts/session-start.sh` runtime policy, `restart_app` is a provider HTTPS call, NOT a Cosmos broadcast — no gas, no fee estimate, no `cosmos_estimate_fee` step. The skill inlines its own textual confirm. PreToolUse still gates the tool. Pre-call: pipe `chainState.state` through `scripts/decode-lease-state.cjs --state "$STATE" --json` and refuse unless the decoded `name` is `LEASE_STATE_ACTIVE`. The helper handles all chain encoding forms (int `2`, stringy-int `"2"`, canonical `"LEASE_STATE_ACTIVE"`) per its companion test (`tests/_lease-state.test.cjs`). Post-call: re-query `app_status` once and pipe the new state through the same decoder; tag the journal `recovery_actions` with `["restart-post-verify-not-active"]` on regression.
 - **list-releases** — Read-only call to `app_releases`; renders the version history via `render-releases.cjs` as a Markdown table sorted newest first. True rollback (re-deploying a prior release) is intentionally out of scope — track separately if/when needed.
 - **balance** — Read-only call to `credit_balance`; renders wallet balances + credit account state + burn rate + runway hours via `render-balance.cjs` (humanizing denoms via `humanize-denom.cjs`). Optional `$ARGUMENTS` is a bech32 tenant address; default is the agent's own address.
@@ -90,7 +91,7 @@ This plugin codifies a split between deterministic operations (CJS scripts in `s
 
 **In scripts (plugin-side, surviving post-ENG-130):** UUID validation (`_uuid.cjs`), path traversal guards + atomic write discipline (`_io.cjs`), spec shape detection + service normalization (`_spec.cjs`), gas-price token parsing (`_gas-price.cjs`), SSRF-aware HTTPS fetch (`_https-json.cjs`), the journal layer (`_journal.cjs` + `journal-write.cjs` + `journal-read.cjs`), draft spec write (`save-manifest-draft.cjs`), env-file merge into a saved draft (`merge-env.cjs`), read-only discovery surface (`summarize-manifest.cjs`, `list-saved-manifests.cjs`), denom-aware humanization for read-only renders (`humanize-denom.cjs`), the read-only skill renderers (`render-balance.cjs`, `render-providers.cjs`, `render-releases.cjs`), and setup/auth helpers (`gen-agent-key.cjs`, `import-key.cjs`, `write-config.cjs`, `update-config.cjs`, `fetch-chain-registry.cjs`).
 
-**Now in agent-core (consumed via `manifest-mcp-agent`):** intent recap rendering, `DeploymentPlan` block rendering, readiness evaluation, `deploy_app` response + error classification, partial-success recovery dispatch, URL extraction from typed connection payloads, lease-state enum decoding, troubleshoot report rendering, FQDN format validation, DNS resolution pre-check, generic post-broadcast verify-and-recover dispatch, set-domain CLI arg construction. All of these live inside the four `mcp__plugin_manifest-agent_manifest-agent__*_orchestrated` tools — the plugin no longer owns them.
+**Now in agent-core (consumed via `manifest-mcp-agent`):** intent recap rendering, `DeploymentPlan` block rendering, readiness evaluation, `deploy_app` response + error classification, partial-success recovery dispatch, URL extraction from typed connection payloads, lease-state enum decoding, troubleshoot report rendering, FQDN format validation, DNS resolution pre-check, generic post-broadcast verify-and-recover dispatch, set-domain CLI arg construction. All of these live inside the five `mcp__plugin_manifest-agent_manifest-agent__*_orchestrated` tools — the plugin no longer owns them.
 
 **In prose:** asking the user open-ended questions (FQDN strings, env-file paths, service names for stack-lease custom-domain), resolving lease UUID from multiple sources (`$ARGUMENTS` / `manifest://leases/active` / `list-saved-manifests.cjs` / lookup-by-FQDN / paste), branching on the orchestrated tool's typed return value, and writing the journal record.
 
@@ -110,7 +111,8 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 - Non-underscore files are normally CLI entry points; `humanize-denom.cjs` is the post-ENG-130 documented exception (a denom→symbol renderer composed by `render-balance.cjs`).
 - CLI scripts exit `1` on argv/usage errors with a one-line stderr diagnostic.
 - `pre-tool-use.cjs` is the hook payload classifier, invoked by `pre-tool-use.sh`. Its private output is `ask-direct`, `ask-orchestrated`, or `defer`; invalid events exit nonzero. The shell clears Node preload variables and maps only those tokens to fixed host JSON or no decision. Errors, empty output, and unexpected output produce `deny`. The helper exports `decidePermission` for tests.
-- Use `grep -rn '<script>.cjs' skills/ scripts/` to locate callers — the call graph drifts and isn't worth restating in prose.
+- `setup-runtime.cjs` installs or repairs the locked data-directory runtime; `_runtime.cjs` provides the shared Node floor, package/lock fingerprint, and completion validation used by setup and the launcher. See their tests and the catalog for recovery behavior.
+- Use `rg -n '<script>.cjs' skills/ scripts/` to locate callers — the call graph drifts and isn't worth restating in prose.
 
 ## config.json → MCP env var mapping
 
@@ -121,12 +123,12 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 | `chains[activeChain].chainId` | `COSMOS_CHAIN_ID` | yes |
 | `chains[activeChain].rpcUrl` | `COSMOS_RPC_URL` | yes |
 | `chains[activeChain].restUrl` | `COSMOS_REST_URL` | no (omit if falsy) |
-| `chains[activeChain].converterAddress` | `MANIFEST_CONVERTER_ADDRESS` | no (omit if falsy) |
+| `chains[activeChain].converterAddress` | `MANIFEST_CONVERTER_ADDRESS` | required by CosmWasm startup; omitted elsewhere when absent |
 | `chains[activeChain].faucetUrl` | `MANIFEST_FAUCET_URL` | no (omit if falsy — only set for testnet; chain server registers `request_faucet` when present) |
 | `gasPrice` | `COSMOS_GAS_PRICE` | yes |
 | `gasMultiplier` | `COSMOS_GAS_MULTIPLIER` | no (omit if falsy, default 1.5) |
-| `agent.keyFile` | `MANIFEST_KEY_FILE` | no (omit if falsy) |
-| `agent.keyPassword` | `MANIFEST_KEY_PASSWORD` | no (omit if falsy) |
+| `agent.keyFile` | `MANIFEST_KEY_FILE` | yes (existing file) |
+| `agent.keyPassword` | `MANIFEST_KEY_PASSWORD` | yes (string, including empty) |
 
 **Agent-server-only env vars** (set unconditionally when `serverName === 'agent'`, see `start-server.cjs`):
 
@@ -154,6 +156,7 @@ To change plan or recovery wording, edit agent-core's upstream renderers. The ho
 - `mcp__plugin_manifest-agent_manifest-cosmwasm__convert_mfx_to_pwr`
 - `mcp__plugin_manifest-agent_manifest-fred__deploy_app`
 - `mcp__plugin_manifest-agent_manifest-fred__restart_app`
+- `mcp__plugin_manifest-agent_manifest-fred__restore_app`
 - `mcp__plugin_manifest-agent_manifest-fred__update_app`
 - `mcp__plugin_manifest-agent_manifest-lease__fund_credit`
 - `mcp__plugin_manifest-agent_manifest-lease__close_lease`
@@ -162,7 +165,7 @@ To change plan or recovery wording, edit agent-core's upstream renderers. The ho
 - `mcp__plugin_manifest-agent_manifest-agent__manage_domain_orchestrated`
 - `mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated`
 
-`manage_domain_orchestrated` is matched at the tool level, but the hook exempts the exact `action: "lookup"` input because it is read-only. Set/clear still request permission. Read-only diagnostics, including `troubleshoot_deployment_orchestrated`, and the testnet faucet (`mcp__plugin_manifest-agent_manifest-chain__request_faucet`) are intentionally ungated.
+`lookup_custom_domain_orchestrated` is read-only. `manage_domain_orchestrated` accepts set/clear only, and every invocation requests permission. Read-only diagnostics, including `troubleshoot_deployment_orchestrated`, and the testnet faucet (`mcp__plugin_manifest-agent_manifest-chain__request_faucet`) are intentionally ungated.
 
 A direct write and an orchestrated write are separate host entry points. Both need coverage; matching the direct tool does not cover server-side SDK calls inside an orchestrator. CI checks the installed, pinned package's published MCP tool inventory against the reviewed policy classification. Published annotations and Manifest metadata inform that classification; the check does not execute tool bodies to prove their behavior. The workflow does not maintain a second expected tool list.
 
@@ -173,7 +176,7 @@ A direct write and an orchestrated write are separate host entry points. Both ne
 Quick smoke run:
 
 ```bash
-# Test the plugin locally (SessionStart hook handles npm install + env export)
+# Test the plugin locally (SessionStart hook handles locked runtime setup + env export)
 claude --plugin-dir .
 
 # Run the unit tests (no MANIFEST_PLUGIN_DATA needed — tests stub it)
@@ -184,10 +187,15 @@ For exercising scripts directly without Claude Code, fixture setup, and the per-
 
 ## Manifest specs (user-managed)
 
-Deployment specs are plain JSON files in the same shape `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview` and `mcp__plugin_manifest-agent_manifest-fred__deploy_app` accept:
+Deployment specs are plain JSON passed as `{spec}` to `deploy_app_orchestrated`.
+They require `size` and exactly one of `image` or `services`. The author skill
+emits a services map even for one service. `storage`, `customDomain`,
+`serviceName`, and optional `skuUuid`/`providerUuid` are deployment metadata.
+Preview only manifest fields: `{services: SPEC.services}` for authored specs.
+Direct Fred deploy uses a different contract, including snake-case selectors.
 
-- Single-service: `{ image, port, env?, labels?, command?, args?, health_check?, storage?, tmpfs?, init? }`
-- Multi-service: `{ services: { <name>: { image, ports, env?, ... }, ... }, storage?, depends_on? }`
+- Flat single-service: `{ size, image, port?, env?, labels?, command?, args?, health_check?, storage?, tmpfs?, init? }`
+- Services map: `{ size, services: { <name>: { image, ports?, env?, depends_on?, ... }, ... }, storage? }`
 
 `/manifest-agent:author-manifest` walks the user through building one and saves it (default `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json`, or any user-chosen absolute path inside the drafts dir or the system tmpdir). Spec files are user-managed: hand-edit them in `$EDITOR`, version-control them in your app repo, generate them with a script, etc. The plugin doesn't garbage-collect drafts.
 
@@ -207,13 +215,13 @@ What it doesn't: env values still flow into the `build_manifest_preview` and `de
 
 `manifest-mcp-node@0.8.0` introduced FQDN support to the lease layer; post-ENG-130 the orchestrated tools own deployment planning and estimated fees, sequential transactions, partial-success recovery, DNS pre-checks, verification, and persistence. Standalone domain/close confirmation recaps do not guarantee numeric fee estimates. The plugin's role is to invoke the right orchestrated tool and surface the typed return value.
 
-**Spec-file shape (camelCase, mirrors deploy_app input):** top-level `customDomain?: string` and `serviceName?: string`. `serviceName` is required when `customDomain` is set on a stack and must match a key in the `services` map; for single-service specs it's omitted. Spec uses camelCase so the agent can splat the spec into the orchestrated `deploy_app_orchestrated` tool call without renaming.
+**Spec-file shape (camelCase, mirrors deploy_app input):** top-level `customDomain?: string` and `serviceName?: string`. `serviceName` is required when `customDomain` is set on a stack and must match a key in the `services` map; for a flat top-level `image` spec it is omitted. A one-service `services` map is still a stack and needs its service key. Spec uses camelCase so the agent can splat the spec into the orchestrated `deploy_app_orchestrated` tool call without renaming.
 
 **Wrapper-file shape (snake_case, mirrors v2 + chain `service_name`):** `custom_domain?: string` and `custom_domain_service_name?: string` added at `schema_version: 3`. agent-core's `saveManifest()` writes wrappers in this same shape to `$MANIFEST_AGENT_DATA_DIR/manifests/<lease_uuid>.json` (which the plugin points at `$MANIFEST_PLUGIN_DATA`), so the read-only helpers (`summarize-manifest.cjs`, `list-saved-manifests.cjs`) continue to surface them safely. v2 wrappers remain readable; missing v3 fields render as undefined.
 
 **Naming asymmetry rationale:** spec → camelCase (deploy_app input contract); wrapper → snake_case (existing v2 + chain response convention). Each layer mirrors its source-of-truth.
 
-**Where the new tools live:** `set_item_custom_domain` and `lease_by_custom_domain` are in `manifest-mcp-lease` (NOT `manifest-fred`); the PreToolUse matcher uses the `mcp__plugin_manifest-agent_manifest-lease__…` form. The `manage-domain` skill's `lookup` branch calls `lease_by_custom_domain` directly (DECISION 5); `set` and `clear` route through `mcp__plugin_manifest-agent_manifest-agent__manage_domain_orchestrated` which dispatches `set_item_custom_domain` internally.
+**Where the new tools live:** `set_item_custom_domain` and `lease_by_custom_domain` are in `manifest-mcp-lease` (NOT `manifest-fred`); the PreToolUse matcher uses the `mcp__plugin_manifest-agent_manifest-lease__…` form. The `manage-domain` skill's lookup branch calls `lookup_custom_domain_orchestrated` (DECISION 5); `set` and `clear` route through `mcp__plugin_manifest-agent_manifest-agent__manage_domain_orchestrated` which dispatches `set_item_custom_domain` internally.
 
 **Dual-tx broadcast (deploy-app with `customDomain`):** the orchestrated tool itemizes both fees in its plan-elicitation prompt, broadcasts both inside one MCP tool call, and routes partial-success failures through agent-core's recovery dispatch (retry-set-domain / salvage-without-domain / cancel-or-close). Host permission is requested before the outer orchestrated call. Lease creation and domain assignment are separate, sequential transactions; one can succeed while the next fails.
 
@@ -255,7 +263,7 @@ Every state-changing skill appends one record per invocation to `$MANIFEST_PLUGI
 - `manifest_json` is reduced via the in-process `summarizeSpec()` function inside `_journal.cjs` (env keys-only, never values; mirrors the now-deleted standalone `summarize-spec.cjs` script's output shape).
 - Lease UUIDs, addresses, image refs, custom domains, gas-token symbols ARE captured (legitimate non-sensitive blockchain identifiers).
 
-**Skills that DON'T write a record**: `manage-domain` lookup sub-flow (read-only, ungated direct chain query), `troubleshoot-deployment` when the user picks "Keep" instead of cleanup (read-only diagnostic — matches pre-rewire posture). The `/manifest-agent:journal` query skill is also read-only.
+**Skills that DON'T write a record**: `manage-domain` lookup sub-flow (dedicated read-only orchestrator), `troubleshoot-deployment` when the user picks "Keep" instead of cleanup (read-only diagnostic — matches pre-rewire posture). The `/manifest-agent:journal` query skill is also read-only.
 
 **Post-ENG-130 fidelity reduction (DECISION 4)**: each state-changing skill now writes ONE `tool_calls[]` entry per orchestrated invocation — the outer `mcp__plugin_manifest-agent_manifest-agent__*_orchestrated` call. The wrapper dispatches multiple inner broadcasts internally (e.g. `deploy_app_orchestrated` calls `cosmos_estimate_fee` + `deploy_app` + maybe `set_item_custom_domain` + `app_status` + cleanup primitives), but these are server-side SDK operations, not nested host MCP tool events. The skill cannot observe or journal them individually through the host hook. The pre-rewire deploy-app record had ~8 inner-tool entries; post-rewire it has 1. The journal still captures intent, plan_summary, outcome, recovery_actions, and a `result_summary` mined from the orchestrated tool's structured return value — sufficient for audit/grep ("what did I deploy on 2026-05-25?"), but coarser than the pre-rewire per-inner-tool trace. The trade-off is deliberate: deeper fidelity would require either (a) embedding `journal_events[]` in agent-core's return values (an upstream change leaking the plugin's `SECRET_KEY_DENYLIST` + record schema across packages) or (b) the wrapper writing directly to `$MANIFEST_AGENT_DATA_DIR/journal/` (which would force the plugin's redaction discipline + schema into the wrapper). Neither is worth the cross-repo coupling.
 

@@ -10,21 +10,24 @@
  * Usage: node start-server.cjs <chain|lease|fred|cosmwasm|agent>
  */
 
-const major = parseInt(process.versions.node, 10);
-if (major < 18) {
-  console.error(`Node 18+ required (found ${process.version}).`);
+const { assertNodeVersion, inspectRuntime } = require('./_runtime.cjs');
+try {
+  assertNodeVersion();
+} catch (error) {
+  console.error(error.message);
   process.exit(1);
 }
 
-const { existsSync, readFileSync } = require('node:fs');
-const { join } = require('node:path');
+const { existsSync, mkdtempSync, readFileSync, rmSync } = require('node:fs');
+const { join, resolve } = require('node:path');
+const { tmpdir, constants: { signals } } = require('node:os');
 const { spawn } = require('node:child_process');
 const { getDataDir } = require('./_io.cjs');
 
 const VALID_SERVERS = ['chain', 'lease', 'fred', 'cosmwasm', 'agent'];
 let AGENT_DIR;
 try {
-  AGENT_DIR = getDataDir();
+  AGENT_DIR = resolve(getDataDir());
 } catch (err) {
   console.error(err.message);
   process.exit(1);
@@ -52,7 +55,7 @@ function forwardSignal(signal) {
   }
   // Either child never spawned, or it has already exited. Translate the
   // signal to a Unix exit code and terminate.
-  process.exit(128 + (signal === 'SIGTERM' ? 15 : signal === 'SIGINT' ? 2 : signal === 'SIGHUP' ? 1 : 1));
+  process.exit(128 + (signals[signal] || 1));
 }
 process.on('SIGTERM', () => forwardSignal('SIGTERM'));
 process.on('SIGINT', () => forwardSignal('SIGINT'));
@@ -68,8 +71,10 @@ if (!existsSync(CONFIG_PATH)) {
 let config;
 try {
   config = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
-} catch (err) {
-  console.error(`Failed to parse ${CONFIG_PATH}: ${err.message}`);
+} catch {
+  // JSON parser messages can include the invalid source text, including a
+  // wallet password. Report only the file to repair.
+  console.error(`Failed to parse ${CONFIG_PATH}. Repair the JSON or re-run /manifest-agent:init-agent.`);
   process.exit(1);
 }
 
@@ -92,28 +97,68 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
+// The plugin owns wallet selection. Never fall back to an unrelated shell
+// mnemonic or the upstream binary's default ~/.manifest/key.json wallet.
+if (typeof agent?.keyFile !== 'string' || !agent.keyFile.trim()
+  || typeof agent.keyPassword !== 'string') {
+  console.error('Invalid config: agent.keyFile and agent.keyPassword are required. Re-run /manifest-agent:init-agent.');
+  process.exit(1);
+}
+const keyFile = resolve(AGENT_DIR, agent.keyFile);
+if (!existsSync(keyFile)) {
+  console.error(`Configured wallet file not found at ${keyFile}`);
+  console.error('Run /manifest-agent:import-key to restore the configured wallet.');
+  process.exit(1);
+}
+
 // --- Pre-flight: binary ---
 const binaryPath = join(AGENT_DIR, 'node_modules', '.bin', `manifest-mcp-${serverName}`);
 if (!existsSync(binaryPath)) {
   console.error(`MCP server binary not found at ${binaryPath}`);
-  console.error('Run /manifest-agent:init-agent to install dependencies.');
+  console.error('Run node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs" to repair dependencies, then restart the MCP servers.');
+  process.exit(1);
+}
+let runtime;
+try {
+  runtime = inspectRuntime(AGENT_DIR, resolve(__dirname, '..'));
+} catch {
+  console.error('Unable to read the plugin runtime definition. Reinstall the plugin, then run setup-runtime.cjs.');
+  process.exit(1);
+}
+if (!runtime.ready) {
+  console.error('MCP runtime dependencies are missing, incomplete, or out of date.');
+  console.error('Run node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs" to repair dependencies, then restart the MCP servers.');
   process.exit(1);
 }
 
-// --- Build env (omit optional vars when falsy) ---
-const env = {
-  ...process.env,
+// --- Build env from the selected config, including deliberately absent fields ---
+// Deleting first prevents stale testnet endpoints, gas settings, or a different
+// wallet from surviving when the selected config omits an optional field.
+const env = { ...process.env };
+for (const key of [
+  'COSMOS_CHAIN_ID', 'COSMOS_RPC_URL', 'COSMOS_REST_URL',
+  'COSMOS_GAS_PRICE', 'COSMOS_GAS_MULTIPLIER', 'COSMOS_MNEMONIC',
+  'COSMOS_ADDRESS_PREFIX', 'MANIFEST_CONVERTER_ADDRESS', 'MANIFEST_FAUCET_URL',
+  'MANIFEST_KEY_FILE', 'MANIFEST_KEY_PASSWORD',
+  'MANIFEST_AGENT_DATA_DIR', 'MANIFEST_CHAIN_DATA_FILE',
+]) delete env[key];
+Object.assign(env, {
   COSMOS_CHAIN_ID: chain.chainId,
   COSMOS_RPC_URL: chain.rpcUrl,
   COSMOS_GAS_PRICE: gasPrice,
-};
+  COSMOS_ADDRESS_PREFIX: 'manifest',
+  MANIFEST_KEY_FILE: keyFile,
+  // Preserve the configured bytes, including empty strings. Upstream decides
+  // which passwords its wallet formats support; never substitute shell input.
+  MANIFEST_KEY_PASSWORD: agent.keyPassword,
+  // dotenv 17 logs to stdout by default, which corrupts MCP JSON-RPC framing.
+  DOTENV_CONFIG_QUIET: 'true',
+});
 
 if (chain.restUrl) env.COSMOS_REST_URL = chain.restUrl;
 if (chain.converterAddress) env.MANIFEST_CONVERTER_ADDRESS = chain.converterAddress;
 if (chain.faucetUrl) env.MANIFEST_FAUCET_URL = chain.faucetUrl;
 if (gasMultiplier) env.COSMOS_GAS_MULTIPLIER = String(gasMultiplier);
-if (agent?.keyFile) env.MANIFEST_KEY_FILE = agent.keyFile;
-if (agent?.keyPassword) env.MANIFEST_KEY_PASSWORD = agent.keyPassword;
 
 // --- Agent server: ENG-204 env contract ---
 // MANIFEST_AGENT_DATA_DIR: agent-core's saveManifest() writes to
@@ -168,7 +213,19 @@ const envKeys = Object.keys(env)
 console.error(`Starting manifest-mcp-${serverName} with env: ${envKeys.join(', ')}`);
 
 // --- Spawn ---
-child = spawn(binaryPath, [], { stdio: 'inherit', env });
+// Upstream loads dotenv.config() from cwd. Use an empty private working
+// directory so a workspace or data-directory .env cannot restore fields that
+// this wrapper deliberately omitted. Absolute paths keep runtime files in the
+// plugin data directory; only this disposable cwd is removed at exit.
+let serverCwd;
+try {
+  serverCwd = mkdtempSync(join(tmpdir(), 'manifest-mcp-cwd-'));
+} catch {
+  console.error('Failed to create an isolated MCP working directory. Check the system temporary directory.');
+  process.exit(1);
+}
+process.on('exit', () => rmSync(serverCwd, { recursive: true, force: true }));
+child = spawn(binaryPath, [], { stdio: 'inherit', env, cwd: serverCwd });
 
 child.on('error', (err) => {
   // Mark exited before exiting: a SIGINT/SIGTERM landing during this window
@@ -182,9 +239,10 @@ child.on('error', (err) => {
 child.on('close', (code, signal) => {
   childExited = true;
   if (signal) {
-    // Re-raise the signal for proper Unix exit semantics. The signal
-    // handler will see childExited=true and fall through to process.exit.
-    process.kill(process.pid, signal);
+    // Report the conventional shell status directly. Re-signalling this
+    // process can leave signal delivery queued behind an empty event loop,
+    // which would incorrectly report success before the handler executes.
+    forwardSignal(signal);
     return;
   }
   process.exit(code ?? 1);

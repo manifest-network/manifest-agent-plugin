@@ -1,4 +1,5 @@
 ---
+name: init-agent
 description: >
   Set up the Manifest agent's chain configuration and keypair. Run this once
   after installing the plugin (or to re-key); it picks a chain, generates or
@@ -29,6 +30,24 @@ echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
 If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
+
+Ensure the locked runtime is installed before running helpers that need it:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs"
+```
+
+This is also the repair command for an interrupted install or missing dependencies.
+It preserves configuration, keys, drafts, and saved deployments. If it fails,
+report its diagnostic and stop; fix Node (22.19.0+) or the installation failure
+before continuing. Re-keying is not a dependency repair.
+
+For a repair-only request, run `update-config.cjs --status` after setup. If
+an existing agent is configured, report that dependencies are repaired and
+ask the user to reconnect the MCP servers or restart Claude Code, then stop.
+Do not continue into chain selection or key generation. If config is absent
+or invalid, explain that separately and continue onboarding only when the
+user's request includes initial setup or configuration repair.
 
 ## Step 1 — Fetch chain registry data
 

@@ -17,16 +17,15 @@
 #      file writes in (2)). The operation journal (ENG-124) tags every
 #      record with this id so records from one Claude Code session
 #      group together.
-#   4. Bootstrap npm dependencies on first run / when package.json
-#      changes (diff-check pattern from the docs). Removes the failure
-#      mode where a fresh user invokes /manifest-agent:deploy-app
-#      before /manifest-agent:init-agent and the MCP wrapper crashes
-#      with "binary not found".
+#   4. Use setup-runtime.cjs to install or repair the locked runtime
+#      dependencies in persistent data. The same command serves setup
+#      skills and recovery; a completion record detects interrupted or
+#      incomplete installs even when package.json has not changed.
 #
 # Ordering is deliberate: stdin is captured first (gated on
 # CLAUDE_ENV_FILE since that's the only consumer), then policy
-# injection writes to stdout, then env-file writes happen, then npm
-# install. `set -euo pipefail` means a failed write produces a non-
+# injection writes to stdout, then env-file writes happen, then locked
+# dependency setup. `set -euo pipefail` means a failed write produces a non-
 # zero exit Claude Code can surface, rather than silently leaving the
 # session in a half-enforced state.
 #
@@ -57,9 +56,10 @@ The rules below apply to every session where these tools are available.
 
 ## Orchestrated agent-server tools (the preferred surface)
 
-The four tools under `mcp__plugin_manifest-agent_manifest-agent__*_orchestrated`
+The five tools under `mcp__plugin_manifest-agent_manifest-agent__*_orchestrated`
 (`deploy_app_orchestrated`, `manage_domain_orchestrated`,
-`troubleshoot_deployment_orchestrated`, `close_lease_orchestrated`)
+`troubleshoot_deployment_orchestrated`, `close_lease_orchestrated`,
+`lookup_custom_domain_orchestrated`)
 wrap `manifest-agent-core` flows. They own plan, confirmation,
 progress, recovery, and post-broadcast verification via MCP elicitation.
 
@@ -77,8 +77,8 @@ When you invoke one of these tools:
   or call `cosmos_estimate_fee` before an orchestrated operation. The
   wrapper owns its confirmation content. The pinned deploy plan includes
   estimated fees; domain and close recaps do not guarantee numeric fees.
-- `troubleshoot_deployment_orchestrated` and the pinned
-  `manage_domain_orchestrated` tool's `action: "lookup"` are read-only.
+- `troubleshoot_deployment_orchestrated` and
+  `lookup_custom_domain_orchestrated` are read-only.
   They need no plugin-forced permission or mutation confirmation.
   Handle their returned reports directly.
 - If elicitation is unavailable, declined, or cancelled, stop and
@@ -134,6 +134,18 @@ any non-orchestrated billing tx you find yourself about to broadcast.
   PreToolUse hook still requests host permission; describe the action and
   wait for textual confirmation, but do not query balances or call
   `cosmos_estimate_fee`.
+
+- **For `restore_app`**: this creates a NEW paid lease and adopts retained
+  volumes. Read `app_status` / `app_diagnostics` for the source lease's
+  retention eligibility first. It is not a restart and is not idempotent.
+  The pinned tool has no fee-estimation interface: show the source lease,
+  selected chain, available gas/credit balances, and the new lease's billing
+  implications, state that the exact fee is unavailable, then get explicit
+  confirmation before invoking it. PreToolUse also requests host permission.
+  Preserve both source and returned lease UUIDs. If it errors, times out, or
+  is cancelled, query existing leases before any retry; never blindly create
+  another paid lease. Do not claim its custom domain was restored unless
+  verified separately.
 
 - **For matcher-gated lease / fred tools that an orchestrated wrapper
   already covers (`mcp__plugin_manifest-agent_manifest-lease__close_lease`,
@@ -244,23 +256,13 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   fi
 fi
 
-# Bootstrap deps when package.json differs (or on first run). Pattern from
-# the official Claude Code plugins-reference docs. The "|| rm -f" tail
-# discards a stale package.json copy on install failure so the next session
-# retries instead of pretending it succeeded.
+# Bootstrap and recovery share one dependency-free entry point. A missing
+# Node executable or unsupported version produces a clear hook failure;
+# setup failures propagate instead of reporting a successful session setup.
 if [ -n "${CLAUDE_PLUGIN_DATA:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/package.json" ]; then
-  if ! diff -q "${CLAUDE_PLUGIN_ROOT}/package.json" "${CLAUDE_PLUGIN_DATA}/package.json" >/dev/null 2>&1; then
-    cp "${CLAUDE_PLUGIN_ROOT}/package.json" "${CLAUDE_PLUGIN_DATA}/package.json"
-    INSTALL_LOG="${CLAUDE_PLUGIN_DATA}/.last-install.log"
-    # Capture stderr+stdout to a log file so failures are diagnosable
-    # ("EACCES on cache dir", "ECONNRESET fetching tarball", etc.) instead
-    # of just a generic "failed". --silent still suppresses progress noise
-    # in the captured log; only errors and warnings show up.
-    if (cd "${CLAUDE_PLUGIN_DATA}" && npm install --omit=dev --silent) >"${INSTALL_LOG}" 2>&1; then
-      rm -f "${INSTALL_LOG}"
-    else
-      rm -f "${CLAUDE_PLUGIN_DATA}/package.json"
-      printf 'manifest-agent: npm install failed; see %s for details. Will retry next session.\n' "${INSTALL_LOG}" >&2
-    fi
+  if ! command -v node >/dev/null 2>&1; then
+    printf 'manifest-agent: Node 22.19.0+ is required. Install Node and restart Claude Code.\n' >&2
+    exit 1
   fi
+  MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/setup-runtime.cjs"
 fi
