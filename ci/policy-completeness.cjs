@@ -33,12 +33,11 @@
  *
  *   3. docs/scripts.md is EXEMPT (documented, not silently skipped): it
  *      cross-references the CLAUDE.md list rather than enumerating the
- *      tools, so there is nothing to set-compare. And ci.yml ↔ matcher
- *      parity is already enforced by the pre-existing "Verify PreToolUse
- *      matcher is anchored…" CI step — not duplicated here.
+ *      tools, so there is nothing to set-compare. The live tools/list check
+ *      in ci/mcp-tool-policy.cjs verifies installed MCP coverage separately.
  *
  * The four enumeration sites triangulate:
- *   matcher ↔ ci.yml         (existing CI step)
+ *   matcher ↔ live tools/list (ci/mcp-tool-policy.cjs)
  *   matcher ↔ CLAUDE.md      (assertion 2 here)
  *   matcher → session-start.sh (assertion 1 here)
  *   scripts.md → cross-ref-only (exempt)
@@ -49,6 +48,7 @@
 
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
+const { matcherNames } = require('./mcp-tool-policy.cjs');
 
 /**
  * Allowlist for assertion 1 (session-start.sh naming) ONLY.
@@ -73,30 +73,15 @@ const CLAUDE_MD_HEADING = 'Tools gated by the PreToolUse hook';
 
 /**
  * Parse the PreToolUse matcher into [{ full, short }].
- * Splits on `|`, requires each alternative to be `^...$`-anchored (mirrors
- * the existing ci.yml assertion), strips the anchors to get the FULL tool
- * name, and derives SHORT = substring after the last `__`.
+ * Reuse the live inventory guard's exact, anchored, unique tool-name parser
+ * so both policy checks reject the same malformed or permissive matchers.
+ * SHORT is the substring after the last `__`.
  */
 function parseMatcher(hooksJson) {
-  const pre = (hooksJson && hooksJson.hooks && hooksJson.hooks.PreToolUse) || [];
-  if (pre.length === 0) {
-    throw new Error('parseMatcher: no PreToolUse hook entries in hooks.json');
-  }
-  const tools = [];
-  for (const entry of pre) {
-    if (!entry.matcher) {
-      throw new Error('parseMatcher: a PreToolUse entry is missing its matcher');
-    }
-    for (const alt of entry.matcher.split('|')) {
-      if (!/^\^.+\$$/.test(alt)) {
-        throw new Error(`parseMatcher: unanchored matcher alternative: ${alt}`);
-      }
-      const full = alt.replace(/^\^/, '').replace(/\$$/, '');
-      const short = full.includes('__') ? full.slice(full.lastIndexOf('__') + 2) : full;
-      tools.push({ full, short });
-    }
-  }
-  return tools;
+  return [...matcherNames(hooksJson)].map((full) => ({
+    full,
+    short: full.slice(full.lastIndexOf('__') + 2),
+  }));
 }
 
 /**
@@ -146,7 +131,7 @@ function extractClaudeMdGatedList(mdText) {
     const line = lines[i];
     if (/^\s*[-*]\s+/.test(line)) {
       started = true;
-      for (const m of line.matchAll(/`(mcp__manifest-[^`]+)`/g)) tools.push(m[1]);
+      for (const m of line.matchAll(/`(mcp__(?:plugin_manifest-agent_)?manifest-[^`]+)`/g)) tools.push(m[1]);
       continue;
     }
     if (line.trim() === '') continue; // blank lines don't terminate the list

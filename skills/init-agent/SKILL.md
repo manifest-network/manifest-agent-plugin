@@ -149,7 +149,7 @@ Tell the user:
 ## Step 7 — Offer testnet funding
 
 If the user chose testnet, suggest requesting faucet funds to the new address
-using the `mcp__manifest-chain__request_faucet` tool if it is available.
+using the `mcp__plugin_manifest-agent_manifest-chain__request_faucet` tool if it is available.
 
 ## Step 8 — Record this run in the journal
 

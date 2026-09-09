@@ -15,9 +15,9 @@ You are restarting a running Manifest app via its provider. The lease
 stays open; the container is signaled to stop and start again.
 `restart_app` is an HTTPS call to the provider — NOT a Cosmos
 transaction. There is no on-chain broadcast, no gas, and no fee
-estimate. The PreToolUse permission prompt still fires (the runtime
-policy gates it) and a textual confirmation is still required, but do
-not query balances or call `cosmos_estimate_fee` for this skill.
+estimate. The PreToolUse hook still requests host permission and the
+runtime policy calls for a textual confirmation. Do not query balances
+or call `cosmos_estimate_fee` for this skill.
 
 **For all user choices in this skill, use the `AskUserQuestion` tool.**
 
@@ -74,7 +74,7 @@ Store the chosen UUID as `LEASE_UUID`.
 
 ## Step 2 — Show pre-restart context
 
-Call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
+Call `mcp__plugin_manifest-agent_manifest-fred__app_status({ lease_uuid: LEASE_UUID })`.
 Capture `chainState.state` as `STATE` (the chain may return integer,
 stringy-int, or canonical `LEASE_STATE_*` form depending on the
 encoding path). Decode via the canonical helper:
@@ -130,20 +130,19 @@ Stop on No.
 
 ## Step 5 — Call the provider
 
-Call `mcp__manifest-fred__restart_app({ lease_uuid: LEASE_UUID })`.
-The PreToolUse permission prompt will fire — that's expected (the
+Call `mcp__plugin_manifest-agent_manifest-fred__restart_app({ lease_uuid: LEASE_UUID })`.
+The PreToolUse hook requests host permission before execution (the
 matcher in `hooks/hooks.json` gates `restart_app` even though it's
 not a Cosmos broadcast, because it's still a state-changing
-operation). The textual confirm in Step 4 is the primary gate per
-runtime policy; the permission prompt is a safety net, not a
-substitute.
+operation). Step 4 supplies the action recap for this direct tool;
+the hook cannot verify that prose or the user's response.
 
 If the call throws, surface the error and stop. Do not retry
 automatically.
 
 ## Step 6 — Post-restart verification
 
-Re-call `mcp__manifest-fred__app_status({ lease_uuid: LEASE_UUID })`
+Re-call `mcp__plugin_manifest-agent_manifest-fred__app_status({ lease_uuid: LEASE_UUID })`
 once. Capture `chainState.state` as `POST_STATE` (same encoding
 ambiguity as Step 2), plus `provision_status` and `fail_count` for
 the provider-side narrative.
@@ -180,6 +179,11 @@ Do not poll. One verify pass is enough; the user can re-run this skill
 or troubleshoot-deployment if they want a fresher snapshot.
 
 ## Step 7 — Record this run in the journal
+
+The `tool_calls[].tool` strings below are historical journal keys used by
+`_journal.cjs` redaction reducers. Keep their `mcp__manifest-*` spelling;
+invoke tools with the scoped `mcp__plugin_manifest-agent_manifest-*`
+names shown in the workflow above. Journal keys are not callable host names.
 
 Append one record to the operation journal at
 `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills

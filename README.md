@@ -68,8 +68,8 @@ After setup, **restart Claude Code** (or run `/mcp` and reconnect) so the five M
 
 Once the MCP servers are connected, verify the agent is wired up correctly:
 
-- **Wallet address & balance** — ask the agent: *"What's my wallet address and balance?"* It will use `mcp__manifest-chain__cosmos_query` (`module: bank, subcommand: balances`).
-- **Active chain** — the agent can read `$MANIFEST_PLUGIN_DATA/config.json`'s `activeChain` field. You can also infer it from the `mcp__manifest-chain__cosmos_query` results.
+- **Wallet address & balance** — ask the agent: *"What's my wallet address and balance?"* It will use `mcp__plugin_manifest-agent_manifest-chain__cosmos_query` (`module: bank, subcommand: balances`).
+- **Active chain** — the agent can read `$MANIFEST_PLUGIN_DATA/config.json`'s `activeChain` field. You can also infer it from the `mcp__plugin_manifest-agent_manifest-chain__cosmos_query` results.
 - **Saved deployments** — `$MANIFEST_PLUGIN_DATA/manifests/` lists one JSON wrapper per past deployment (named `<lease_uuid>.json`). The `troubleshoot-deployment` skill includes a saved-manifest picker.
 
 `$MANIFEST_PLUGIN_DATA` resolves to `~/.claude/plugins/data/<plugin-id>/` and is exposed to scripts as `$MANIFEST_PLUGIN_DATA`. It's where all your runtime state lives — config, keys, chain data, saved deployments. The plugin root is read-only; nothing is written to your clone or marketplace cache.
@@ -80,7 +80,7 @@ Once the MCP servers are connected, verify the agent is wired up correctly:
 
 > "Use the testnet faucet to fund my wallet."
 
-The agent will call `mcp__manifest-chain__request_faucet` (intentionally not gated by the broadcast permission prompt — testnet tokens have no value).
+The agent will call `mcp__plugin_manifest-agent_manifest-chain__request_faucet` (intentionally not gated by the broadcast permission prompt — testnet tokens have no value).
 
 **Mainnet** — fund your wallet's address externally (exchange, bridge, or transfer from another wallet). The agent has no built-in funding mechanism for mainnet.
 
@@ -102,7 +102,7 @@ Walks you through choosing single-service vs multi-service stack, picking a SKU,
 /manifest-agent:deploy-app /path/to/the/saved-spec.json
 ```
 
-The orchestrated tool handles plan rendering, fee itemization, dual-tx broadcast (when `customDomain` is set), partial-success recovery, and manifest persistence end-to-end via MCP elicitation. You'll see one or more native UI prompts for confirmation (deployment plan, mainnet warning if applicable, partial-success recovery choice if relevant) and one or more permission prompts for the inner broadcasts (`deploy_app`, optionally `set_item_custom_domain`).
+The orchestrated tool handles plan rendering, fee itemization, dual-tx broadcast (when `customDomain` is set), partial-success recovery, and manifest persistence end-to-end via MCP elicitation. Claude Code first evaluates host permission for the outer orchestrated call. After execution starts, the server requests native UI confirmation for the deployment plan, any mainnet warning, and recovery choices. Internal SDK operations do not produce separate host permission events.
 
 ### Sensitive env values (file-pipe pattern)
 
@@ -122,7 +122,7 @@ Note: env values still appear in the `deploy_app_orchestrated` MCP tool call arg
 
 #### Spec file shape
 
-The spec is the same JSON shape `mcp__manifest-fred__build_manifest_preview` and `mcp__manifest-fred__deploy_app` accept:
+The spec is the same JSON shape `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview` and `mcp__plugin_manifest-agent_manifest-fred__deploy_app` accept:
 
 ```jsonc
 // Single-service
@@ -157,13 +157,15 @@ Authoritative validation lives in the Fred manifest JSON Schema bundled in `mani
 
 ### What happens before broadcast
 
-The orchestrated deploy tool drives the confirmation flow internally:
+The host and orchestrated tool handle different parts of approval:
 
-1. **Readiness check** — `check_deployment_readiness` runs; any blocker surfaces as an MCP error.
-2. **Plan elicitation** — a native UI prompt shows the deployment plan (image, SKU, fees line-by-line, wallet/credit balances). Fees are estimated via `cosmos_estimate_fee` before the prompt fires.
-3. **Mainnet warning** (mainnet only) — an extra elicitation prompt asking you to acknowledge real-funds spending.
-4. **Permission prompt** — Claude Code's own prompt fires on the inner `deploy_app` broadcast (and again on `set_item_custom_domain` if `customDomain` is set). The plugin forces this via a `PreToolUse` hook regardless of your permission settings.
-5. **Broadcast** — `deploy_app` is called; on success the orchestrator persists a saved manifest wrapper at `$MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json` and returns the URL.
+1. **Host permission** — the plugin's PreToolUse hook requests permission for `deploy_app_orchestrated` before execution. Denial stops the call before the server receives it.
+2. **Readiness check** — once allowed, the orchestrator checks deployment prerequisites; blockers surface as MCP errors.
+3. **Plan elicitation** — Claude Code renders the server's native request with the deployment plan, itemized estimated fees, and wallet/credit balances, then returns your response.
+4. **Mainnet warning** (mainnet only) — the server requests additional acknowledgement of real-funds spending through native elicitation.
+5. **Deployment** — the server creates the lease, optionally assigns the domain, and uploads the manifest. These steps can partially succeed. On success it persists a saved manifest at `$MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json` and returns connection details.
+
+The agent does not need to repeat or forward native elicitation prompts. The hook sees the outer tool call and cannot inspect its internal SDK operations or verify that a fee recap was displayed. Host prompt behavior must be validated for the Claude version and permission mode in use; see [approval validation](docs/approval-validation.md).
 
 Failed deploys (partial-success — lease created but manifest upload failed) raise a recovery-choice elicitation prompt: retry set-domain + upload, salvage without domain, or close the lease.
 
@@ -177,7 +179,7 @@ Attach an FQDN to a lease item so users reach the app via your own hostname inst
 
 `manage-domain` (set/clear path) routes through the orchestrated tool, which runs a warn-only DNS pre-check before broadcasting — it queries A/AAAA/CNAME records for the FQDN with a 5-second timeout and surfaces the result, but does not block the broadcast. The chain is the authoritative arbiter of FQDN format and reservation; DNS resolution affects only browser routing, not the chain claim. The lookup path calls `lease_by_custom_domain` directly (read-only, ungated by the permission prompt).
 
-When `customDomain` is set on a deploy, the orchestrated tool broadcasts TWO billing transactions atomically: `create-lease` AND `set-item-custom-domain`. The plan-elicitation prompt shows both fees line-by-line plus a `Total fee:` so you see the full cost before approving. The permission prompt fires once per inner broadcast.
+When `customDomain` is set, the orchestrated tool performs `create-lease` followed by `set-item-custom-domain` as separate transactions. They are sequential and can partially succeed: lease creation is not rolled back if domain assignment fails. The native plan prompt itemizes both estimated fees and their total before execution of these transactions. Host permission applies to the outer orchestrated call.
 
 ### DNS setup happens AFTER the deploy
 
@@ -272,9 +274,9 @@ For development installs (`claude --plugin-dir`), pull the latest commits in you
 | `/manifest-agent:switch-chain` | Switch between testnet and mainnet |
 | `/manifest-agent:set-gas-price` | Change the gas fee token, price, and/or gas multiplier |
 | `/manifest-agent:refresh-registry` | Re-fetch chain data from the Cosmos chain registry |
-| `/manifest-agent:deploy-app <path>` | Deploy a containerized app end-to-end via `mcp__manifest-agent__deploy_app_orchestrated`. Required argument: path to a JSON spec file produced by `/manifest-agent:author-manifest`. The orchestrated tool requires a complete `DeploySpec` (`validateSpec()` runs first), so non-file input directs at author-manifest. Plan / confirm / partial-success recovery via MCP elicitation; manifest persistence via `MANIFEST_AGENT_DATA_DIR` |
+| `/manifest-agent:deploy-app <path>` | Deploy a containerized app end-to-end via `mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated`. Required argument: path to a JSON spec file produced by `/manifest-agent:author-manifest`. The orchestrated tool requires a complete `DeploySpec` (`validateSpec()` runs first), so non-file input directs at author-manifest. Plan / confirm / partial-success recovery via MCP elicitation; manifest persistence via `MANIFEST_AGENT_DATA_DIR` |
 | `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `$MANIFEST_PLUGIN_DATA/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app`. Optionally collects a custom domain (FQDN + service for stacks) |
-| `/manifest-agent:manage-domain` | Set, clear, or look up the custom domain (FQDN) on an existing lease item. Set/clear go through cosmos_estimate_fee + textual confirm + permission prompt + on-chain verification; lookup is read-only |
+| `/manifest-agent:manage-domain` | Set, clear, or look up the custom domain (FQDN) on an existing lease item. Set/clear request host permission before the orchestrated call, then request native action confirmation and verify on-chain state; lookup is read-only |
 | `/manifest-agent:troubleshoot-deployment` | Bundle status, diagnostics, and recent logs for a deployed lease into a unified report. Lease picker includes a "lookup by custom domain" option |
 | `/manifest-agent:restart-app [<lease-uuid>]` | Restart a running app via its provider without closing the lease. Optional argument: a lease UUID. Refuses on terminal leases; goes through textual confirm + permission prompt; verifies post-restart provision status |
 | `/manifest-agent:list-releases [<lease-uuid>]` | Read-only — show the on-provider release/version history for a deployed lease as a Markdown table sorted newest first. Rolling back a release is out of scope |
@@ -292,7 +294,7 @@ Once configured, the plugin provides five MCP servers, all launched from binarie
 | `manifest-lease` | Compute leasing, custom domains |
 | `manifest-fred` | Deploy / restart / update apps |
 | `manifest-cosmwasm` | MFX ↔ PWR conversion via CosmWasm |
-| `manifest-agent` | Orchestrated `deploy_app` / `manage_domain` / `troubleshoot_deployment` / `close_lease` flows via MCP elicitation; wraps the four legacy servers' inner broadcasts with plan + confirm + recovery + verification end-to-end |
+| `manifest-agent` | Orchestrated `deploy_app` / `manage_domain` / `troubleshoot_deployment` / `close_lease` flows via MCP elicitation; coordinates server-side SDK operations with plan + confirmation + recovery + verification |
 
 The servers start automatically when Claude Code launches but **will fail until the plugin is initialized**. This is expected — run `/manifest-agent:init-agent` to set up the agent, then restart Claude Code to connect the servers.
 
@@ -378,12 +380,13 @@ For the full architectural picture (data flow, scripts inventory, hook contracts
 - Mnemonics are imported from a user-created file via pipe — they never enter Claude's conversation context
 - The key password flows between scripts via pipe and never enters the conversation
 - The plugin root is never written to
-- **Every broadcast transaction is double-confirmed.** A `SessionStart` hook injects a runtime policy telling the agent it must call `cosmos_estimate_fee` (or otherwise show an action + balance summary) and get your textual confirmation before broadcasting. A `PreToolUse` hook on every write tool then forces Claude Code to show its own permission prompt regardless of your pre-existing permission settings — a hard safety net on top of the agent's textual confirmation.
+- **Mutating MCP entry points request host permission.** The PreToolUse hook covers direct writes and the outer deploy, domain-management, and close orchestrators. `manage_domain_orchestrated` with `action: "lookup"` is read-only and exempt. Orchestrators request plan/action confirmation through native elicitation after host permission; direct writes use the runtime policy's fee/action recap. The pinned deployment plan includes estimated fees; domain/close recaps do not guarantee numeric estimates. The hook cannot verify prose or intercept the server's internal SDK calls.
 
 ### Known trade-offs
 
 - The key password is stored in plaintext in `config.json` (protected by file permissions). A future version may use the OS keychain.
-- **Bypass permissions mode is lost after the first broadcast.** If you launch Claude Code with `--dangerously-skip-permissions` (or its interactive equivalent), the first transaction's permission prompt — which the plugin forces via a `PreToolUse` hook returning `"ask"` — will correctly prompt you, but due to upstream bug [anthropics/claude-code#37420](https://github.com/anthropics/claude-code/issues/37420), Claude Code will permanently reset bypass mode for the rest of the session. Every subsequent tool call (even unrelated reads) will require manual approval until you restart the session. For this plugin's use case — broadcasting real transactions — we consider this an acceptable degradation: anyone skipping permissions while spending real funds is already in a risky posture, and falling back to interactive mode after the first broadcast is arguably safer than the alternative. If the bug is fixed upstream we will reassess.
+- Hook behavior depends on the Claude version and permission mode. An older [upstream report](https://github.com/anthropics/claude-code/issues/37420) described bypass mode being reset after an `ask` decision; its behavior on current releases has not been established here. See [approval validation](docs/approval-validation.md) for what local tests cover and what requires a real host run.
+- The hook is an MCP entry-point guard, not signer isolation. The password and keyfile remain available to processes with access to the plugin data directory; shell commands or direct SDK calls do not pass through this MCP hook.
 - Env values supplied via the file-pipe pattern stay out of chat input and prose summaries, but they DO enter the agent's API context as part of the `build_manifest_preview` and `deploy_app` MCP tool call args at validation/broadcast time. Eliminating that exposure entirely needs upstream MCP support for "load env from this path" and is out of scope here.
 
 ## Contributing

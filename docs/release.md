@@ -62,7 +62,7 @@ There's no fixed cadence. Cut a release when:
 - [ ] CI is green on `main` at the commit you're about to tag.
 - [ ] `manifest-mcp-node` version in `package.json` is the one you intend to ship (CLAUDE.md "Custom domains" mentions a minimum version — confirm it's still accurate after the bump).
 - [ ] No undocumented breaking changes — check `git log` since the previous tag for any commit that renamed a script, removed a flag, or changed a skill argument shape.
-- [ ] The PreToolUse matcher in `hooks/hooks.json` matches the expected tools list in `.github/workflows/ci.yml` (CI catches drift, but easier to verify before tagging).
+- [ ] The installed MCP inventory check (`ci/mcp-tool-policy.cjs`) and policy-completeness check pass for the pinned package; record the host-validation status separately (see [`approval-validation.md`](approval-validation.md)).
 
 ## Hotfixes
 

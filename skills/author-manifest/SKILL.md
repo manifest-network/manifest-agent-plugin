@@ -14,8 +14,8 @@ You are interactively building a Fred container deployment spec. The output is
 a validated JSON file the user can hand to `/manifest-agent:deploy-app` or
 inspect / edit / version-control as a normal file.
 
-The spec uses the same shape `mcp__manifest-fred__deploy_app` and
-`mcp__manifest-fred__build_manifest_preview` accept:
+The spec uses the same shape `mcp__plugin_manifest-agent_manifest-fred__deploy_app` and
+`mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview` accept:
 
 - **Single-service**: `{ image, port, env?, labels?, command?, args?, health_check?, storage?, tmpfs?, init? }`
 - **Multi-service**: `{ services: { <name>: { image, ports, env?, ... }, ... }, storage?, depends_on? }`
@@ -56,7 +56,7 @@ Store the choice as `SHAPE` (`single` or `stack`).
 
 ## Step 2 — Choose SKU size
 
-Call `mcp__manifest-fred__browse_catalog`. From the response, build an
+Call `mcp__plugin_manifest-agent_manifest-fred__browse_catalog`. From the response, build an
 `AskUserQuestion` showing each available SKU's name, price (amount + denom),
 and provider name. The user picks one. Store as `SIZE`.
 
@@ -252,13 +252,13 @@ On **Yes**:
    - top-level `serviceName: <picked-service>` (stacks only)
 
 The saved spec file (Step 6) carries `customDomain` + `serviceName`
-verbatim — `mcp__manifest-fred__build_manifest_preview` and
-`mcp__manifest-fred__deploy_app` accept these as top-level input fields,
+verbatim — `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview` and
+`mcp__plugin_manifest-agent_manifest-fred__deploy_app` accept these as top-level input fields,
 so the agent can splat the spec into the deploy call without renaming.
 
 ## Step 6 — Validate via build_manifest_preview
 
-Call `mcp__manifest-fred__build_manifest_preview` with the spec object from
+Call `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview` with the spec object from
 Step 4 splatted as input arguments. The response shape is:
 
 ```json
@@ -397,6 +397,11 @@ it without redacting those values first." When no env files were merged
 version-control as-is.
 
 ## Step 9 — Record this run in the journal
+
+The `tool_calls[].tool` strings below are historical journal keys used by
+`_journal.cjs` redaction reducers. Keep their `mcp__manifest-*` spelling;
+invoke tools with the scoped `mcp__plugin_manifest-agent_manifest-*`
+names shown in the workflow above. Journal keys are not callable host names.
 
 Append one record to the operation journal at
 `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills

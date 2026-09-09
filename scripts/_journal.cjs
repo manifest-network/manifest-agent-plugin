@@ -158,9 +158,9 @@ const SUSPECT_KEY_PATTERN = /(MNEMONIC|PASSWORD|TOKEN|SECRET|API[_-]?KEY|PRIVATE
 // standalone `summarize-spec.cjs` script produced; that script was
 // deleted in the rewire (orchestration-renderer; agent-core owns the
 // equivalent now), so this in-process helper is the surviving
-// canonical reducer. Skills MUST NOT shell out to it — they pipe
-// records through journal-write.cjs and the writer applies `redactArgs`
-// which in turn calls this function.
+// canonical reducer. `redactArgs` calls this helper for structured specs.
+// journal-write.cjs expects already-redacted records; it validates the
+// record but does not apply `redactArgs` to the supplied tool arguments.
 function summarizeSpec(spec) {
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return null;
   const format = isStack(spec) ? 'stack' : 'single';
@@ -253,6 +253,11 @@ function isSafeTool(toolName) {
 }
 
 function redactArgs(toolName, rawArgs) {
+  // Claude registers plugin-scoped names; historical journal identifiers use
+  // the unscoped form. Both must select the same secret-safe reducer.
+  if (typeof toolName === 'string') {
+    toolName = toolName.replace(/^mcp__plugin_manifest-agent_/, 'mcp__');
+  }
   // Falsy values (null, undefined, 0, '', false) carry no information to
   // redact — pass through unchanged.
   if (!rawArgs) return rawArgs;

@@ -116,6 +116,22 @@ test('redactArgs(deploy_app, ...) reduces spec to summary; env values absent', (
   assert.deepEqual(out.summary.images, ['ghcr.io/me/web:v1']);
 });
 
+test('plugin-scoped names keep the historical secret-safe spec and manifest reducers', () => {
+  const spec = { image: 'nginx', env: { GREETING: 'PRIVATE_VALUE' } };
+  for (const [legacyName, args] of [
+    ['mcp__manifest-fred__deploy_app', spec],
+    ['mcp__manifest-fred__build_manifest_preview', { spec }],
+    ['mcp__manifest-agent__deploy_app_orchestrated', { spec }],
+    ['mcp__manifest-fred__update_app', { lease_uuid: 'lease', manifest: JSON.stringify(spec) }],
+  ]) {
+    const scopedName = legacyName.replace('mcp__', 'mcp__plugin_manifest-agent_');
+    const out = _journal.redactArgs(scopedName, args);
+    assert.deepEqual(out, _journal.redactArgs(legacyName, args), scopedName);
+    assert.doesNotMatch(JSON.stringify(out), /PRIVATE_VALUE/);
+    assert.match(JSON.stringify(out), /GREETING/);
+  }
+});
+
 test('redactArgs(build_manifest_preview, ...) accepts the {spec: ...} call shape', () => {
   const out = _journal.redactArgs('mcp__manifest-fred__build_manifest_preview', {
     spec: { image: 'nginx:1.27', port: 80 },

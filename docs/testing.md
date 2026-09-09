@@ -5,6 +5,9 @@ This document covers running and adding tests for the manifest-agent plugin. For
 ## Running tests
 
 The test suite uses `node:test` and `node:assert` — no framework dependency.
+CI uses Node 24 because the pinned MCP package needs Node 22.19 or newer
+for the installed-inventory check. This CI choice does not change the
+plugin's declared runtime support or dependency pin.
 
 ```bash
 # Inside Claude Code, with deps already installed in $MANIFEST_PLUGIN_DATA:
@@ -292,31 +295,32 @@ target it later.
 
 ### PreToolUse policy completeness
 
-`ci/policy-completeness.cjs` treats the `hooks/hooks.json` PreToolUse matcher
-as the source of truth and asserts the gated-tool enumeration hasn't drifted
-across the sites that restate it. It closes the R3 gap (a tool in the matcher
-but missing from the runtime policy) and, per ENG-214 principle #6, sweeps
-every site carrying the same enumeration.
+`ci/policy-completeness.cjs` checks that the runtime policy and developer
+list agree with the hook matcher. This is a documentation-consistency
+check, not evidence that Claude intercepted a call.
+
+Both policy checks use `matcherNames` from `ci/mcp-tool-policy.cjs` to
+require exact, individually anchored, unique tool names. The local check
+rejects permissive regexes and malformed matchers without installing or
+starting the MCP servers.
 
 **What it asserts:**
 
-1. **session-start.sh naming** — every matcher-gated tool is *named* in the
-   runtime-policy heredoc. The matching contract: a tool counts as named iff
-   its FULL name (`mcp__server__tool`) appears as a plain substring, OR its
-   SHORT name appears snake-token-bounded
-   (`(?<![A-Za-z0-9_])S(?![A-Za-z0-9_])`). This is deliberate: a plain
-   `\bS\b` word boundary would wrongly report a clean repo as missing (`_` is
-   a regex word char, so `\bdeploy_app\b` matches nothing inside
-   `...fred__deploy_app`), and a plain substring on the short name would
-   *lying-green* match inside `deploy_app_orchestrated`. `deploy_app` is the
-   lone full-form-only tool, named via the F-substring clause.
+1. **session-start.sh naming** — every matcher-gated tool is named in the
+   runtime-policy heredoc, by its full scoped name or a bounded short name.
+   A mention of `deploy_app_orchestrated` must not accidentally count as a
+   mention of `deploy_app`.
 2. **CLAUDE.md gated-tools list parity** — the "Tools gated by the PreToolUse
-   hook" bullet list in `CLAUDE.md` must set-equal the matcher (no missing,
-   no extra). The list is parsed bullet-scoped, so the following
-   "...`request_faucet` is intentionally not gated" paragraph is excluded; a
-   missing heading throws (a rename must fail, not silently pass).
-3. ci.yml ↔ matcher parity is already enforced by the pre-existing "Verify
-   PreToolUse matcher" CI step, so it's not duplicated here.
+   hook" bullet list must set-equal the matcher. Read-only exceptions are
+   explained outside the list; a missing heading fails the check.
+3. **Installed inventory validation** — `ci/mcp-tool-policy.cjs` separately
+   discovers tools from every server in `.mcp.json` using the installed,
+   pinned package. It initializes the servers and requests `tools/list`,
+   then checks published mutation metadata against the scoped matcher.
+   Metadata is checked for validity and consistency; source review is
+   still required to detect a handler that misreports its side effects.
+   The workflow does not keep a duplicate expected-name list or assert
+   that mutating orchestrators must be absent from the matcher.
 
 **Why `docs/scripts.md` is exempt:** it cross-references the CLAUDE.md list
 rather than enumerating the tools, so there's nothing to set-compare. This is
@@ -334,17 +338,31 @@ entry with a real reason; once the tool gets a direct mention, CI tells you
 to remove the now-stale entry. Assertion 2 (the CLAUDE.md list) has no
 allowlist — it must match exactly.
 
-**Running locally:** `npm run test:policy-completeness` (no deps needed).
+**Running locally:** `npm run test:policy-completeness` needs no installed
+runtime dependencies. After installing the pinned runtime dependencies,
+run `node ci/mcp-tool-policy.cjs`; use `--data-dir <install-directory>`
+when those dependencies live outside the repository. The inventory check
+uses synthetic test credentials and makes no live chain/provider calls.
+
+### Actual Claude-host characterization
+
+Run `node ci/claude-hook-smoke.cjs` when Claude is installed and the
+environment permits loopback sockets. It uses an isolated configuration
+and local fixture API/MCP servers. This is a separate host check, not part
+of the standard CI unit suite. Read [`approval-validation.md`](approval-validation.md)
+for the recorded version, observed behavior, and the separate four-case
+native terminal validation. That terminal record used automated keystrokes;
+this stream-control harness does not itself exercise the terminal UI.
 
 ## What CI runs
 
 `.github/workflows/ci.yml`:
 
-1. `node --check` syntax check on every `scripts/*.cjs` and `ci/*.cjs`.
+1. `node --check` syntax check on every `scripts/*.cjs`, `ci/*.cjs`, and `tests/fixtures/*.cjs`.
 2. `bash -n` syntax check on every `scripts/*.sh`.
 3. `JSON.parse` on every tracked `.json` file.
 4. Version consistency: `package.json` and `.claude-plugin/plugin.json` must match.
-5. PreToolUse matcher: every alternative is `^...$`-anchored, the matcher gates exactly the expected broadcast tools (no missing, no extra), AND it does NOT accidentally match any of the `mcp__manifest-agent__*_orchestrated` wrapper tools. The negative-match list guards against double-prompt: the orchestrated wrappers dispatch the inner broadcast tools internally, which already trigger the hook on their own — a regex that matched both would prompt the user twice for one logical broadcast. Edit the expected list (and the negative-match list, if a new orchestrated tool ships) in `ci.yml` when the surface changes.
+5. Installed MCP tool inventory: `ci/mcp-tool-policy.cjs` discovers the actual tools published by all configured servers, checks metadata and anchored scoped matcher coverage, and preserves the explicit read-only/testnet-faucet exceptions. It sends initialization and `tools/list` requests only, using an isolated synthetic signer fixture with outbound network operations blocked. It never invokes a transaction or provider tool.
 6. PreToolUse policy completeness (`npm run test:policy-completeness` → `ci/policy-completeness.cjs`): every matcher-gated tool is named in the `scripts/session-start.sh` runtime policy (the R3 fix), AND the `CLAUDE.md` "Tools gated by the PreToolUse hook" list set-equals the matcher (principle #6). See "Doc/code drift checks" above for the matching contract and allowlist rules.
 7. SessionStart policy: `bash scripts/session-start.sh` must produce non-empty stdout that contains `cosmos_estimate_fee`.
 8. MCP binary presence: `manifest-mcp-{chain,lease,fred,cosmwasm,agent}` are installed and executable.
@@ -352,4 +370,4 @@ allowlist — it must match exactly.
 10. Unit tests: `node --test tests/*.test.cjs`. Post-ENG-130 the suite covers wrapper plumbing (`tests/start-server.test.cjs` — env-var contract for all five servers including `agent`), the journal layer (`tests/_journal.test.cjs` + `tests/journal-{read,write}.test.cjs` — including the four new orchestrated-tool reducers), the read-only renderers, the env merge, the saved-manifest summarizer, and the two drift-check harnesses (`tests/docs-ci.test.cjs`, `tests/policy-completeness.test.cjs` — the demonstrated-drift proofs). Orchestration logic itself (plan rendering, classification, recovery dispatch) is tested upstream in `manifest-mcp-mono`.
 11. Executable docs (`npm run test:docs` → `ci/docs-ci.cjs docs/testing.md`): runs the `docs-ci`-tagged shell examples and asserts their `expect`/`expect-not` directives hold. Runs after the runtime-deps install so `NODE_PATH` resolves. See "Doc/code drift checks" above.
 
-If you change the broadcast-tool surface, you must update `hooks/hooks.json`, the matcher's expected list in `ci.yml`, and the "Tools gated by the PreToolUse hook" list in `CLAUDE.md` — all in the same commit, and the policy-completeness check (#6 above) now machine-enforces that all three stay in sync.
+When the published MCP surface changes, review the installed-inventory check, hook matcher, runtime policy, and `CLAUDE.md` gated-tool list together. Policy parity, package discovery, local hook tests, and actual Claude-host behavior establish different things; see [`approval-validation.md`](approval-validation.md).

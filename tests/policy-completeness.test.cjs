@@ -23,6 +23,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { matcherNames } = require('../ci/mcp-tool-policy.cjs');
 
 const {
   parseMatcher,
@@ -50,9 +51,60 @@ test('parseMatcher splits {full, short} from anchored alternation; short = after
   ]);
 });
 
-test('parseMatcher rejects an unanchored alternative (mirrors the ci.yml assertion)', () => {
+test('plugin-scoped callable names are extracted and retain the full policy contract', () => {
+  const full = 'mcp__plugin_manifest-agent_manifest-chain__cosmos_tx';
+  const tools = parseMatcher({ hooks: { PreToolUse: [{ matcher: `^${full}$` }] } });
+  assert.deepEqual(tools, [{ full, short: 'cosmos_tx' }]);
+  const md = `Tools gated by the PreToolUse hook\n\n- \`${full}\`\n\nRead-only tools are omitted.`;
+  assert.deepEqual(extractClaudeMdGatedList(md), [full]);
+  assert.equal(isNamed(tools[0], `Call \`${full}\`.`), true);
+});
+
+test('parseMatcher rejects an unanchored alternative', () => {
   const hooks = { hooks: { PreToolUse: [{ matcher: '^mcp__a__b$|mcp__c__d' }] } };
-  assert.throws(() => parseMatcher(hooks), /unanchored/i);
+  assert.throws(() => parseMatcher(hooks), /exact anchored tool name/i);
+});
+
+test('both policy checks reject permissive regex matchers with the same error', () => {
+  for (const matcher of [
+    '^mcp__manifest-chain__.*$',
+    '^mcp__manifest-chain__cosmos_tx?$',
+    '^mcp__manifest-chain__[a-z_]+$',
+    '^mcp__manifest-chain__(cosmos_tx)$',
+  ]) {
+    const hooks = { hooks: { PreToolUse: [{ matcher }] } };
+    for (const parse of [matcherNames, parseMatcher]) {
+      assert.throws(() => parse(hooks), {
+        message: `Expected exact anchored tool name: ${matcher}`,
+      });
+    }
+  }
+});
+
+test('both policy checks reject duplicate names within and across hook entries', () => {
+  const matcher = '^mcp__manifest-chain__cosmos_tx$';
+  for (const entries of [
+    [{ matcher: `${matcher}|${matcher}` }],
+    [{ matcher }, { matcher }],
+  ]) {
+    const hooks = { hooks: { PreToolUse: entries } };
+    for (const parse of [matcherNames, parseMatcher]) {
+      assert.throws(() => parse(hooks), { message: 'Duplicate PreToolUse matcher names' });
+    }
+  }
+});
+
+test('both policy checks reject missing matcher configuration identically', () => {
+  for (const [hooks, message] of [
+    [{}, 'No PreToolUse matchers'],
+    [{ hooks: { PreToolUse: [] } }, 'No PreToolUse matchers'],
+    [{ hooks: { PreToolUse: [{}] } }, 'Missing PreToolUse matcher'],
+    [{ hooks: { PreToolUse: [{ matcher: null }] } }, 'Missing PreToolUse matcher'],
+  ]) {
+    for (const parse of [matcherNames, parseMatcher]) {
+      assert.throws(() => parse(hooks), { message });
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------

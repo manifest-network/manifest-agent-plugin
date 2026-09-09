@@ -10,7 +10,7 @@ allowed-tools: Bash(*), Read
 
 # Deploy App
 
-`mcp__manifest-agent__deploy_app_orchestrated` (in the `manifest-agent`
+`mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated` (in the `manifest-agent`
 MCP server) owns plan rendering, fee itemization, dual-tx broadcast
 (when `customDomain` is set), and partial-success recovery via MCP
 elicitation. Your job: load the spec, invoke the tool, render the
@@ -43,19 +43,21 @@ authoring path through this skill.
 
 ## Step 2 — Invoke the orchestrated tool
 
-Call `mcp__manifest-agent__deploy_app_orchestrated({ spec: SPEC })`.
+Call `mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated({ spec: SPEC })`.
 
-While the call runs the wrapper raises MCP elicitation requests
-(deployment plan with itemized fees, mainnet warning, partial-success
-recovery choice). **Print each prompt's `message` body to the user
-verbatim** and forward the elicitation response unchanged — do NOT
-paraphrase, summarize, or splice in extra fields; `agent-core` pins
-the wording across runs. Stream `notifications/progress` events inline
-as they arrive. The inner broadcasts
-(`mcp__manifest-fred__deploy_app`,
-`mcp__manifest-lease__set_item_custom_domain`) trigger the PreToolUse
-permission prompt on their own — that's expected, one prompt per
-inner tx.
+Claude Code evaluates the PreToolUse hook for this outer invocation before
+starting the tool. If permission is denied, the tool does not run. Once
+execution starts, the server requests native MCP elicitation for the
+plan with itemized fees, any mainnet warning, and recovery choices.
+Claude Code renders these requests and returns the user's answers; do
+not reprint their messages, forward answers yourself, or add a separate
+prose confirmation. Acknowledge only progress the host actually exposes.
+
+The server's internal SDK operations do not produce additional host
+PreToolUse events. Creation, optional domain assignment, and provider
+upload run sequentially and can partially succeed. Use the returned
+result or error to describe what completed; do not call the workflow
+atomic or infer success from a single completed transaction.
 
 ## Step 3 — Render the result
 
@@ -74,6 +76,11 @@ already run its recovery dispatch (if a `RecoveryChoice` applied) — you
 just display the final error.
 
 ## Step 4 — Record this run in the journal
+
+The `tool_calls[].tool` strings below are historical journal keys used by
+`_journal.cjs` redaction reducers. Keep their `mcp__manifest-*` spelling;
+invoke tools with the scoped `mcp__plugin_manifest-agent_manifest-*`
+names shown in the workflow above. Journal keys are not callable host names.
 
 Append one record to `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`.
 The writer auto-fills `timestamp_iso`, `timestamp_unix`,

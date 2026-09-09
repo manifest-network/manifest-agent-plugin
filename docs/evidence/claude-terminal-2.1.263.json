@@ -1,0 +1,177 @@
+{
+  "date": "2026-09-09",
+  "head": "0314a3401b00bd93e1a0dcd3238d7e9188f11977",
+  "claudeVersion": "2.1.263",
+  "permissionMode": "manual",
+  "toolPreallowed": true,
+  "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated",
+  "harness": "real interactive Claude terminal via PTY; agent-observed terminal output with automated key input",
+  "scope": "project hook and harmless MCP fixture; not a human usability signoff or a live upstream orchestrator test",
+  "cases": [
+    {
+      "name": "elicitation-cancel",
+      "sequence": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated",
+          "decision": "ask"
+        },
+        {
+          "kind": "mcp_request",
+          "server": "agent",
+          "method": "tools/call",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "kind": "elicitation_request"
+        },
+        {
+          "kind": "elicitation_result",
+          "action": "cancel"
+        }
+      ],
+      "toolCalls": 1,
+      "mutationMarkers": 0,
+      "beforeOuterPermissionAnswer": {
+        "toolCalls": 0,
+        "mutationMarkers": 0
+      },
+      "atNativeElicitationBeforeAnswer": {
+        "toolCalls": 1,
+        "mutationMarkers": 0
+      },
+      "keys": [
+        "Enter on outer Yes",
+        "Esc on native form"
+      ]
+    },
+    {
+      "name": "outer-permission-deny",
+      "sequence": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated",
+          "decision": "ask"
+        }
+      ],
+      "toolCalls": 0,
+      "mutationMarkers": 0,
+      "beforeOuterPermissionAnswer": {
+        "toolCalls": 0,
+        "mutationMarkers": 0
+      },
+      "keys": [
+        "Down then Enter on outer No"
+      ]
+    },
+    {
+      "name": "elicitation-decline",
+      "sequence": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated",
+          "decision": "ask"
+        },
+        {
+          "kind": "mcp_request",
+          "server": "agent",
+          "method": "tools/call",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "kind": "elicitation_request"
+        },
+        {
+          "kind": "elicitation_result",
+          "action": "decline"
+        }
+      ],
+      "toolCalls": 1,
+      "mutationMarkers": 0,
+      "beforeOuterPermissionAnswer": {
+        "toolCalls": 0,
+        "mutationMarkers": 0
+      },
+      "atNativeElicitationBeforeAnswer": {
+        "toolCalls": 1,
+        "mutationMarkers": 0
+      },
+      "keys": [
+        "Enter on outer Yes",
+        "Down twice to Decline",
+        "Enter on Decline"
+      ]
+    },
+    {
+      "name": "elicitation-accept",
+      "sequence": [
+        {
+          "kind": "hook",
+          "event": "PreToolUse",
+          "tool": "mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated",
+          "decision": "ask"
+        },
+        {
+          "kind": "mcp_request",
+          "server": "agent",
+          "method": "tools/call",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "kind": "elicitation_request"
+        },
+        {
+          "kind": "elicitation_result",
+          "action": "accept"
+        },
+        {
+          "kind": "internal_mutation_marker",
+          "server": "agent",
+          "tool": "deploy_app_orchestrated"
+        }
+      ],
+      "toolCalls": 1,
+      "mutationMarkers": 1,
+      "beforeOuterPermissionAnswer": {
+        "toolCalls": 0,
+        "mutationMarkers": 0
+      },
+      "atNativeElicitationBeforeAnswer": {
+        "toolCalls": 1,
+        "mutationMarkers": 0
+      },
+      "keys": [
+        "Enter on outer Yes",
+        "Space to check Approve marker",
+        "Down to Accept",
+        "Enter on Accept after the selection renders"
+      ]
+    }
+  ],
+  "isolation": {
+    "configAndSessions": "temporary CLAUDE_CONFIG_DIR",
+    "work": "temporary work directory",
+    "api": "localhost deterministic SSE fixture, dummy key only",
+    "builtInTools": "disabled with --tools empty",
+    "userSettings": "--setting-sources empty --settings {}",
+    "mcp": "temporary plugin with only repository harmless MCP fixture servers",
+    "updatesAndTelemetry": "disabled via existing environment() helper"
+  },
+  "remainingValidation": [
+    "Maintainer security review",
+    "Production SDK/orchestrator and live-chain behavior",
+    "Other native UI host versions and permission modes"
+  ],
+  "reproduction": "Reuse the isolated plugin, local API response, and environment setup from ci/claude-hook-smoke.cjs. Launch Claude in an interactive terminal with the fixture --plugin-dir, --setting-sources empty, --settings {}, --tools empty, --permission-mode manual, and the exact tool in --allowedTools; omit print/stream-control flags. Wait for MCP tools/list before submitting the fixture prompt. Record event snapshots at host permission and native elicitation, then exercise the listed UI choices in separate terminal sessions. Keep the config and session files under a temporary CLAUDE_CONFIG_DIR.",
+  "cleanup": "All terminal sessions exited with /exit. Local API terminated; no fixture processes remain.",
+  "sourceFiles": [
+    "ci/claude-hook-smoke.cjs",
+    "tests/fixtures/claude-host-mcp.cjs",
+    "scripts/pre-tool-use.sh",
+    "scripts/pre-tool-use.cjs",
+    "hooks/hooks.json"
+  ]
+}

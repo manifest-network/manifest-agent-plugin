@@ -14,12 +14,12 @@ allowed-tools: Bash(*), Read
 # Troubleshoot Deployment
 
 You are producing a unified troubleshooting report for a deployed app on
-Manifest. The orchestrated tool `mcp__manifest-agent__troubleshoot_deployment_orchestrated`
+Manifest. The orchestrated tool `mcp__plugin_manifest-agent_manifest-agent__troubleshoot_deployment_orchestrated`
 (a read-only chain query — no broadcast, zero elicitations) bundles live
 chain state + provider diagnostics + recent logs into a single Markdown
 report. The skill resolves the lease UUID, invokes the tool, prints the
 report, and (when the user chooses) drives
-`mcp__manifest-agent__close_lease_orchestrated` for cleanup.
+`mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated` for cleanup.
 
 **For all user choices, use the `AskUserQuestion` tool.**
 
@@ -60,7 +60,7 @@ Branches in priority order:
 4. **Lookup by custom domain**: when the user picks this option, ask
    for the FQDN, then call:
    ```
-   mcp__manifest-lease__lease_by_custom_domain({ custom_domain: <fqdn> })
+   mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain({ custom_domain: <fqdn> })
    ```
    Use the returned `lease.uuid` as `LEASE_UUID`. If the lookup returns
    no lease, surface that and fall back to options 3/5.
@@ -74,7 +74,7 @@ Store the chosen UUID as `LEASE_UUID`.
 Call:
 
 ```
-mcp__manifest-agent__troubleshoot_deployment_orchestrated({ lease_uuid: LEASE_UUID })
+mcp__plugin_manifest-agent_manifest-agent__troubleshoot_deployment_orchestrated({ lease_uuid: LEASE_UUID })
 ```
 
 The tool runs a pure chain query — no broadcast, no elicitation — and
@@ -102,15 +102,18 @@ cleanup fires — matches the pre-rewire posture).
 On **Close**, invoke:
 
 ```
-mcp__manifest-agent__close_lease_orchestrated({ lease_uuid: LEASE_UUID })
+mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated({ lease_uuid: LEASE_UUID })
 ```
 
-The orchestrated close tool handles fee estimation, textual confirm
-(via elicitation — print the prompt's `message` body verbatim and
-forward the response unchanged), broadcast, and on-chain terminal-
-state verification end-to-end. The inner
-`mcp__manifest-lease__close_lease` broadcast triggers the PreToolUse
-permission prompt on its own — that's expected.
+Claude Code evaluates the PreToolUse hook on the outer close invocation
+before execution. Once allowed, the server requests native action
+confirmation through MCP elicitation, broadcasts, and verifies the
+terminal chain state. The pinned close recap does not guarantee a
+numeric fee estimate. Claude Code renders the elicitation request
+and returns the user's answer; do not reprint its message, forward the
+answer yourself, or add another prose confirmation. The earlier Close /
+Keep choice selects the cleanup action. Internal SDK operations do not
+trigger additional host PreToolUse events.
 
 On non-throw return, capture `CLOSE_RESULT` (`{ leaseUuid, finalState }`).
 Surface to the user: "Lease `<leaseUuid>` closed; final state
@@ -118,15 +121,20 @@ Surface to the user: "Lease `<leaseUuid>` closed; final state
 
 ## Step 4 — Record this run in the journal (cleanup-fire branch only)
 
+The `tool_calls[].tool` strings below are historical journal keys used by
+`_journal.cjs` redaction reducers. Keep their `mcp__manifest-*` spelling;
+invoke tools with the scoped `mcp__plugin_manifest-agent_manifest-*`
+names shown in the workflow above. Journal keys are not callable host names.
+
 If `close_lease_orchestrated` actually fired in Step 3, append one
 record to `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl` with TWO
 `tool_calls[]` entries — the diagnostic preceding the close is part
 of the audit trail. The writer auto-fills `timestamp_iso`,
 `timestamp_unix`, `schema_version`, and `session_id`. `args_redacted`
 for both tools is produced by `scripts/_journal.cjs#redactArgs` (the
-single-field `{ leaseUuid }` reducer covers both). Inner
-`cosmos_estimate_fee`, `close_lease` broadcast, and `app_status`
-verify calls live in agent-core and are NOT enumerated.
+single-field `{ leaseUuid }` reducer covers both). Internal close and
+verification operations live in agent-core and are not enumerated as
+host tool calls.
 
 Set `outcome` to `"success"` when both calls returned non-throw. Set
 `"failed"` if `close_lease_orchestrated` threw (the diagnostic
