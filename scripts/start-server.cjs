@@ -10,7 +10,7 @@
  * Usage: node start-server.cjs <chain|lease|fred|cosmwasm|agent>
  */
 
-const { assertNodeVersion, inspectRuntime } = require('./_runtime.cjs');
+const { assertNodeVersion, waitForRuntime } = require('./_runtime.cjs');
 try {
   assertNodeVersion();
 } catch (error) {
@@ -61,189 +61,187 @@ process.on('SIGTERM', () => forwardSignal('SIGTERM'));
 process.on('SIGINT', () => forwardSignal('SIGINT'));
 process.on('SIGHUP', () => forwardSignal('SIGHUP'));
 
-// --- Pre-flight: config.json ---
-if (!existsSync(CONFIG_PATH)) {
-  console.error(`Config not found at ${CONFIG_PATH}`);
-  console.error('Run /manifest-agent:init-agent to set up.');
-  process.exit(1);
-}
-
-let config;
-try {
-  config = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
-} catch {
-  // JSON parser messages can include the invalid source text, including a
-  // wallet password. Report only the file to repair.
-  console.error(`Failed to parse ${CONFIG_PATH}. Repair the JSON or re-run /manifest-agent:init-agent.`);
-  process.exit(1);
-}
-
-// --- Validate config fields ---
-const { activeChain, gasPrice, gasMultiplier, chains, agent } = config;
-if (!activeChain || !chains || !chains[activeChain]) {
-  console.error(`Invalid config: missing activeChain or chains.${activeChain}`);
-  process.exit(1);
-}
-
-if (!gasPrice) {
-  console.error('Invalid config: missing gasPrice. Re-run /manifest-agent:init-agent.');
-  process.exit(1);
-}
-
-const chain = chains[activeChain];
-const missing = ['chainId', 'rpcUrl'].filter((k) => !chain[k]);
-if (missing.length > 0) {
-  console.error(`Invalid config: chains.${activeChain} missing fields: ${missing.join(', ')}`);
-  process.exit(1);
-}
-
-// The plugin owns wallet selection. Never fall back to an unrelated shell
-// mnemonic or the upstream binary's default ~/.manifest/key.json wallet.
-if (typeof agent?.keyFile !== 'string' || !agent.keyFile.trim()
-  || typeof agent.keyPassword !== 'string') {
-  console.error('Invalid config: agent.keyFile and agent.keyPassword are required. Re-run /manifest-agent:init-agent.');
-  process.exit(1);
-}
-const keyFile = resolve(AGENT_DIR, agent.keyFile);
-if (!existsSync(keyFile)) {
-  console.error(`Configured wallet file not found at ${keyFile}`);
-  console.error('Run /manifest-agent:import-key to restore the configured wallet.');
-  process.exit(1);
-}
-
-// --- Pre-flight: binary ---
-const binaryPath = join(AGENT_DIR, 'node_modules', '.bin', `manifest-mcp-${serverName}`);
-if (!existsSync(binaryPath)) {
-  console.error(`MCP server binary not found at ${binaryPath}`);
-  console.error('Run node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs" to repair dependencies, then restart the MCP servers.');
-  process.exit(1);
-}
-let runtime;
-try {
-  runtime = inspectRuntime(AGENT_DIR, resolve(__dirname, '..'));
-} catch {
-  console.error('Unable to read the plugin runtime definition. Reinstall the plugin, then run setup-runtime.cjs.');
-  process.exit(1);
-}
-if (!runtime.ready) {
-  console.error('MCP runtime dependencies are missing, incomplete, or out of date.');
-  console.error('Run node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs" to repair dependencies, then restart the MCP servers.');
-  process.exit(1);
-}
-
-// --- Build env from the selected config, including deliberately absent fields ---
-// Deleting first prevents stale testnet endpoints, gas settings, or a different
-// wallet from surviving when the selected config omits an optional field.
-const env = { ...process.env };
-for (const key of [
-  'COSMOS_CHAIN_ID', 'COSMOS_RPC_URL', 'COSMOS_REST_URL',
-  'COSMOS_GAS_PRICE', 'COSMOS_GAS_MULTIPLIER', 'COSMOS_MNEMONIC',
-  'COSMOS_ADDRESS_PREFIX', 'MANIFEST_CONVERTER_ADDRESS', 'MANIFEST_FAUCET_URL',
-  'MANIFEST_KEY_FILE', 'MANIFEST_KEY_PASSWORD',
-  'MANIFEST_AGENT_DATA_DIR', 'MANIFEST_CHAIN_DATA_FILE',
-]) delete env[key];
-Object.assign(env, {
-  COSMOS_CHAIN_ID: chain.chainId,
-  COSMOS_RPC_URL: chain.rpcUrl,
-  COSMOS_GAS_PRICE: gasPrice,
-  COSMOS_ADDRESS_PREFIX: 'manifest',
-  MANIFEST_KEY_FILE: keyFile,
-  // Preserve the configured bytes, including empty strings. Upstream decides
-  // which passwords its wallet formats support; never substitute shell input.
-  MANIFEST_KEY_PASSWORD: agent.keyPassword,
-  // dotenv 17 logs to stdout by default, which corrupts MCP JSON-RPC framing.
-  DOTENV_CONFIG_QUIET: 'true',
-});
-
-if (chain.restUrl) env.COSMOS_REST_URL = chain.restUrl;
-if (chain.converterAddress) env.MANIFEST_CONVERTER_ADDRESS = chain.converterAddress;
-if (chain.faucetUrl) env.MANIFEST_FAUCET_URL = chain.faucetUrl;
-if (gasMultiplier) env.COSMOS_GAS_MULTIPLIER = String(gasMultiplier);
-
-// --- Agent server: ENG-204 env contract ---
-// MANIFEST_AGENT_DATA_DIR: agent-core's saveManifest() writes to
-//   <dataDir>/manifests/<lease_uuid>.json. Setting it to AGENT_DIR makes
-//   agent-core write to the same $MANIFEST_PLUGIN_DATA/manifests/ tree
-//   the plugin's existing helpers (list-saved-manifests.cjs, etc.) read
-//   from — keeping v2/v3 wrappers cross-readable.
-// MANIFEST_CHAIN_DATA_FILE: denom-map humanization (the agent server's
-//   replacement for the old --chain-data-file flag the deleted renderers
-//   used). Points at the active chain's registry JSON.
-// MANIFEST_AGENT_FETCH_GUARDED: SSRF-guarded fetch toggle. The agent
-//   server defaults this to ON; we only forward it when the operator
-//   has explicitly set it in the parent shell, letting the package's
-//   default stand otherwise.
-// Gated on serverName === 'agent' so we don't pollute the other four
-// servers' env. Defensive against future env-contract drift AND
-// against pollution from an operator's parent shell — the `else`
-// branch's explicit `delete` is the load-bearing line: the `env`
-// object was built via `{ ...process.env, ... }` above, so a parent-
-// shell-exported `MANIFEST_AGENT_DATA_DIR` would otherwise leak
-// into all four non-agent servers' envs regardless of what this
-// `if` block does. Limiting blast radius requires both ADD-when-agent
-// AND STRIP-when-not-agent.
-if (serverName === 'agent') {
-  env.MANIFEST_AGENT_DATA_DIR = AGENT_DIR;
-  env.MANIFEST_CHAIN_DATA_FILE = join(AGENT_DIR, 'chains', `${activeChain}.json`);
-  if (process.env.MANIFEST_AGENT_FETCH_GUARDED !== undefined) {
-    env.MANIFEST_AGENT_FETCH_GUARDED = process.env.MANIFEST_AGENT_FETCH_GUARDED;
+async function startServer() {
+  // --- Pre-flight: config.json ---
+  if (!existsSync(CONFIG_PATH)) {
+    console.error(`Config not found at ${CONFIG_PATH}`);
+    console.error('Run /manifest-agent:init-agent to set up.');
+    process.exit(1);
   }
-} else {
-  delete env.MANIFEST_AGENT_DATA_DIR;
-  delete env.MANIFEST_CHAIN_DATA_FILE;
-  delete env.MANIFEST_AGENT_FETCH_GUARDED;
-}
 
-// Warn loudly when a testnet config pre-dates the faucetUrl field — otherwise
-// `request_faucet` silently fails to register and the user has no signal why.
-if (serverName === 'chain' && activeChain === 'testnet' && !chain.faucetUrl) {
-  console.error(
-    'Warning: testnet config has no faucetUrl — the request_faucet tool will not be available. ' +
-    'Run /manifest-agent:refresh-registry to pick up the latest chain data.'
-  );
-}
-
-// Log env key names (not values) for diagnostics. Filter out KEY_PASSWORD
-// even though only the name appears — a paste of an MCP startup banner
-// in a bug report shouldn't include the literal name "MANIFEST_KEY_PASSWORD"
-// alongside other context that might tip an attacker that the wallet is hot.
-const envKeys = Object.keys(env)
-  .filter((k) => k.startsWith('COSMOS_') || k.startsWith('MANIFEST_'))
-  .filter((k) => k !== 'MANIFEST_KEY_PASSWORD');
-console.error(`Starting manifest-mcp-${serverName} with env: ${envKeys.join(', ')}`);
-
-// --- Spawn ---
-// Upstream loads dotenv.config() from cwd. Use an empty private working
-// directory so a workspace or data-directory .env cannot restore fields that
-// this wrapper deliberately omitted. Absolute paths keep runtime files in the
-// plugin data directory; only this disposable cwd is removed at exit.
-let serverCwd;
-try {
-  serverCwd = mkdtempSync(join(tmpdir(), 'manifest-mcp-cwd-'));
-} catch {
-  console.error('Failed to create an isolated MCP working directory. Check the system temporary directory.');
-  process.exit(1);
-}
-process.on('exit', () => rmSync(serverCwd, { recursive: true, force: true }));
-child = spawn(binaryPath, [], { stdio: 'inherit', env, cwd: serverCwd });
-
-child.on('error', (err) => {
-  // Mark exited before exiting: a SIGINT/SIGTERM landing during this window
-  // would otherwise drive forwardSignal() into child.kill() against a child
-  // that never started (ESRCH) and crash the wrapper with an unhandled throw.
-  childExited = true;
-  console.error(`Failed to start manifest-mcp-${serverName}: ${err.message}`);
-  process.exit(1);
-});
-
-child.on('close', (code, signal) => {
-  childExited = true;
-  if (signal) {
-    // Report the conventional shell status directly. Re-signalling this
-    // process can leave signal delivery queued behind an empty event loop,
-    // which would incorrectly report success before the handler executes.
-    forwardSignal(signal);
-    return;
+  let config;
+  try {
+    config = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+  } catch {
+    // JSON parser messages can include the invalid source text, including a
+    // wallet password. Report only the file to repair.
+    console.error(`Failed to parse ${CONFIG_PATH}. Repair the JSON or re-run /manifest-agent:init-agent.`);
+    process.exit(1);
   }
-  process.exit(code ?? 1);
+
+  // --- Validate config fields ---
+  const { activeChain, gasPrice, gasMultiplier, chains, agent } = config;
+  if (!activeChain || !chains || !chains[activeChain]) {
+    console.error(`Invalid config: missing activeChain or chains.${activeChain}`);
+    process.exit(1);
+  }
+
+  if (!gasPrice) {
+    console.error('Invalid config: missing gasPrice. Re-run /manifest-agent:init-agent.');
+    process.exit(1);
+  }
+
+  const chain = chains[activeChain];
+  const missing = ['chainId', 'rpcUrl'].filter((k) => !chain[k]);
+  if (missing.length > 0) {
+    console.error(`Invalid config: chains.${activeChain} missing fields: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+
+  // The plugin owns wallet selection. Never fall back to an unrelated shell
+  // mnemonic or the upstream binary's default ~/.manifest/key.json wallet.
+  if (typeof agent?.keyFile !== 'string' || !agent.keyFile.trim()
+    || typeof agent.keyPassword !== 'string') {
+    console.error('Invalid config: agent.keyFile and agent.keyPassword are required. Re-run /manifest-agent:init-agent.');
+    process.exit(1);
+  }
+  const keyFile = resolve(AGENT_DIR, agent.keyFile);
+  if (!existsSync(keyFile)) {
+    console.error(`Configured wallet file not found at ${keyFile}`);
+    console.error('Run /manifest-agent:import-key to restore the configured wallet.');
+    process.exit(1);
+  }
+
+  // --- Pre-flight: runtime setup may still be starting in SessionStart ---
+  const binaryPath = join(AGENT_DIR, 'node_modules', '.bin', `manifest-mcp-${serverName}`);
+  let runtime;
+  try {
+    runtime = await waitForRuntime(AGENT_DIR, resolve(__dirname, '..'), {
+      onWaiting: () => console.error('Waiting for Manifest runtime setup to complete...'),
+    });
+  } catch {
+    console.error('Unable to read the plugin runtime definition. Reinstall the plugin, then run setup-runtime.cjs.');
+    process.exit(1);
+  }
+  if (!runtime.ready) {
+    console.error(`MCP runtime dependencies are missing, incomplete, or out of date: ${runtime.reason}`);
+    console.error('Run node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs" to repair dependencies, then reconnect the MCP servers.');
+    process.exit(1);
+  }
+
+  // --- Build env from the selected config, including deliberately absent fields ---
+  // Deleting first prevents stale testnet endpoints, gas settings, or a different
+  // wallet from surviving when the selected config omits an optional field.
+  const env = { ...process.env };
+  for (const key of [
+    'COSMOS_CHAIN_ID', 'COSMOS_RPC_URL', 'COSMOS_REST_URL',
+    'COSMOS_GAS_PRICE', 'COSMOS_GAS_MULTIPLIER', 'COSMOS_MNEMONIC',
+    'COSMOS_ADDRESS_PREFIX', 'MANIFEST_CONVERTER_ADDRESS', 'MANIFEST_FAUCET_URL',
+    'MANIFEST_KEY_FILE', 'MANIFEST_KEY_PASSWORD',
+    'MANIFEST_AGENT_DATA_DIR', 'MANIFEST_CHAIN_DATA_FILE',
+  ]) delete env[key];
+  Object.assign(env, {
+    COSMOS_CHAIN_ID: chain.chainId,
+    COSMOS_RPC_URL: chain.rpcUrl,
+    COSMOS_GAS_PRICE: gasPrice,
+    COSMOS_ADDRESS_PREFIX: 'manifest',
+    MANIFEST_KEY_FILE: keyFile,
+    // Preserve the configured bytes, including empty strings. Upstream decides
+    // which passwords its wallet formats support; never substitute shell input.
+    MANIFEST_KEY_PASSWORD: agent.keyPassword,
+    // dotenv 17 logs to stdout by default, which corrupts MCP JSON-RPC framing.
+    DOTENV_CONFIG_QUIET: 'true',
+  });
+
+  if (chain.restUrl) env.COSMOS_REST_URL = chain.restUrl;
+  if (chain.converterAddress) env.MANIFEST_CONVERTER_ADDRESS = chain.converterAddress;
+  if (chain.faucetUrl) env.MANIFEST_FAUCET_URL = chain.faucetUrl;
+  if (gasMultiplier) env.COSMOS_GAS_MULTIPLIER = String(gasMultiplier);
+
+  // --- Agent server: ENG-204 env contract ---
+  // MANIFEST_AGENT_DATA_DIR: agent-core's saveManifest() writes to
+  //   <dataDir>/manifests/<lease_uuid>.json. Setting it to AGENT_DIR makes
+  //   agent-core write to the same $MANIFEST_PLUGIN_DATA/manifests/ tree
+  //   the plugin's existing helpers (list-saved-manifests.cjs, etc.) read
+  //   from — keeping v2/v3 wrappers cross-readable.
+  // MANIFEST_CHAIN_DATA_FILE: denom-map humanization (the agent server's
+  //   replacement for the old --chain-data-file flag the deleted renderers
+  //   used). Points at the active chain's registry JSON.
+  // MANIFEST_AGENT_FETCH_GUARDED: SSRF-guarded fetch toggle. The agent
+  //   server defaults this to ON; we only forward it when the operator
+  //   has explicitly set it in the parent shell, letting the package's
+  //   default stand otherwise.
+  // Config-owned agent paths were stripped above. FETCH_GUARDED is an operator
+  // override retained only for the agent server; clear it for the other four.
+  if (serverName === 'agent') {
+    env.MANIFEST_AGENT_DATA_DIR = AGENT_DIR;
+    env.MANIFEST_CHAIN_DATA_FILE = join(AGENT_DIR, 'chains', `${activeChain}.json`);
+    if (process.env.MANIFEST_AGENT_FETCH_GUARDED !== undefined) {
+      env.MANIFEST_AGENT_FETCH_GUARDED = process.env.MANIFEST_AGENT_FETCH_GUARDED;
+    }
+  } else {
+    delete env.MANIFEST_AGENT_FETCH_GUARDED;
+  }
+
+  // Warn loudly when a testnet config pre-dates the faucetUrl field — otherwise
+  // `request_faucet` silently fails to register and the user has no signal why.
+  if (serverName === 'chain' && activeChain === 'testnet' && !chain.faucetUrl) {
+    console.error(
+      'Warning: testnet config has no faucetUrl — the request_faucet tool will not be available. ' +
+      'Run /manifest-agent:refresh-registry to pick up the latest chain data.'
+    );
+  }
+
+  // Log env key names (not values) for diagnostics. Filter out KEY_PASSWORD
+  // even though only the name appears — a paste of an MCP startup banner
+  // in a bug report shouldn't include the literal name "MANIFEST_KEY_PASSWORD"
+  // alongside other context that might tip an attacker that the wallet is hot.
+  const envKeys = Object.keys(env)
+    .filter((k) => k.startsWith('COSMOS_') || k.startsWith('MANIFEST_'))
+    .filter((k) => k !== 'MANIFEST_KEY_PASSWORD');
+  console.error(`Starting manifest-mcp-${serverName} with env: ${envKeys.join(', ')}`);
+
+  // --- Spawn ---
+  // Upstream loads dotenv.config() from cwd. Use an empty private working
+  // directory so a workspace or data-directory .env cannot restore fields that
+  // this wrapper deliberately omitted. Absolute paths keep runtime files in the
+  // plugin data directory; only this disposable cwd is removed at exit.
+  // SIGKILL cannot run cleanup and may leave an empty 0700 directory for the OS
+  // temp cleaner. Do not sweep other sessions' directories from this process.
+  let serverCwd;
+  try {
+    serverCwd = mkdtempSync(join(tmpdir(), 'manifest-mcp-cwd-'));
+  } catch {
+    console.error('Failed to create an isolated MCP working directory. Check the system temporary directory.');
+    process.exit(1);
+  }
+  process.on('exit', () => rmSync(serverCwd, { recursive: true, force: true }));
+  child = spawn(binaryPath, [], { stdio: 'inherit', env, cwd: serverCwd });
+
+  child.on('error', (err) => {
+    // Mark exited before exiting: a SIGINT/SIGTERM landing during this window
+    // would otherwise drive forwardSignal() into child.kill() against a child
+    // that never started (ESRCH) and crash the wrapper with an unhandled throw.
+    childExited = true;
+    console.error(`Failed to start manifest-mcp-${serverName}: ${err.message}`);
+    process.exit(1);
+  });
+
+  child.on('close', (code, signal) => {
+    childExited = true;
+    if (signal) {
+      // Report the conventional shell status directly. Re-signalling this
+      // process can leave signal delivery queued behind an empty event loop,
+      // which would incorrectly report success before the handler executes.
+      forwardSignal(signal);
+      return;
+    }
+    process.exit(code ?? 1);
+  });
+
+}
+
+startServer().catch(() => {
+  console.error('Manifest MCP startup failed. Check runtime setup and reconnect the server.');
+  process.exitCode = 1;
 });

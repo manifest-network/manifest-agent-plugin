@@ -7,8 +7,8 @@ const { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync,
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawn, spawnSync, fork } = require('node:child_process');
-const { setupRuntime, acquireLock, LOCK_FILE } = require('../scripts/setup-runtime.cjs');
-const { assertNodeVersion, inspectRuntime, COMPLETION_FILE } = require('../scripts/_runtime.cjs');
+const { setupRuntime, acquireLock, LOCK_FILE, processStartTime, parseProcessStartTime } = require('../scripts/setup-runtime.cjs');
+const { assertNodeVersion, inspectRuntime, COMPLETION_FILE, RUNTIME_PLATFORM } = require('../scripts/_runtime.cjs');
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'manifest runtime '));
@@ -50,8 +50,12 @@ function fixture(t) {
 }
 
 test('Node guard enforces the full runtime floor before dependency loading', () => {
-  for (const version of ['18.20.8', '20.20.0', '22.18.1', '22.19', 'invalid']) {
+  for (const version of ['18.20.8', '20.20.0', '22.18.1']) {
     assert.throws(() => assertNodeVersion(version), /Node 22\.19\.0\+ required/);
+  }
+  for (const version of ['22.19', 'invalid']) assert.throws(() => assertNodeVersion(version), /Unrecognized Node version string/);
+  for (const version of ['22.19.0-rc.1', '24.0.0-nightly20250901']) {
+    assert.throws(() => assertNodeVersion(version), /Prerelease Node builds are not supported.*stable Node 22\.19\.0\+/);
   }
   for (const version of ['22.19.0', '22.20.1', '24.0.0', '25.1.0']) assert.doesNotThrow(() => assertNodeVersion(version));
 });
@@ -70,6 +74,23 @@ test('fresh install creates private matching manifests and completion marker; he
   assert.equal(statSync(f.dataDir).mode & 0o777, 0o700);
   assert.equal(existsSync(join(f.dataDir, LOCK_FILE)), false);
   assert.equal(existsSync(join(f.pluginRoot, 'node_modules')), false);
+});
+
+test('supported Node majors reuse the same JavaScript runtime, including legacy completion records', async (t) => {
+  const f = fixture(t);
+  await setupRuntime(f);
+  const path = join(f.dataDir, COMPLETION_FILE);
+  const marker = JSON.parse(readFileSync(path, 'utf8'));
+  assert.equal(marker.runtime, `${process.platform}/${process.arch}`);
+  for (const runtime of [RUNTIME_PLATFORM, `${RUNTIME_PLATFORM}/node-22`, `${RUNTIME_PLATFORM}/node-24`]) {
+    writeFileSync(path, JSON.stringify({ ...marker, runtime }));
+    assert.equal(inspectRuntime(f.dataDir, f.pluginRoot).ready, true);
+    assert.deepEqual(await setupRuntime({ ...f, install: async () => { assert.fail('supported Node change must not reinstall'); } }), { installed: false });
+  }
+  for (const runtime of ['other-platform/other-arch/node-24', `${RUNTIME_PLATFORM}/node-invalid`]) {
+    writeFileSync(path, JSON.stringify({ ...marker, runtime }));
+    assert.equal(inspectRuntime(f.dataDir, f.pluginRoot).ready, false);
+  }
 });
 
 test('repairs matching package files with no completion marker and preserves all user records', async (t) => {
@@ -165,6 +186,57 @@ test('dead-process and interrupted empty locks recover; live owner timeout is ex
   release();
 });
 
+test('PID reuse is reclaimed only when both recorded process identities have ended', { skip: process.platform !== 'linux' }, async (t) => {
+  const f = fixture(t);
+  const currentStartTime = processStartTime(process.pid);
+  assert.match(currentStartTime, /^\d+$/);
+  const wrongStartTime = String(BigInt(currentStartTime) + 1n);
+  const path = join(f.dataDir, LOCK_FILE);
+  for (const owner of [
+    { pid: process.pid, pidStartTime: wrongStartTime },
+    { pid: process.pid, pidStartTime: wrongStartTime, childPid: process.pid, childStartTime: wrongStartTime },
+  ]) {
+    writeFileSync(path, JSON.stringify({ ...owner, token: 'old-incarnation' }));
+    const release = await acquireLock(f.dataDir, { timeoutMs: 20, pollMs: 5 });
+    const actual = JSON.parse(readFileSync(path, 'utf8'));
+    assert.equal(actual.pidStartTime, currentStartTime);
+    assert.notEqual(actual.token, 'old-incarnation');
+    release();
+  }
+  for (const owner of [
+    { pid: process.pid, pidStartTime: currentStartTime, childPid: process.pid, childStartTime: wrongStartTime },
+    { pid: process.pid, pidStartTime: wrongStartTime, childPid: process.pid, childStartTime: currentStartTime },
+    { pid: process.pid }, // legacy lock: unknown identity must stay conservative
+  ]) {
+    writeFileSync(path, JSON.stringify({ ...owner, token: 'live-owner' }));
+    utimesSync(path, new Date(0), new Date(0));
+    await assert.rejects(acquireLock(f.dataDir, { timeoutMs: 20, pollMs: 5 }), /Timed out waiting/);
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).token, 'live-owner');
+    rmSync(path);
+  }
+});
+
+test('process identity reads Linux stat field 22 even when the command contains spaces and parentheses', () => {
+  const fields = ['S', ...Array.from({ length: 18 }, (_, index) => String(index + 4)), '123456789', '23', '24'];
+  assert.equal(parseProcessStartTime(`123 (node (worker) fixture) ${fields.join(' ')}\n`), '123456789');
+  assert.equal(parseProcessStartTime('malformed record'), undefined);
+  assert.equal(parseProcessStartTime('123 (node) S 1 2'), undefined);
+});
+
+test('lock contention reports its path immediately and returns within the configured bound', async (t) => {
+  const f = fixture(t);
+  const release = await acquireLock(f.dataDir);
+  const diagnostic = [];
+  const previous = console.error;
+  console.error = (message) => diagnostic.push(message);
+  try {
+    const pending = acquireLock(f.dataDir, { timeoutMs: 30, pollMs: 5 });
+    assert.equal(diagnostic.length, 1, 'emit progress before waiting on the live owner');
+    assert.ok(diagnostic[0].includes(join(f.dataDir, LOCK_FILE)));
+    await assert.rejects(pending, /Timed out waiting/);
+  } finally { console.error = previous; release(); }
+});
+
 test('rejects plugin-root and symlinked child data paths before modifying the plugin', async (t) => {
   const f = fixture(t);
   await assert.rejects(setupRuntime({ ...f, dataDir: f.pluginRoot }), /outside the installed plugin/);
@@ -199,6 +271,32 @@ function startCli(f, env = {}, args = []) {
 }
 
 function cli(...args) { return startCli(...args).completion; }
+
+test('data directory chmod tolerates supported filesystem errors but propagates unexpected failures', async (t) => {
+  const f = fixture(t);
+  await setupRuntime(f);
+  const preload = join(f.root, 'chmod-filesystem.cjs');
+  writeFileSync(preload, `
+const fs = require('node:fs');
+const original = fs.chmodSync;
+fs.chmodSync = (path, mode) => {
+  if (path === process.env.MANIFEST_PLUGIN_DATA) {
+    const error = new Error('fixture chmod ' + process.env.MANIFEST_CHMOD_ERROR);
+    error.code = process.env.MANIFEST_CHMOD_ERROR;
+    throw error;
+  }
+  return original(path, mode);
+};
+`);
+  for (const code of ['EPERM', 'EACCES', 'EROFS', 'ENOSYS', 'ENOENT']) {
+    const result = await cli(f, { NODE_OPTIONS: `--require=${JSON.stringify(preload)}`, MANIFEST_CHMOD_ERROR: code });
+    assert.equal(result.status, 0, `${code}: ${result.stderr}`);
+    assert.match(result.stderr, /runtime dependencies ready/);
+  }
+  const invalid = await cli(f, { NODE_OPTIONS: `--require=${JSON.stringify(preload)}`, MANIFEST_CHMOD_ERROR: 'EINVAL' });
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /fixture chmod EINVAL/);
+});
 
 test('CLI successfully installs through npm and a second process skips npm', async (t) => {
   const f = fixture(t);
@@ -254,6 +352,10 @@ const timer = setInterval(async () => {
     children.push(first.child);
     await waitFor(() => existsSync(join(f.dataDir, 'npm-pids')));
     const owner = JSON.parse(readFileSync(join(f.dataDir, LOCK_FILE), 'utf8'));
+    if (process.platform === 'linux') {
+      assert.match(owner.pidStartTime, /^\d+$/);
+      assert.match(owner.childStartTime, /^\d+$/);
+    }
     cleanupPids.push(owner.childPid, Number(readFileSync(join(f.dataDir, 'active-npm'), 'utf8')));
     assert.notEqual(owner.childPid, first.child.pid, 'the worker owns the active install independently');
     first.child.kill('SIGKILL');
@@ -312,7 +414,9 @@ test('CLI reports missing npm, unsupported arguments and unsupported Node withou
   mkdirSync(shim);
   const missing = await cli(f, { PATH: shim });
   assert.equal(missing.status, 1);
-  assert.match(missing.stderr, /Could not run npm ci/);
+  assert.match(missing.stderr, /npm was not found on PATH\. Install npm/);
+  assert.doesNotMatch(missing.stderr, /See .*\.last-install\.log/);
+  assert.equal(existsSync(join(f.dataDir, '.last-install.log')), false);
   const args = await cli(f, {}, ['--force']);
   assert.equal(args.status, 1);
   assert.match(args.stderr, /Usage:/);

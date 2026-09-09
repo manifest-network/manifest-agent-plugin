@@ -42,6 +42,9 @@ Setup tests cover a fresh install, manifest/lock upgrades, interrupted installs,
 missing/truncated dependency files, concurrent setup and stale process locks,
 with configuration and saved records preserved. Launcher tests cover chain
 switches, omitted optional fields, inherited wallet values and empty passwords.
+Startup regressions cover delayed lock creation, missing binaries, all five
+concurrent launchers, preserved queued input, bounded failure and SIGTERM.
+Lock tests distinguish reused PIDs from live parent/worker processes.
 
 ## Test file layout
 
@@ -383,3 +386,16 @@ this stream-control harness does not itself exercise the terminal UI.
 12. Executable docs (`npm run test:docs` → `ci/docs-ci.cjs docs/testing.md`): runs the `docs-ci`-tagged shell examples and asserts their `expect`/`expect-not` directives hold. Runs after the runtime-deps install so `NODE_PATH` resolves. See "Doc/code drift checks" above.
 
 When the published MCP surface changes, review the installed-inventory check, hook matcher, runtime policy, and `CLAUDE.md` gated-tool list together. Policy parity, package discovery, local hook tests, and actual Claude-host behavior establish different things; see [`approval-validation.md`](approval-validation.md).
+
+### Host evidence provenance
+
+Run `node ci/evidence-check.cjs` to verify that current host evidence hashes
+match the hook and fixture sources. Re-run the isolated host checks when those
+sources change; replacing hashes alone is not validation. Historical evidence
+is explicitly tied to its original commit. A shallow clone may lack that
+commit; the check then reports metadata-only verification for that historical
+record. Use `--require-history` when its original commit is available to require
+verification of the historical bytes too.
+
+`tests/evidence-check.test.cjs` exercises source drift, missing/malformed
+metadata, historical commit mismatches, and unavailable-history behavior.

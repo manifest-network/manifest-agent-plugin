@@ -3,7 +3,7 @@
   "mcp_contract": "0.22.0",
   "scope": "Real Claude host with local deterministic API and harmless marker MCP fixtures; no live chain or upstream orchestrator calls. Native terminal UI was not repeated.",
   "files_sha256": {
-    "hooks/hooks.json": "c83b78ac26694ee9a49710d828922dad18a5490076169fcd4568b1f298c0476d",
+    "hooks/hooks.json": "81aea5599bbdde695da2f45bf1c40e64f5b15c2f172a569868a770e451510822",
     "scripts/pre-tool-use.cjs": "5751786575c7c1d563b4bcf99779881777a2bac9454bcaf432ed4c155fd3e03c",
     "scripts/pre-tool-use.sh": "a9aa07b4b2fff19053d3249ab86e52ebcce99a38d35d5c4cc78b97da50f2fb19",
     "ci/claude-hook-smoke.cjs": "b30a6ae86c7604484dd27a031b9a295037eaef9a0dec1daa1f2b6e0c50fd321c",
@@ -283,5 +283,6 @@
       "apiCalls": 2,
       "passed": true
     }
-  ]
+  ],
+  "source_status": "current"
 }

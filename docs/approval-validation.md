@@ -188,3 +188,31 @@ above remains the earlier ENG-892 run.
 The final locked 0.22.0 package exposes 34 tools across five servers, including
 12 gated mutation entry points. All five also initialize through the shipped
 launcher with strict JSON-RPC stdout and outbound networking blocked.
+
+## Evidence provenance and source drift
+
+Run `node ci/evidence-check.cjs` to validate the committed evidence records.
+Each record explicitly declares `source_status: current` or
+`source_status: historical` and SHA-256 hashes for the five hook and host
+fixture source files. Current records must match the checked-out files;
+missing files, incomplete hash coverage, and source changes fail the check.
+At least one current host record is required. A source change requires a
+new host run before replacing the current report and its hashes. Matching
+hashes bind a report to source bytes; this check does not itself run Claude
+or establish new host behavior.
+
+The four native terminal cases remain historical evidence from full commit
+`0314a3401b00bd93e1a0dcd3238d7e9188f11977`. Their source hashes were added
+retrospectively from that commit's Git objects, without repeating those
+terminal sessions or changing their observations. The validator compares
+these hashes with the recorded commit when its objects are available and
+reports differences from the current workspace as expected historical
+drift. It does not treat historical terminal evidence as current coverage.
+
+A shallow checkout may omit that commit, and a full checkout of the main
+branch need not include an unmerged source commit from a squashed PR. In
+that case the default check explicitly reports historical validation as
+metadata only, with historical source bytes unverified. It does not fetch
+objects automatically. Use `node ci/evidence-check.cjs --require-history`
+when the recorded commit is available locally, or fetch that exact commit
+first, to require verification against the historical source as well.

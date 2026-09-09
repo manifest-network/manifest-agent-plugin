@@ -173,5 +173,14 @@
     "scripts/pre-tool-use.sh",
     "scripts/pre-tool-use.cjs",
     "hooks/hooks.json"
-  ]
+  ],
+  "source_status": "historical",
+  "files_sha256": {
+    "ci/claude-hook-smoke.cjs": "79664dc43b03044d884d90a1b65dd1e2055e9e1dbd19ace129dabf541b2c0cf4",
+    "tests/fixtures/claude-host-mcp.cjs": "b8457920c7b7723493b08683679f38740367f129b7a16aebd2970a1ee68895dd",
+    "scripts/pre-tool-use.sh": "a9aa07b4b2fff19053d3249ab86e52ebcce99a38d35d5c4cc78b97da50f2fb19",
+    "scripts/pre-tool-use.cjs": "09f3ab3019f8458f9bb33feaceb4c2f0256ce204e950f89e644d72627cfce2a7",
+    "hooks/hooks.json": "1defa49f4ce40489a4967474cf8d5bc649a656873e1470678b2f4847a8d41e0a"
+  },
+  "source_hash_provenance": "Added retrospectively from git show at the recorded head; original terminal observations were preserved and the terminal sessions were not repeated."
 }

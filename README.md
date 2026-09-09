@@ -26,7 +26,7 @@ It handles keypair generation and import, chain configuration (testnet/mainnet),
 ## Prerequisites
 
 - [Claude Code](https://claude.ai/code) CLI, desktop app, or IDE extension
-- Node.js >= 22.19.0 (Node 24 is also tested)
+- Stable Node.js >= 22.19.0 (Node 24 is also tested)
 
 ## Installation
 
@@ -259,7 +259,7 @@ The wrappers persist after a lease expires or is closed — they're a historical
 
 Marketplace installs auto-update when Claude Code refreshes the marketplace (typically on session start). Your `$MANIFEST_PLUGIN_DATA` directory survives plugin updates, so config, keys, and saved deployments are preserved. The SessionStart hook checks the tracked package and lockfile plus installed dependency files. It runs the shared setup command when dependencies changed, are missing, or were left incomplete. Setup installs with `npm ci --omit=dev --ignore-scripts` into the data directory, leaving the plugin root untouched.
 
-For development installs (`claude --plugin-dir`), pull the latest commits in your clone and restart Claude Code.
+For development installs (`claude --plugin-dir`), pull the latest commits in your clone and restart Claude Code. MCP launchers wait for concurrent SessionStart setup, including a short grace period before its lock exists. If an unusually slow install exceeds startup's 25-second wait or the host timeout, let setup finish and reconnect the MCP servers.
 
 The MCP launcher uses your selected config as the source of chain, gas-price/multiplier and
 wallet settings. `COSMOS_MAX_GAS` remains an explicit operator gas-ceiling
@@ -315,9 +315,18 @@ The servers start automatically when Claude Code launches but **will fail until 
 node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs"
 ```
 
-On failure, inspect `$MANIFEST_PLUGIN_DATA/.last-install.log`. Repair preserves your config, keys, drafts, journal, and saved deployments; you do not need to generate a new wallet.
+For an npm install failure, inspect `$MANIFEST_PLUGIN_DATA/.last-install.log`. If npm itself is missing, install it alongside Node as the diagnostic instructs; no empty failure log is retained. Repair preserves your config, keys, drafts, journal, and saved deployments; you do not need to generate a new wallet.
 
 **After init-agent**: Check your Node.js version. The MCP servers require **Node.js 22.19.0+**. If your system default `node` is older, the wrapper exits with a `Node 22.19.0+ required (found X.X.X)` error visible in the MCP server logs. Verify with `node --version` and update if needed. If you use nvm, run `nvm install 24` and `nvm alias default 24` to set the default.
+
+Setup contention prints the path to `$MANIFEST_PLUGIN_DATA/.runtime-setup.lock`
+and waits up to 60 seconds. On Linux, recorded process start times let setup
+reclaim locks whose PIDs were reused. Older locks or platforms without process
+identity stay conservative: do not remove a lock while an installer is running.
+After verifying that neither its parent nor worker is an installer, a stale lock
+can be removed before retrying setup. Runtime errors now include the specific
+dependency/completion failure; switching between supported stable Node majors
+does not itself require reinstalling this JavaScript-only runtime.
 
 ### "Out of gas" during a broadcast
 

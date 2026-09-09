@@ -9,27 +9,51 @@ const { join, resolve, relative, dirname, basename, isAbsolute } = require('node
 const { spawn, fork } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { atomicWrite } = require('./_io.cjs');
-const { assertNodeVersion, COMPLETION_FILE, RUNTIME_PLATFORM, readRuntimeDefinition,
+const { assertNodeVersion, COMPLETION_FILE, LOCK_FILE, RUNTIME_PLATFORM, readRuntimeDefinition,
   verifyInstalledPackages, snapshotDependencies, inspectRuntime } = require('./_runtime.cjs');
 
-const LOCK_FILE = '.runtime-setup.lock';
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-function ownerAlive(pid) {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return error.code !== 'ESRCH'; }
+function parseProcessStartTime(stat) {
+  // comm (field 2) may itself contain spaces or parentheses. Fields after
+  // its closing parenthesis begin with state (3), so starttime (22) is 19.
+  const end = stat.lastIndexOf(')');
+  if (end < 0) return undefined;
+  const fields = stat.slice(end + 1).trim().split(/\s+/);
+  return /^\d+$/.test(fields[19] || '') ? fields[19] : undefined;
 }
 
-async function acquireLock(dataDir, { timeoutMs = 300000, pollMs = 100 } = {}) {
+function processStartTime(pid) {
+  if (process.platform !== 'linux') return undefined;
+  try { return parseProcessStartTime(readFileSync(`/proc/${pid}/stat`, 'utf8')); }
+  catch { return undefined; }
+}
+
+function ownerAlive(pid, expectedStartTime) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); }
+  catch (error) {
+    if (error.code === 'ESRCH') return false;
+    if (error.code !== 'EPERM') return true;
+  }
+  const currentStartTime = processStartTime(pid);
+  // Unknown identity (including pre-upgrade locks) is conservative: an
+  // existing process may be an installer. Never evict it merely by age.
+  return !currentStartTime || typeof expectedStartTime !== 'string' ||
+    !/^\d+$/.test(expectedStartTime) || currentStartTime === expectedStartTime;
+}
+
+async function acquireLock(dataDir, { timeoutMs = 60000, pollMs = 100 } = {}) {
   const path = join(dataDir, LOCK_FILE);
   const token = randomUUID();
   const started = Date.now();
+  const pidStartTime = processStartTime(process.pid);
+  let reportedWait = false;
   while (true) {
     let fd;
     try {
       fd = openSync(path, 'wx', 0o600);
-      writeFileSync(fd, JSON.stringify({ pid: process.pid, token }));
+      writeFileSync(fd, JSON.stringify({ pid: process.pid, pidStartTime, token }));
       closeSync(fd);
       const release = () => {
         try {
@@ -38,7 +62,7 @@ async function acquireLock(dataDir, { timeoutMs = 300000, pollMs = 100 } = {}) {
       };
       release.recordChild = (childPid) => {
         if (JSON.parse(readFileSync(path, 'utf8')).token !== token) throw new Error('Runtime setup lost its installation lock.');
-        atomicWrite(path, JSON.stringify({ pid: process.pid, token, childPid }));
+        atomicWrite(path, JSON.stringify({ pid: process.pid, pidStartTime, token, childPid, childStartTime: processStartTime(childPid) }));
       };
       return release;
     } catch (error) {
@@ -49,7 +73,7 @@ async function acquireLock(dataDir, { timeoutMs = 300000, pollMs = 100 } = {}) {
       const before = statSync(path);
       let owner;
       try { owner = JSON.parse(readFileSync(path, 'utf8')); } catch { /* interrupted initial write */ }
-      const stale = owner ? !ownerAlive(owner.pid) && !ownerAlive(owner.childPid) : Date.now() - before.mtimeMs > 1000;
+      const stale = owner ? !ownerAlive(owner.pid, owner.pidStartTime) && !ownerAlive(owner.childPid, owner.childStartTime) : Date.now() - before.mtimeMs > 1000;
       if (stale) {
         const after = statSync(path);
         if (before.ino === after.ino && before.mtimeMs === after.mtimeMs) unlinkSync(path);
@@ -58,6 +82,10 @@ async function acquireLock(dataDir, { timeoutMs = 300000, pollMs = 100 } = {}) {
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
     if (Date.now() - started >= timeoutMs) {
       throw new Error('Timed out waiting for another runtime setup process. Retry after that process finishes.');
+    }
+    if (!reportedWait) {
+      console.error(`manifest-agent: another runtime installer holds ${path}; waiting up to ${timeoutMs / 1000} seconds before returning. Retry setup after that installer finishes.`);
+      reportedWait = true;
     }
     await sleep(pollMs);
   }
@@ -80,7 +108,13 @@ function runNpmCi(dataDir, logFile) {
       closeSync(logFd);
       for (const [signal, handler] of Object.entries(handlers)) process.off(signal, handler);
     };
-    child.once('error', (error) => { clean(); reject(new Error(`Could not run npm ci: ${error.message}. See ${logFile}`)); });
+    child.once('error', (error) => {
+      clean();
+      if (error.code === 'ENOENT') {
+        rmSync(logFile, { force: true });
+        reject(new Error('npm was not found on PATH. Install npm alongside the supported Node version, then rerun setup-runtime.cjs.'));
+      } else reject(new Error(`Could not run npm ci: ${error.message}. See ${logFile}`));
+    });
     child.once('close', (code, signal) => {
       // A spawn error emits close afterward; its cleanup has already run.
       if (child.pid === undefined) return;
@@ -164,7 +198,12 @@ async function setupRuntime({ dataDir, pluginRoot = resolve(__dirname, '..'), in
     throw new Error('Runtime data must be outside the installed plugin directory.');
   }
   mkdirSync(target, { recursive: true, mode: 0o700 });
-  chmodSync(target, 0o700);
+  try { chmodSync(target, 0o700); }
+  catch (error) {
+    // Match _io.cjs atomicWrite({ ensureDir: true }): some otherwise
+    // writable/shared filesystems cannot change directory permission bits.
+    if (!new Set(['EPERM', 'EACCES', 'EROFS', 'ENOSYS', 'ENOENT']).has(error.code)) throw error;
+  }
   const definition = readRuntimeDefinition(source);
   const release = await acquireLock(target, lockOptions);
   try {
@@ -173,6 +212,7 @@ async function setupRuntime({ dataDir, pluginRoot = resolve(__dirname, '..'), in
     atomicWrite(join(target, 'package.json'), definition.packageText);
     atomicWrite(join(target, 'package-lock.json'), definition.lockText);
     const logFile = join(target, '.last-install.log');
+    console.error('manifest-agent: installing locked runtime dependencies; this may take several minutes.');
     await install(target, logFile, { recordChild: release.recordChild });
     verifyInstalledPackages(target, definition);
     const files = snapshotDependencies(target);
@@ -191,4 +231,4 @@ if (require.main === module) {
   })().catch((error) => { console.error(`manifest-agent: ${error.message}`); process.exitCode = 1; });
 }
 
-module.exports = { setupRuntime, acquireLock, npmCi, LOCK_FILE };
+module.exports = { setupRuntime, acquireLock, npmCi, LOCK_FILE, processStartTime, parseProcessStartTime };

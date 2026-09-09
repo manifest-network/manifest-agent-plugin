@@ -64,6 +64,9 @@ jobs:
           fi
           echo "Both manifests at version $PKG"
 
+      - name: Verify recorded host evidence provenance
+        run: node ci/evidence-check.cjs
+
       - name: Verify PreToolUse policy completeness (matcher tools named in policy + CLAUDE.md parity)
         # Checks the dependency-free matcher / runtime policy / docs contract.
         # Installed server coverage is verified with tools/list below.

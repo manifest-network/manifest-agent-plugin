@@ -7,9 +7,9 @@ const {
 } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, spawn } = require('node:child_process');
 
-const { COMPLETION_FILE, RUNTIME_PLATFORM, readRuntimeDefinition, snapshotDependencies } = require('../scripts/_runtime.cjs');
+const { LOCK_FILE, COMPLETION_FILE, RUNTIME_PLATFORM, readRuntimeDefinition, snapshotDependencies } = require('../scripts/_runtime.cjs');
 
 function stampRuntime(data) {
   const root = join(data, '.fixture-plugin');
@@ -224,18 +224,8 @@ test('lease server does NOT receive the wrapper-computed agent env vars', () => 
 });
 
 test('strips agent-only env vars (MANIFEST_AGENT_*, MANIFEST_CHAIN_DATA_FILE) from non-agent servers even when set in parent shell', () => {
-  // Regression for Copilot R4 finding: the wrapper builds env via
-  // `{ ...process.env, ... }` then conditionally ADDS agent-only vars
-  // under serverName === 'agent'. Without an explicit strip in the
-  // non-agent branch, parent-shell exports of these three vars leak
-  // into the chain / lease / fred / cosmwasm server envs.
-  //
-  // The strip is load-bearing for the "limit blast radius" framing in
-  // start-server.cjs's comment: future env-contract drift (e.g. a
-  // future manifest-mcp-chain that grows a MANIFEST_AGENT_DATA_DIR
-  // sensitivity) would silently break if an operator happened to
-  // export the var for an agent run and then started a chain server
-  // in the same shell.
+  // Config-owned paths are stripped before the agent branch rebuilds them.
+  // The operator FETCH_GUARDED override is stripped in the non-agent branch.
   const polluted = {
     MANIFEST_AGENT_DATA_DIR: '/operator/exported/path',
     MANIFEST_CHAIN_DATA_FILE: '/operator/exported/chain.json',
@@ -265,7 +255,7 @@ test('strips agent-only env vars (MANIFEST_AGENT_*, MANIFEST_CHAIN_DATA_FILE) fr
   }
   // Sanity-check: the agent server in the same parent-env still receives
   // the values (computed-from-config for the first two, forwarded for
-  // the third) — the strip is non-agent-only.
+  // the third).
   withData((data) => {
     const r = runWrapper('agent', { data, extraEnv: polluted });
     assert.equal(r.status, 0, `stderr from agent: ${r.stderr}`);
@@ -418,7 +408,8 @@ test('missing MCP binary points to explicit dependency repair', () => {
     const r = runWrapper('agent', { data });
     assert.equal(r.status, 1);
     assert.equal(r.stdout, '');
-    assert.match(r.stderr, /MCP server binary not found/);
+    assert.match(r.stderr, /MCP runtime dependencies.*ENOENT/);
+    assert.match(r.stderr, /manifest-mcp-agent/);
     assert.match(r.stderr, /setup-runtime\.cjs.*repair dependencies/);
   });
 });
@@ -431,6 +422,7 @@ test('missing dependency with the MCP binary intact refuses startup until explic
     assert.equal(r.status, 1);
     assert.equal(r.stdout, '');
     assert.match(r.stderr, /MCP runtime dependencies are missing, incomplete, or out of date/);
+    assert.match(r.stderr, /dependency\.cjs/);
     assert.match(r.stderr, /setup-runtime\.cjs.*repair dependencies/);
   });
 });
@@ -484,4 +476,68 @@ test('configured relative wallet path resolves within plugin data rather than th
     assert.equal(r.status, 0, r.stderr);
     assert.equal(parseEnvLines(r.stdout).MANIFEST_KEY_FILE, join(data, 'fixture-wallet.json'));
   });
+});
+
+
+function launchAsync(data, serverName = 'agent') {
+  const child = spawn(process.execPath, [join(data, '.fixture-plugin/scripts/start-server.cjs'), serverName], {
+    env: { PATH: process.env.PATH, MANIFEST_PLUGIN_DATA: data }, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let stdout = '', stderr = '';
+  let waitingResolve;
+  const waiting = new Promise((done) => { waitingResolve = done; });
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+    if (stderr.includes('Waiting for Manifest runtime setup')) waitingResolve();
+  });
+  const finished = new Promise((done, reject) => {
+    child.once('error', reject);
+    child.once('close', (status) => done({ status, stdout, stderr }));
+  });
+  return { child, waiting, finished };
+}
+
+test('all five launchers wait for delayed setup with missing binaries and preserve queued input', { timeout: 10000 }, async (t) => {
+  const data = buildPluginData();
+  t.after(() => rmSync(data, { recursive: true, force: true }));
+  // Simulate an upgrade before SessionStart has acquired its install lock.
+  writeFileSync(join(data, 'package.json'), '{"oldVersion":true}');
+  const servers = ['chain', 'lease', 'fred', 'cosmwasm', 'agent'];
+  for (const server of servers) rmSync(join(data, 'node_modules/.bin', `manifest-mcp-${server}`));
+  const launched = servers.map((name) => launchAsync(data, name));
+  for (const { child } of launched) {
+    t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+    child.stdin.end('queued initialize request');
+  }
+  await Promise.all(launched.map((run) => run.waiting));
+  assert.equal(existsSync(join(data, LOCK_FILE)), false, 'launchers must never start their own installer');
+  writeFileSync(join(data, LOCK_FILE), '{}');
+  await new Promise((done) => setTimeout(done, 150));
+  for (const { child } of launched) assert.equal(child.exitCode, null);
+  for (const server of servers) {
+    const binary = join(data, 'node_modules/.bin', `manifest-mcp-${server}`);
+    writeFileSync(binary, '#!/usr/bin/env bash\ncat\n', { mode: 0o755 });
+  }
+  stampRuntime(data);
+  rmSync(join(data, LOCK_FILE));
+  for (const result of await Promise.all(launched.map((run) => run.finished))) {
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, 'queued initialize request');
+    assert.equal((result.stderr.match(/Waiting for Manifest runtime setup/g) || []).length, 1);
+  }
+});
+
+test('SIGTERM during startup wait exits promptly without touching the setup lock', { timeout: 5000 }, async (t) => {
+  const data = buildPluginData();
+  t.after(() => rmSync(data, { recursive: true, force: true }));
+  rmSync(join(data, COMPLETION_FILE));
+  writeFileSync(join(data, LOCK_FILE), '{}');
+  const run = launchAsync(data);
+  t.after(() => { if (run.child.exitCode === null) run.child.kill('SIGKILL'); });
+  await run.waiting;
+  run.child.kill('SIGTERM');
+  const result = await run.finished;
+  assert.equal(result.status, 143); assert.equal(result.stdout, '');
+  assert.equal(existsSync(join(data, LOCK_FILE)), true);
 });

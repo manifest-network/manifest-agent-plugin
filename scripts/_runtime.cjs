@@ -2,15 +2,22 @@
 
 // Shared, dependency-free runtime checks. This file is not a CLI.
 const { createHash } = require('node:crypto');
-const { readFileSync, lstatSync, readdirSync, readlinkSync, statSync, accessSync, constants } = require('node:fs');
+const { readFileSync, lstatSync, readdirSync, readlinkSync, statSync, accessSync, constants, existsSync } = require('node:fs');
 const { join, posix } = require('node:path');
 
 const MIN_NODE_VERSION = '22.19.0';
 const COMPLETION_FILE = '.runtime-install.json';
-const RUNTIME_PLATFORM = `${process.platform}/${process.arch}/node-${process.versions.node.split('.')[0]}`;
+const LOCK_FILE = '.runtime-setup.lock';
+// The locked runtime is JavaScript-only and install scripts are disabled.
+// Supported Node majors share it; revisit this if native addons are introduced.
+const RUNTIME_PLATFORM = `${process.platform}/${process.arch}`;
 
 function assertNodeVersion(version = process.versions.node) {
+  if (/^\d+\.\d+\.\d+-/.test(version)) {
+    throw new Error(`Prerelease Node builds are not supported (found ${version}). Install a stable Node ${MIN_NODE_VERSION}+ release.`);
+  }
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) throw new Error(`Unrecognized Node version string: ${version}. Install a stable Node ${MIN_NODE_VERSION}+ release.`);
   const parts = match && match.slice(1).map(Number);
   if (!parts || parts[0] < 22 || (parts[0] === 22 && parts[1] < 19)) {
     throw new Error(`Node ${MIN_NODE_VERSION}+ required (found ${version}). Install a supported Node version and restart Claude Code.`);
@@ -80,7 +87,10 @@ function inspectRuntime(dataDir, pluginRoot) {
       throw new Error('The runtime dependency definition changed.');
     }
     const completion = JSON.parse(readFileSync(join(dataDir, COMPLETION_FILE), 'utf8'));
-    if (completion.schema !== 1 || completion.fingerprint !== definition.fingerprint || completion.runtime !== RUNTIME_PLATFORM ||
+    const compatiblePlatform = completion.runtime === RUNTIME_PLATFORM ||
+      (typeof completion.runtime === 'string' && completion.runtime.startsWith(`${RUNTIME_PLATFORM}/node-`) &&
+       /^\d+$/.test(completion.runtime.slice(`${RUNTIME_PLATFORM}/node-`.length)));
+    if (completion.schema !== 1 || completion.fingerprint !== definition.fingerprint || !compatiblePlatform ||
         !Array.isArray(completion.files) || !completion.files.length) {
       throw new Error('The runtime install has no matching completion record.');
     }
@@ -103,7 +113,34 @@ function inspectRuntime(dataDir, pluginRoot) {
   }
 }
 
+// Claude starts MCP servers concurrently with SessionStart. Give setup time to
+// acquire its lock, then wait for verified completion without installing here.
+// Stay below Claude's default 30s MCP initialization timeout, leaving room for
+// wallet loading/handshake. Neither observed lock changes nor retries extend it.
+async function waitForRuntime(dataDir, pluginRoot, {
+  graceMs = 2000, timeoutMs = 25000, pollMs = 100, onWaiting = () => {},
+  now = () => performance.now(), sleep = (ms) => new Promise((done) => setTimeout(done, ms)),
+} = {}) {
+  const started = now();
+  let sawSetup = false;
+  let notified = false;
+  while (true) {
+    const active = existsSync(join(dataDir, LOCK_FILE));
+    const runtime = inspectRuntime(dataDir, pluginRoot);
+    if (runtime.ready && !active) return runtime;
+    sawSetup ||= active;
+    const elapsed = now() - started;
+    if (!active && (sawSetup || elapsed >= graceMs)) return runtime;
+    if (elapsed >= timeoutMs) return {
+      ...runtime, ready: false,
+      reason: `Timed out waiting for runtime setup (${join(dataDir, LOCK_FILE)}). ${runtime.reason || 'An installer is still active.'}`,
+    };
+    if (!notified) { onWaiting(); notified = true; }
+    await sleep(Math.min(pollMs, timeoutMs - elapsed));
+  }
+}
+
 module.exports = {
-  MIN_NODE_VERSION, COMPLETION_FILE, RUNTIME_PLATFORM, assertNodeVersion, readRuntimeDefinition,
+  MIN_NODE_VERSION, COMPLETION_FILE, LOCK_FILE, RUNTIME_PLATFORM, waitForRuntime, assertNodeVersion, readRuntimeDefinition,
   verifyInstalledPackages, snapshotDependencies, inspectRuntime,
 };

@@ -113,3 +113,10 @@ Record final package/launcher checks and any outstanding upstream dependency
 advisories in the PR. The prior Claude host evidence is recorded separately in
 [approval-validation.md](approval-validation.md); it must not be presented as a
 fresh host test of every 0.22.0 tool.
+
+Review follow-up: MCP launchers await concurrent SessionStart setup with bounded
+failure diagnostics; supported stable Node majors share the installed JavaScript
+runtime. Linux process identity prevents PID reuse from preserving stale locks.
+Setup contention is visible, npm absence has a direct remedy, and unsupported
+prerelease Node builds receive a distinct diagnostic. Host evidence distinguishes
+historical and current source hashes and is checked in CI.
