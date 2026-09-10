@@ -50,6 +50,13 @@ function fixture(t) {
   return { root, pluginRoot, dataDir, definition, install };
 }
 
+function assertLockTimeout(error, path) {
+  assert.match(error.message, /Timed out waiting/);
+  assert.ok(error.message.includes(path), `timeout must identify the exact lock path: ${error.message}`);
+  assert.doesNotMatch(error.message, /another runtime setup process/i);
+  return true;
+}
+
 test('Node guard enforces the full runtime floor before dependency loading', () => {
   for (const version of ['18.20.8', '20.20.0', '22.18.1']) {
     assert.throws(() => assertNodeVersion(version), /Node 22\.19\.0\+ required/);
@@ -234,7 +241,7 @@ test('lock contention reports its path immediately and returns within the config
     const pending = acquireLock(f.dataDir, { timeoutMs: 30, pollMs: 5 });
     assert.equal(diagnostic.length, 1, 'emit progress before waiting on the live owner');
     assert.ok(diagnostic[0].includes(join(f.dataDir, LOCK_FILE)));
-    await assert.rejects(pending, /Timed out waiting/);
+    await assert.rejects(pending, (error) => assertLockTimeout(error, join(f.dataDir, LOCK_FILE)));
   } finally { console.error = previous; release(); }
 });
 
@@ -288,7 +295,8 @@ const started = performance.now();
   assert.equal(result.error, undefined, result.error?.message);
   assert.equal(result.status, 0, result.stderr);
   const outcome = JSON.parse(result.stdout);
-  assert.match(outcome.error, /Timed out waiting/);
+  assertLockTimeout(new Error(outcome.error), lock);
+  assert.equal(result.stderr, '', 'an absent owner must not produce a live-owner contention notice');
   assert.ok(outcome.ticks > 0, 'waiting must permit timers and signal handlers to run');
   assert.ok(outcome.elapsed >= 40);
   assert.equal(lstatSync(lock).isSymbolicLink(), true);
@@ -309,6 +317,51 @@ test('repeated stale lock replacements share one deadline and yield between atte
   }), /Timed out waiting/);
   assert.equal(clock, 20, 'reclaiming a stale owner must not reset the deadline');
   assert.equal(waits, 4, 'each unsuccessful attempt must yield before retrying');
+  assert.equal(readFileSync(lock, 'utf8'), '{"pid":0,"token":"inactive-owner"}', 'the expired waiter must leave the last owner untouched');
+});
+
+test('successful stale-owner reclamation is silent and still yields before retrying', async (t) => {
+  const f = fixture(t);
+  writeFileSync(join(f.dataDir, LOCK_FILE), '{"pid":0,"token":"inactive-owner"}');
+  const diagnostic = [];
+  const previous = console.error;
+  console.error = (message) => diagnostic.push(message);
+  let clock = 0;
+  let waits = 0;
+  try {
+    const release = await acquireLock(f.dataDir, {
+      now: () => clock, sleep: async (ms) => { clock += ms; waits++; },
+    });
+    release();
+    assert.equal(waits, 1, 'reclaim must yield even when no live owner was observed');
+    assert.deepEqual(diagnostic, []);
+  } finally { console.error = previous; }
+});
+
+test('a deadline reached during stale-owner inspection does not unlink the owner', async (t) => {
+  const f = fixture(t);
+  const path = join(f.dataDir, LOCK_FILE);
+  const contents = '{"pid":0,"token":"expired-stale-owner"}';
+  writeFileSync(path, contents);
+  let clock = 0;
+  await assert.rejects(acquireLock(f.dataDir, {
+    timeoutMs: 2, now: () => clock++,
+    sleep: async () => assert.fail('an expired attempt must stop before another sleep'),
+  }), (error) => assertLockTimeout(error, path));
+  assert.equal(readFileSync(path, 'utf8'), contents);
+});
+
+test('a directory at the lock path fails promptly with its filesystem error', async (t) => {
+  const f = fixture(t);
+  const path = join(f.dataDir, LOCK_FILE);
+  mkdirSync(path);
+  await assert.rejects(acquireLock(f.dataDir, {
+    sleep: async () => assert.fail('a non-readable lock must fail instead of waiting'),
+  }), (error) => {
+    assert.equal(error.code, 'EISDIR');
+    return true;
+  });
+  assert.equal(statSync(path).isDirectory(), true);
 });
 
 test('reclaiming a stale lock symlink preserves the referenced file', async (t) => {

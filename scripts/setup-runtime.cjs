@@ -21,9 +21,15 @@ async function acquireLock(dataDir, {
   const path = join(dataDir, LOCK_FILE);
   const token = randomUUID();
   const started = now();
+  const checkDeadline = () => {
+    if (now() - started >= timeoutMs) {
+      throw new Error(`Timed out waiting to acquire runtime setup lock ${path}. Check the lock and retry after any active installer finishes.`);
+    }
+  };
   const pidStartTime = processStartTime(process.pid);
   let reportedWait = false;
   while (true) {
+    checkDeadline();
     let fd;
     try {
       fd = openSync(path, 'wx', 0o600);
@@ -43,21 +49,21 @@ async function acquireLock(dataDir, {
       if (fd !== undefined) try { closeSync(fd); } catch { /* already closed */ }
       if (error.code !== 'EEXIST') throw error;
     }
+    let owner;
     try {
-      const owner = readSetupLock(dataDir);
+      owner = readSetupLock(dataDir);
       if (owner && !owner.active) {
         const before = owner.stat;
         const after = statSync(path);
+        checkDeadline();
         if (before.ino === after.ino && before.mtimeMs === after.mtimeMs) unlinkSync(path);
       }
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
     // Every unsuccessful exclusive-open attempt shares the deadline and
     // yields, including disappearing owners, dangling symlinks and stale
     // records replaced during inspection. None may spin in a continue loop.
-    if (now() - started >= timeoutMs) {
-      throw new Error(`Timed out waiting to acquire runtime setup lock ${path}. Check the lock and retry after any active installer finishes.`);
-    }
-    if (!reportedWait) {
+    checkDeadline();
+    if (owner?.active && !reportedWait) {
       console.error(`manifest-agent: waiting to acquire runtime setup lock ${path}; up to ${timeoutMs / 1000} seconds before returning.`);
       reportedWait = true;
     }

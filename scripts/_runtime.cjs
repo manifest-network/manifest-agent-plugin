@@ -53,7 +53,9 @@ function readSetupLock(dataDir, { now = Date.now } = {}) {
   try { owner = JSON.parse(readFileSync(path, 'utf8')); }
   catch (error) {
     if (error.code === 'ENOENT') return null;
-    if (!(error instanceof SyntaxError)) return { active: true, stat };
+    // A read failure does not establish a live owner. Let callers report its
+    // filesystem code instead of waiting on an installer we cannot identify.
+    if (!(error instanceof SyntaxError)) throw error;
     return { active: now() - stat.mtimeMs <= 1000, stat };
   }
   return { active: owner ? ownerAlive(owner.pid, owner.pidStartTime) ||

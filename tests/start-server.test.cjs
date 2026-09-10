@@ -440,6 +440,50 @@ test('self-referential setup lock reports the data-file error without recommendi
   });
 });
 
+test('directory at the setup-lock path fails immediately as EISDIR and remains untouched', () => {
+  withData((data) => {
+    const lockPath = join(data, LOCK_FILE);
+    mkdirSync(lockPath);
+    const canary = join(lockPath, 'preserve-me');
+    writeFileSync(canary, 'LOCK_DIRECTORY_SECRET');
+    const r = runWrapper('agent', { data });
+    assert.equal(r.status, 1);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /checking runtime dependencies \(EISDIR\)/);
+    assert.match(r.stderr, /\.runtime-setup\.lock/);
+    assert.doesNotMatch(r.stderr, /Waiting for|Timed out|An installer is still active|Reinstall|LOCK_DIRECTORY_SECRET/);
+    assert.equal(readFileSync(canary, 'utf8'), 'LOCK_DIRECTORY_SECRET');
+  });
+});
+
+test('unreadable setup lock reports EACCES without treating an unknown owner as active', () => {
+  withData((data) => {
+    const lockPath = join(data, LOCK_FILE);
+    const lockContents = JSON.stringify({ pid: process.pid });
+    writeFileSync(lockPath, lockContents);
+    const preload = join(data, 'lock-read-denied.cjs');
+    // Inject the read failure because chmod(000) is ineffective when tests
+    // run as root. The real shared lock reader still performs its stat/read.
+    writeFileSync(preload, `
+      const fs = require('node:fs');
+      const original = fs.readFileSync;
+      fs.readFileSync = (path, ...args) => {
+        if (path === ${JSON.stringify(lockPath)}) {
+          throw Object.assign(new Error('LOCK_READ_PASSWORD_SECRET'), { code: 'EACCES' });
+        }
+        return original(path, ...args);
+      };
+    `);
+    const r = runWrapper('agent', { data, extraEnv: { NODE_OPTIONS: `--require=${JSON.stringify(preload)}` } });
+    assert.equal(r.status, 1);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /checking runtime dependencies \(EACCES\)/);
+    assert.match(r.stderr, /\.runtime-setup\.lock/);
+    assert.doesNotMatch(r.stderr, /Waiting for|Timed out|An installer is still active|Reinstall|LOCK_READ_PASSWORD_SECRET|\n\s+at /);
+    assert.equal(readFileSync(lockPath, 'utf8'), lockContents);
+  });
+});
+
 test('missing plugin lock definition reports its runtime phase and filesystem code', () => {
   withData((data) => {
     rmSync(join(data, '.fixture-plugin', 'package-lock.json'));

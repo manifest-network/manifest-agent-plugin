@@ -127,5 +127,7 @@ identify the invalid metadata. Unsupported prerelease Node builds receive a
 distinct diagnostic. Tests exercise the actual timing defaults. Host evidence
 checks require substantive case results as well as historical/current source
 hashes; historical byte validation requires the recorded Git object locally.
-SIGKILL can leave an empty private MCP working directory for the OS temp cleaner;
-normal exits remove it.
+Abrupt launcher termination, including SIGKILL, SIGQUIT or SIGABRT, can skip
+exit cleanup and leave an empty private MCP working directory for the OS temp
+cleaner. Normal exits remove it; SIGTERM/SIGINT/SIGHUP are forwarded to the
+child, with cleanup when the child exits.

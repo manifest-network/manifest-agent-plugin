@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, utimesSync, symlinkSync } = require('node:fs');
+const { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, utimesSync, symlinkSync, lstatSync } = require('node:fs');
 const { join } = require('node:path');
 const { tmpdir } = require('node:os');
 const { spawnSync } = require('node:child_process');
@@ -166,6 +166,17 @@ test('partial lock creation is briefly active; stale empty or ownerless locks do
   writeFileSync(f.lockPath, '{}');
   assert.equal((await waitForRuntime(f.data, f.plugin)).ready, true);
   assert.equal(existsSync(f.lockPath), true);
+});
+
+test('a lock read failure preserves its filesystem error and never waits on an assumed owner', async (t) => {
+  const f = fixture(t); f.stamp();
+  mkdirSync(f.lockPath);
+  assert.throws(() => readSetupLock(f.data), { code: 'EISDIR' });
+  const timer = timing();
+  await assert.rejects(waitForRuntime(f.data, f.plugin, timer.options), { code: 'EISDIR' });
+  assert.equal(timer.elapsed(), 0);
+  assert.equal(timer.notifications(), 0);
+  assert.equal(lstatSync(f.lockPath).isDirectory(), true);
 });
 
 test('completion metadata failures report distinct actionable causes', (t) => {

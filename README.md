@@ -333,9 +333,11 @@ startup failures report their phase and a recognized error code when available,
 without printing config values. Switching between supported stable Node majors
 does not itself require reinstalling this JavaScript-only runtime.
 
-A forced SIGKILL can leave an empty private `manifest-mcp-cwd-*` directory in
-the system temp directory. Normal exits clean it up; the OS temp cleaner can
-remove leftovers.
+Abrupt launcher termination, including SIGKILL, SIGQUIT or SIGABRT, can skip
+exit cleanup and leave an empty private `manifest-mcp-cwd-*` directory in the
+system temp directory. Normal exits clean it up. The launcher forwards
+SIGTERM/SIGINT/SIGHUP to its child and cleans up when that child exits; the
+OS temp cleaner can remove leftovers from abrupt termination.
 
 ### "Out of gas" during a broadcast
 
