@@ -1,9 +1,10 @@
 ---
+name: troubleshoot-deployment
 description: >
   Diagnose a deployed Manifest lease that isn't behaving. Use when a
   /manifest-agent:deploy-app run shows the app unhealthy, when an
   existing lease stops responding, or when the user wants a
-  status-plus-logs snapshot for an arbitrary lease. Optional argument:
+  chain-state diagnostic report for an arbitrary lease. Optional argument:
   a lease UUID (omit to pick from active leases or saved post-deploy
   records). The orchestrated MCP tool produces a unified Markdown
   report; the skill optionally drives close_lease_orchestrated when
@@ -15,9 +16,10 @@ allowed-tools: Bash(*), Read
 
 You are producing a unified troubleshooting report for a deployed app on
 Manifest. The orchestrated tool `mcp__plugin_manifest-agent_manifest-agent__troubleshoot_deployment_orchestrated`
-(a read-only chain query — no broadcast, zero elicitations) bundles live
-chain state + provider diagnostics + recent logs into a single Markdown
-report. The skill resolves the lease UUID, invokes the tool, prints the
+(a read-only chain query — no broadcast, zero elicitations) returns live
+chain state, lease items, and chain-side guidance as a Markdown report.
+Provider diagnostics and logs are separate Fred reads. The skill
+resolves the lease UUID, invokes the tool, prints the
 report, and (when the user chooses) drives
 `mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated` for cleanup.
 
@@ -60,10 +62,12 @@ Branches in priority order:
 4. **Lookup by custom domain**: when the user picks this option, ask
    for the FQDN, then call:
    ```
-   mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain({ custom_domain: <fqdn> })
+   mcp__plugin_manifest-agent_manifest-agent__lookup_custom_domain_orchestrated({ fqdn: <fqdn> })
    ```
-   Use the returned `lease.uuid` as `LEASE_UUID`. If the lookup returns
-   no lease, surface that and fall back to options 3/5.
+   Read successful `structuredContent` or its JSON text fallback and
+   use `lease.leaseUuid` as `LEASE_UUID`. If `lease` is null, surface
+   that and fall back to options 3/5. An `isError: true` / `error: true`
+   response is a failed lookup, not evidence that no lease exists.
 5. **Last resort**: tell the user no leases found; ask them to paste a
    UUID. If they don't have one, stop.
 
@@ -78,22 +82,32 @@ mcp__plugin_manifest-agent_manifest-agent__troubleshoot_deployment_orchestrated(
 ```
 
 The tool runs a pure chain query — no broadcast, no elicitation — and
-returns `TroubleshootReport { markdown: string }`. **Print the
+returns `TroubleshootReport { markdown: string }` in `structuredContent`
+and a JSON text fallback. Check for MCP `isError: true` or JSON
+`error: true` before treating a response as success. **Print the
 `markdown` field verbatim** to the user. Do NOT paraphrase, splice in
 extra sections, or attempt to compose your own suggestion table —
-`agent-core` owns the report contents (status, diagnostics, logs, any
-suggestion prose).
+`agent-core` owns the chain report contents. It does not query provider
+health or logs. When the user's diagnostic request needs those, call
+`mcp__plugin_manifest-agent_manifest-fred__app_status`,
+`mcp__plugin_manifest-agent_manifest-fred__app_diagnostics`, or
+`mcp__plugin_manifest-agent_manifest-fred__get_logs` with the lease UUID
+as appropriate, and present their findings separately. For app status,
+provider fields are under `fredStatus`; unavailable provider data is
+reported by `providerError` / `connectionError`. A chain ACTIVE state
+alone does not establish application health.
 
-On thrown error, surface the MCP error envelope verbatim and stop. No
-cleanup branch fires.
+On a diagnostic error envelope or host exception, report the code and
+message. Do not start cleanup in response to a failed diagnostic.
 
 ## Step 3 — Offer cleanup
 
 After printing the report, ask the user via `AskUserQuestion` whether to
 close the lease:
 
-> Close the lease `<LEASE_UUID>` to free its credits and end the
-> reservation? Closing is permanent — the lease cannot be reopened.
+> End lease `<LEASE_UUID>` and its reservation? An active lease will be
+> closed, a pending lease will be cancelled, and a terminal lease needs
+> no further stop transaction. The original lease cannot be reopened.
 
 Options: **Close** / **Keep**. On **Keep**, stop without writing a
 journal record (the troubleshoot flow remains read-only when no
@@ -107,17 +121,27 @@ mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated({ lease_uuid
 
 Claude Code evaluates the PreToolUse hook on the outer close invocation
 before execution. Once allowed, the server requests native action
-confirmation through MCP elicitation, broadcasts, and verifies the
-terminal chain state. The pinned close recap does not guarantee a
+confirmation through MCP elicitation, performs the applicable stop
+operation, and verifies the terminal chain state. The close recap does not guarantee a
 numeric fee estimate. Claude Code renders the elicitation request
 and returns the user's answer; do not reprint its message, forward the
 answer yourself, or add another prose confirmation. The earlier Close /
 Keep choice selects the cleanup action. Internal SDK operations do not
 trigger additional host PreToolUse events.
 
-On non-throw return, capture `CLOSE_RESULT` (`{ leaseUuid, finalState }`).
-Surface to the user: "Lease `<leaseUuid>` closed; final state
-`<finalState>`." On throw, surface the MCP error envelope verbatim.
+Check for an error envelope before capturing successful `CLOSE_RESULT`
+(`{ leaseUuid, finalState }`). Report the exact terminal state;
+`LEASE_STATE_REJECTED` or `LEASE_STATE_EXPIRED` must not be relabelled
+as `LEASE_STATE_CLOSED`. The original lease stays terminal even if
+the provider retains volumes that a separate `restore_app` operation
+can adopt into a new paid lease.
+
+On error, report the code/message. `OPERATION_CANCELLED` identifies
+cancellation; `INVALID_CONFIG` identifies bad input/configuration.
+A verification or transport error may follow a completed stop operation.
+Preserve the lease UUID, report the unconfirmed outcome, and inspect
+the existing lease before proposing another write. Do not automatically
+retry cleanup, restore retained volumes, or deploy a replacement.
 
 ## Step 4 — Record this run in the journal (cleanup-fire branch only)
 
@@ -136,11 +160,14 @@ single-field `{ leaseUuid }` reducer covers both). Internal close and
 verification operations live in agent-core and are not enumerated as
 host tool calls.
 
-Set `outcome` to `"success"` when both calls returned non-throw. Set
-`"failed"` if `close_lease_orchestrated` threw (the diagnostic
-succeeded but cleanup didn't). Set `"cancelled"` when the user
-declined inside `close_lease_orchestrated`'s elicitation (the wrapper
-throws `INVALID_CONFIG` with a cancellation-shaped message). Read-
+Set `outcome` to `"success"` when both calls returned successful
+results. Set `"failed"` for a cleanup error and `"cancelled"` for
+`OPERATION_CANCELLED` or host permission denial. A failed verification
+does not prove that cleanup was not applied; retain `LEASE_UUID` and
+the known terminal state only when reported. Add the error code and
+concise safe message to `errors`, without the envelope's `input`.
+If host permission was denied, omit the unexecuted close call from
+`tool_calls`. Read-
 only invocations (the user picked **Keep** in Step 3) do NOT write a
 journal record — matches today's posture.
 

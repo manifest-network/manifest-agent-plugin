@@ -19,8 +19,9 @@ const FIXTURE = join(ROOT, 'tests', 'fixtures', 'claude-host-mcp.cjs');
 const PREFIX = 'mcp__plugin_manifest-agent_';
 const DIRECT = `${PREFIX}manifest-chain__cosmos_tx`;
 const OUTER = `${PREFIX}manifest-agent__deploy_app_orchestrated`;
-const LOOKUP = `${PREFIX}manifest-agent__manage_domain_orchestrated`;
-const EXPECTED_TOOLS = [DIRECT, OUTER, LOOKUP].sort();
+const MANAGE = `${PREFIX}manifest-agent__manage_domain_orchestrated`;
+const LOOKUP = `${PREFIX}manifest-agent__lookup_custom_domain_orchestrated`;
+const EXPECTED_TOOLS = [DIRECT, OUTER, MANAGE, LOOKUP].sort();
 const EXPECTED_API_CALLS = 2;
 const CASES = [
   { name: 'bare-name-misses', matcher: '^mcp__manifest-chain__cosmos_tx$', tool: DIRECT, mutations: 1, hooks: 0 },
@@ -33,7 +34,7 @@ const CASES = [
   { name: 'project-direct-ask-bypass', project: true, mode: 'bypassPermissions', tool: DIRECT, mutations: 0, hooks: 1, decision: 'ask' },
   { name: 'scoped-deny-bypass', mode: 'bypassPermissions', matcher: `^${DIRECT}$`, tool: DIRECT, mutations: 0, hooks: 1, decision: 'deny' },
   { name: 'project-outer-ask', project: true, tool: OUTER, mutations: 0, hooks: 1, decision: 'ask' },
-  { name: 'project-lookup', project: true, tool: LOOKUP, input: { action: 'lookup' }, mutations: 0, hooks: 1, decision: null, reads: 1 },
+  { name: 'project-lookup', project: true, tool: LOOKUP, input: { fqdn: 'fixture.example.com' }, mutations: 0, hooks: 0, reads: 1 },
   { name: 'elicitation-decline', project: true, tool: OUTER, response: 'decline', mutations: 0, hooks: 1, decision: 'ask' },
   { name: 'elicitation-cancel', project: true, tool: OUTER, response: 'cancel', mutations: 0, hooks: 1, decision: 'ask' },
   { name: 'elicitation-accept', project: true, tool: OUTER, response: 'accept', mutations: 1, hooks: 1, decision: 'ask' },

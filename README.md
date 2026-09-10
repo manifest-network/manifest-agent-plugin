@@ -26,7 +26,7 @@ It handles keypair generation and import, chain configuration (testnet/mainnet),
 ## Prerequisites
 
 - [Claude Code](https://claude.ai/code) CLI, desktop app, or IDE extension
-- Node.js >= 18
+- Stable Node.js >= 22.19.0 (Node 24 is also tested)
 
 ## Installation
 
@@ -177,7 +177,7 @@ Attach an FQDN to a lease item so users reach the app via your own hostname inst
 /manifest-agent:manage-domain    # interactive: set / clear / lookup
 ```
 
-`manage-domain` (set/clear path) routes through the orchestrated tool, which runs a warn-only DNS pre-check before broadcasting — it queries A/AAAA/CNAME records for the FQDN with a 5-second timeout and surfaces the result, but does not block the broadcast. The chain is the authoritative arbiter of FQDN format and reservation; DNS resolution affects only browser routing, not the chain claim. The lookup path calls `lease_by_custom_domain` directly (read-only, ungated by the permission prompt).
+`manage-domain` (set/clear path) routes through the orchestrated tool, which runs a warn-only DNS pre-check before broadcasting — it queries A/AAAA/CNAME records for the FQDN with a 5-second timeout and surfaces the result, but does not block the broadcast. The chain is the authoritative arbiter of FQDN format and reservation; DNS resolution affects only browser routing, not the chain claim. The lookup path calls `lookup_custom_domain_orchestrated` (read-only, with normal host permissions).
 
 When `customDomain` is set, the orchestrated tool performs `create-lease` followed by `set-item-custom-domain` as separate transactions. They are sequential and can partially succeed: lease creation is not rolled back if domain assignment fails. The native plan prompt itemizes both estimated fees and their total before execution of these transactions. Host permission applies to the outer orchestrated call.
 
@@ -257,9 +257,16 @@ The wrappers persist after a lease expires or is closed — they're a historical
 
 ### Updating the plugin
 
-Marketplace installs auto-update when Claude Code refreshes the marketplace (typically on session start). Your `$MANIFEST_PLUGIN_DATA` directory survives plugin updates, so config, keys, and saved deployments are preserved. The SessionStart hook diff-checks `package.json` between the new plugin root and your data dir and runs `npm install --omit=dev` automatically when they differ.
+Marketplace installs auto-update when Claude Code refreshes the marketplace (typically on session start). Your `$MANIFEST_PLUGIN_DATA` directory survives plugin updates, so config, keys, and saved deployments are preserved. The SessionStart hook checks the tracked package and lockfile plus installed dependency files. It runs the shared setup command when dependencies changed, are missing, or were left incomplete. Setup installs with `npm ci --omit=dev --ignore-scripts` into the data directory, leaving the plugin root untouched.
 
-For development installs (`claude --plugin-dir`), pull the latest commits in your clone and restart Claude Code.
+For development installs (`claude --plugin-dir`), pull the latest commits in your clone and restart Claude Code. MCP launchers wait for concurrent SessionStart setup, including a short grace period before its lock exists. If an unusually slow install exceeds startup's 25-second wait or the host timeout, let setup finish and reconnect the MCP servers.
+
+The MCP launcher uses your selected config as the source of chain, gas-price/multiplier and
+wallet settings. `COSMOS_MAX_GAS` remains an explicit operator gas-ceiling
+override; the upstream package validates it. Inherited endpoint/wallet variables and a workspace `.env`
+cannot silently override it. An explicitly empty password is passed through;
+MCP 0.22.0 still rejects empty-password encrypted keyfiles, so preserve the
+original password if your wallet is encrypted.
 
 ### Uninstalling
 
@@ -277,7 +284,7 @@ For development installs (`claude --plugin-dir`), pull the latest commits in you
 | `/manifest-agent:deploy-app <path>` | Deploy a containerized app end-to-end via `mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated`. Required argument: path to a JSON spec file produced by `/manifest-agent:author-manifest`. The orchestrated tool requires a complete `DeploySpec` (`validateSpec()` runs first), so non-file input directs at author-manifest. Plan / confirm / partial-success recovery via MCP elicitation; manifest persistence via `MANIFEST_AGENT_DATA_DIR` |
 | `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `$MANIFEST_PLUGIN_DATA/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app`. Optionally collects a custom domain (FQDN + service for stacks) |
 | `/manifest-agent:manage-domain` | Set, clear, or look up the custom domain (FQDN) on an existing lease item. Set/clear request host permission before the orchestrated call, then request native action confirmation and verify on-chain state; lookup is read-only |
-| `/manifest-agent:troubleshoot-deployment` | Bundle status, diagnostics, and recent logs for a deployed lease into a unified report. Lease picker includes a "lookup by custom domain" option |
+| `/manifest-agent:troubleshoot-deployment` | Show a chain-state report and optionally query provider status, diagnostics, and logs separately. Lease picker includes a "lookup by custom domain" option |
 | `/manifest-agent:restart-app [<lease-uuid>]` | Restart a running app via its provider without closing the lease. Optional argument: a lease UUID. Refuses on terminal leases; goes through textual confirm + permission prompt; verifies post-restart provision status |
 | `/manifest-agent:list-releases [<lease-uuid>]` | Read-only — show the on-provider release/version history for a deployed lease as a Markdown table sorted newest first. Rolling back a release is out of scope |
 | `/manifest-agent:balance [<bech32-tenant>]` | Read-only — show wallet balances, credit balance, burn rate, and runway hours. Defaults to the agent's own address; pass a bech32 to query another tenant |
@@ -302,9 +309,35 @@ The servers start automatically when Claude Code launches but **will fail until 
 
 ### MCP servers show "failed"
 
-**Before init-agent**: Expected. The servers need `$MANIFEST_PLUGIN_DATA/config.json` (which holds the chain choice + key password — created by init-agent, never created automatically). Run `/manifest-agent:init-agent` first, then restart. Dependencies (`node_modules/`) are installed automatically by the SessionStart hook on first run; if init-agent reports the binary is still missing, check `$MANIFEST_PLUGIN_DATA/.last-install.log` for an npm install failure.
+**Before init-agent**: Expected. The servers need `$MANIFEST_PLUGIN_DATA/config.json` (which holds the chain choice + key password — created by init-agent, never created automatically). Run `/manifest-agent:init-agent` first, then restart. Dependencies are installed automatically by SessionStart; onboarding also runs the same setup command before using them. To repair a failed or incomplete install, run:
 
-**After init-agent**: Check your Node.js version. The MCP servers require **Node.js 18+**. If your system default `node` is older, the wrapper exits with a `Node 18+ required (found vX.X.X)` error visible in the MCP server logs. Verify with `node --version` and update if needed. If you use nvm, run `nvm alias default 22` to set the default.
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs"
+```
+
+For an npm install failure, inspect `$MANIFEST_PLUGIN_DATA/.last-install.log` when the diagnostic points to it. Handled failures retain logs only when they contain output. If npm itself is missing, install it alongside Node as the diagnostic instructs. Repair preserves your config, keys, drafts, journal, and saved deployments; you do not need to generate a new wallet.
+
+**After init-agent**: Check your Node.js version. The MCP servers require **Node.js 22.19.0+**. If your system default `node` is older, the wrapper exits with a `Node 22.19.0+ required (found X.X.X)` error visible in the MCP server logs. Verify with `node --version` and update if needed. If you use nvm, run `nvm install 24` and `nvm alias default 24` to set the default.
+
+Setup contention prints the path to `$MANIFEST_PLUGIN_DATA/.runtime-setup.lock`
+and waits up to 60 seconds. Setup reclaims locks whose parent and worker have
+exited; launchers ignore those locks without removing them. On Linux, recorded
+process start times also distinguish reused PIDs. Older locks or platforms without process
+identity stay conservative: do not remove a lock while an installer is running.
+After verifying that neither its parent nor worker is an installer, a stale lock
+can be removed before retrying setup. Setup also bounds retries for malformed
+lock paths. Lock-read errors report their startup phase and filesystem code;
+inspect the lock in the data directory. Runtime errors identify dependency failures
+and invalid completion schema, fingerprint, platform or file inventory. Unexpected
+startup failures report their phase and a recognized error code when available,
+without printing config values. Switching between supported stable Node majors
+does not itself require reinstalling this JavaScript-only runtime.
+
+Abrupt launcher termination, including SIGKILL, SIGQUIT or SIGABRT, can skip
+exit cleanup and leave an empty private `manifest-mcp-cwd-*` directory in the
+system temp directory. Normal exits clean it up. The launcher forwards
+SIGTERM/SIGINT/SIGHUP to its child and cleans up when that child exits; the
+OS temp cleaner can remove leftovers from abrupt termination.
 
 ### "Out of gas" during a broadcast
 
@@ -380,7 +413,7 @@ For the full architectural picture (data flow, scripts inventory, hook contracts
 - Mnemonics are imported from a user-created file via pipe — they never enter Claude's conversation context
 - The key password flows between scripts via pipe and never enters the conversation
 - The plugin root is never written to
-- **Mutating MCP entry points request host permission.** The PreToolUse hook covers direct writes and the outer deploy, domain-management, and close orchestrators. `manage_domain_orchestrated` with `action: "lookup"` is read-only and exempt. Orchestrators request plan/action confirmation through native elicitation after host permission; direct writes use the runtime policy's fee/action recap. The pinned deployment plan includes estimated fees; domain/close recaps do not guarantee numeric estimates. The hook cannot verify prose or intercept the server's internal SDK calls.
+- **Mutating MCP entry points request host permission.** The PreToolUse hook covers direct writes and the outer deploy, domain-management, and close orchestrators. `lookup_custom_domain_orchestrated` is the dedicated read-only lookup; the domain mutation tool accepts only set/clear. Orchestrators request plan/action confirmation through native elicitation after host permission; direct writes use the runtime policy's fee/action recap. The pinned deployment plan includes estimated fees; domain/close recaps do not guarantee numeric estimates. The hook cannot verify prose or intercept the server's internal SDK calls.
 
 ### Known trade-offs
 

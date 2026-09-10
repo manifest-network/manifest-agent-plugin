@@ -23,12 +23,6 @@ function decidePermission(event) {
   }
   if (!matchers.some((matcher) => matcher.test(event.tool_name))) return 'defer';
 
-  // In the pinned 0.10.0 server this one tool also has a read-only lookup
-  // branch. Omit a decision; never return "allow" and override host policy.
-  // Invalid/missing actions remain gated and are validated by the server.
-  if (event.tool_name === `${AGENT_PREFIX}manage_domain_orchestrated`
-      && event.tool_input?.action === 'lookup') return 'defer';
-
   return event.tool_name.startsWith(AGENT_PREFIX) ? 'ask-orchestrated' : 'ask-direct';
 }
 

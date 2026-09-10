@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, rmSync, readFileSync, existsSync, symlinkSync, mkdirSync, cpSync } = require('node:fs');
+const { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, symlinkSync, mkdirSync, cpSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -36,7 +36,7 @@ function buildShimWithoutJq() {
 
 // Run session-start.sh with a controlled environment. Sets CLAUDE_PLUGIN_ROOT
 // and CLAUDE_PLUGIN_DATA to a fresh tmpdir without a package.json so the
-// npm-install branch is skipped (the diff-check needs both files to exist).
+// runtime setup branch is skipped. Bootstrap integration is tested below.
 // CLAUDE_ENV_FILE points at a fresh file we read after the run.
 function runHook({ stdin = '', pathOverride } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'session-start-root-'));
@@ -230,4 +230,59 @@ test('skips stdin read entirely when CLAUDE_ENV_FILE is not set', () => {
   } finally {
     rmSync(data, { recursive: true, force: true });
   }
+});
+
+function bootstrapFixture(t, setupSource) {
+  const dir = mkdtempSync(join(tmpdir(), 'manifest session bootstrap '));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const root = join(dir, 'plugin root');
+  const data = join(dir, 'new runtime data');
+  mkdirSync(join(root, 'scripts'), { recursive: true });
+  cpSync(SCRIPT, join(root, 'scripts/session-start.sh'));
+  writeFileSync(join(root, 'package.json'), '{}');
+  writeFileSync(join(root, 'scripts/setup-runtime.cjs'), setupSource);
+  const env = { PATH: process.env.PATH, CLAUDE_PLUGIN_ROOT: root, CLAUDE_PLUGIN_DATA: data, CLAUDE_ENV_FILE: join(dir, 'session env') };
+  const run = (extra = {}) => spawnSync('/bin/bash', ['-c', hooks.hooks.SessionStart[0].hooks[0].command], {
+    env: { ...env, ...extra }, input: '{"session_id":"bootstrap-session"}', encoding: 'utf8', timeout: 5000,
+  });
+  return { root, data, env, run };
+}
+
+test('SessionStart delegates fresh runtime setup to the shared command with the persistent data path', (t) => {
+  const f = bootstrapFixture(t, `
+    const fs = require('node:fs');
+    const path = require('node:path');
+    fs.mkdirSync(process.env.MANIFEST_PLUGIN_DATA, { recursive: true });
+    fs.writeFileSync(path.join(process.env.MANIFEST_PLUGIN_DATA, 'called.json'), JSON.stringify({
+      argv: process.argv.slice(2), data: process.env.MANIFEST_PLUGIN_DATA,
+    }));
+    console.error('SETUP_DIAGNOSTIC_SENTINEL');
+  `);
+  const result = f.run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(f.data, 'called.json'), 'utf8')), { argv: [], data: f.data });
+  assert.match(result.stdout, /manifest-agent runtime transaction policy/);
+  assert.doesNotMatch(result.stdout, /SETUP_DIAGNOSTIC_SENTINEL/);
+  assert.match(result.stderr, /SETUP_DIAGNOSTIC_SENTINEL/);
+  assert.equal(existsSync(join(f.root, 'node_modules')), false);
+});
+
+test('SessionStart propagates runtime setup failures after emitting policy and exports', (t) => {
+  const f = bootstrapFixture(t, 'console.error("runtime repair failed"); process.exit(17);');
+  const result = f.run();
+  assert.equal(result.status, 17, result.stderr);
+  assert.match(result.stderr, /runtime repair failed/);
+  assert.match(result.stdout, /manifest-agent runtime transaction policy/);
+  assert.match(readFileSync(f.env.CLAUDE_ENV_FILE, 'utf8'), /export MANIFEST_PLUGIN_DATA=/);
+});
+
+test('SessionStart reports missing Node before running dependency setup', (t) => {
+  const f = bootstrapFixture(t, 'throw new Error("must not execute");');
+  withShimWithoutJq((shim) => {
+    const result = f.run({ PATH: shim });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Node 22\.19\.0\+ is required/);
+    assert.doesNotMatch(result.stderr, /must not execute/);
+    assert.equal(existsSync(f.data), false);
+  });
 });

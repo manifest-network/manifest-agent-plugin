@@ -5,9 +5,8 @@ This document covers running and adding tests for the manifest-agent plugin. For
 ## Running tests
 
 The test suite uses `node:test` and `node:assert` — no framework dependency.
-CI uses Node 24 because the pinned MCP package needs Node 22.19 or newer
-for the installed-inventory check. This CI choice does not change the
-plugin's declared runtime support or dependency pin.
+Runtime support starts at Node 22.19.0. CI tests that exact floor and Node 24
+with the tracked MCP 0.22.0 dependency lock.
 
 ```bash
 # Inside Claude Code, with deps already installed in $MANIFEST_PLUGIN_DATA:
@@ -15,20 +14,49 @@ npm test
 
 # Outside Claude Code, where SessionStart hasn't run, install deps to a
 # scratch dir and point NODE_PATH at it:
-INSTALL_DIR="$HOME/.manifest-agent-dev"   # any writable path; CI uses $HOME/.manifest-agent
-mkdir -p "$INSTALL_DIR"
-cp package.json "$INSTALL_DIR/"
-npm install --omit=dev --prefix "$INSTALL_DIR"
+INSTALL_DIR="$HOME/.manifest-agent-dev"   # outside the plugin checkout; CI uses $HOME/.manifest-agent
+MANIFEST_PLUGIN_DATA="$INSTALL_DIR" node scripts/setup-runtime.cjs
 NODE_PATH="$INSTALL_DIR/node_modules" node --test tests/*.test.cjs
 ```
 
-CI does the same dance with `INSTALL_DIR=$HOME/.manifest-agent` (`.github/workflows/ci.yml`). The path differs but the mechanism is identical.
+CI uses the same setup command with `INSTALL_DIR=$HOME/.manifest-agent` (`.github/workflows/ci.yml`). The path differs but the mechanism is identical.
 
 To run a single test file:
 
 ```bash
 NODE_PATH="$INSTALL_DIR/node_modules" node --test tests/summarize-manifest.test.cjs
 ```
+
+The installed inventory check and real launcher transport check send only
+`initialize` / `tools/list`, using a public fixture wallet and a network-denial
+guard. They do not broadcast or contact providers:
+
+```bash
+node ci/mcp-tool-policy.cjs --data-dir "$INSTALL_DIR"
+node ci/launcher-transport.cjs --data-dir "$INSTALL_DIR"
+```
+
+The launcher check exercises all five configured servers and verifies strict
+JSON-RPC stdout through `start-server.cjs`, including dotenv isolation.
+Setup tests cover a fresh install, manifest/lock upgrades, interrupted installs,
+missing/truncated dependency files, concurrent setup and stale process locks,
+with configuration and saved records preserved. Launcher tests cover chain
+switches, omitted optional fields, inherited wallet values and empty passwords.
+Startup regressions cover delayed lock creation, missing binaries, all five
+concurrent launchers, preserved queued input, bounded failure and SIGTERM.
+Lock tests distinguish dead or reused PIDs from live parent/worker processes,
+including a ready runtime with a stale lock. Injected-clock tests exercise the
+unmodified two-second grace, 25-second launcher bound and 60-second setup bound.
+Failure tests verify empty-log cleanup, useful-log retention, distinct completion
+diagnostics, native-addon rejection and secret-safe startup errors across phases.
+Dangling lock symlinks and repeated lock races must yield to the event loop and
+respect setup's deadline. Successful stale-lock recovery stays quiet, and an
+expired waiter preserves a stale lock it has not reclaimed. Read-level lock
+failures such as EISDIR/EACCES must report their phase and filesystem code
+immediately, without claiming that an installer is active.
+The SessionStart hook's 90-second timeout retains 30 seconds beyond the default
+60-second contention bound. Native-addon checks allow `.node` directory names
+and symlinks while rejecting actual `.node` files.
 
 ## Test file layout
 
@@ -108,9 +136,7 @@ exercising the commands by hand.
 <!-- docs-ci network -->
 ```bash
 export MANIFEST_PLUGIN_DATA="${MANIFEST_PLUGIN_DATA:-$HOME/.manifest-agent-dev}"
-mkdir -p "$MANIFEST_PLUGIN_DATA"
-cp package.json "$MANIFEST_PLUGIN_DATA/"
-npm install --omit=dev --prefix "$MANIFEST_PLUGIN_DATA"
+node scripts/setup-runtime.cjs
 export NODE_PATH="${NODE_PATH:-$MANIFEST_PLUGIN_DATA/node_modules}"
 ```
 
@@ -243,7 +269,7 @@ itself executed.)
 - `<!-- docs-ci -->` — marker; run the next fence.
 - `network` — skip unless `DOCS_CI_RUN_NETWORK=1`. Inventoried-but-skipped:
   the block still shows as `SKIP` in the output, documenting intent rather
-  than silently omitting it. Used for the `npm install` setup and the
+  than silently omitting it. Used for the locked runtime setup and the
   chain-registry fetch.
 - `expect="<substr>"` — repeatable; stdout MUST contain it.
 - `expect-not="<substr>"` — repeatable; stdout MUST NOT contain it.
@@ -368,6 +394,20 @@ this stream-control harness does not itself exercise the terminal UI.
 8. MCP binary presence: `manifest-mcp-{chain,lease,fred,cosmwasm,agent}` are installed and executable.
 9. `NODE_PATH` resolution: `@cosmjs/proto-signing` is reachable from the install dir.
 10. Unit tests: `node --test tests/*.test.cjs`. Post-ENG-130 the suite covers wrapper plumbing (`tests/start-server.test.cjs` — env-var contract for all five servers including `agent`), the journal layer (`tests/_journal.test.cjs` + `tests/journal-{read,write}.test.cjs` — including the four new orchestrated-tool reducers), the read-only renderers, the env merge, the saved-manifest summarizer, and the two drift-check harnesses (`tests/docs-ci.test.cjs`, `tests/policy-completeness.test.cjs` — the demonstrated-drift proofs). Orchestration logic itself (plan rendering, classification, recovery dispatch) is tested upstream in `manifest-mcp-mono`.
-11. Executable docs (`npm run test:docs` → `ci/docs-ci.cjs docs/testing.md`): runs the `docs-ci`-tagged shell examples and asserts their `expect`/`expect-not` directives hold. Runs after the runtime-deps install so `NODE_PATH` resolves. See "Doc/code drift checks" above.
+11. Real launcher transport: `ci/launcher-transport.cjs --data-dir "$INSTALL_DIR"` initializes all five published servers through the shipped launcher with an encrypted public fixture wallet and outbound networking blocked.
+12. Executable docs (`npm run test:docs` → `ci/docs-ci.cjs docs/testing.md`): runs the `docs-ci`-tagged shell examples and asserts their `expect`/`expect-not` directives hold. Runs after the runtime-deps install so `NODE_PATH` resolves. See "Doc/code drift checks" above.
 
 When the published MCP surface changes, review the installed-inventory check, hook matcher, runtime policy, and `CLAUDE.md` gated-tool list together. Policy parity, package discovery, local hook tests, and actual Claude-host behavior establish different things; see [`approval-validation.md`](approval-validation.md).
+
+### Host evidence provenance
+
+Run `node ci/evidence-check.cjs` to verify that current host evidence hashes
+match the hook and fixture sources. Re-run the isolated host checks when those
+sources change; replacing hashes alone is not validation. Historical evidence
+is explicitly tied to its original commit. A shallow clone may lack that
+commit; the check then reports metadata-only verification for that historical
+record. Use `--require-history` when its original commit is available to require
+verification of the historical bytes too.
+
+`tests/evidence-check.test.cjs` exercises source drift, missing/malformed
+metadata, historical commit mismatches, and unavailable-history behavior.

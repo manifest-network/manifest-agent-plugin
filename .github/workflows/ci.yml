@@ -9,12 +9,15 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['22.19.0', '24']
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: ${{ matrix.node }}
 
       - name: Syntax-check CJS scripts
         run: |
@@ -61,6 +64,9 @@ jobs:
           fi
           echo "Both manifests at version $PKG"
 
+      - name: Verify recorded host evidence provenance
+        run: node ci/evidence-check.cjs
+
       - name: Verify PreToolUse policy completeness (matcher tools named in policy + CLAUDE.md parity)
         # Checks the dependency-free matcher / runtime policy / docs contract.
         # Installed server coverage is verified with tools/list below.
@@ -79,11 +85,8 @@ jobs:
           fi
           echo "session-start.sh policy emitted ($(wc -c <<<"$out") bytes)"
 
-      - name: Install runtime deps into ~/.manifest-agent (mirrors plugin layout)
-        run: |
-          mkdir -p "$HOME/.manifest-agent"
-          cp package.json "$HOME/.manifest-agent/"
-          npm install --omit=dev --prefix "$HOME/.manifest-agent"
+      - name: Install the locked runtime using the plugin setup command
+        run: MANIFEST_PLUGIN_DATA="$HOME/.manifest-agent" node scripts/setup-runtime.cjs
 
       - name: Verify MCP binaries and NODE_PATH resolution
         run: |
@@ -99,6 +102,9 @@ jobs:
       - name: Verify permission coverage against installed MCP tools
         # Starts the pinned servers offline and sends initialize/tools/list only.
         run: node ci/mcp-tool-policy.cjs --data-dir "$HOME/.manifest-agent"
+
+      - name: Verify published servers through the real launcher
+        run: node ci/launcher-transport.cjs --data-dir "$HOME/.manifest-agent"
 
       - name: Run unit tests
         # Tests use `node:test` + `node:assert` (no test framework dep). The

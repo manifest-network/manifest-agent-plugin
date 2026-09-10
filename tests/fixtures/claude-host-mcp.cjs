@@ -41,11 +41,14 @@ if (process.argv[2] === 'hook') {
   if (output) process.stdout.write(output);
 } else if (process.argv[2] === 'server') {
   const server = process.argv[3];
-  const names = server === 'chain' ? ['cosmos_tx'] : ['deploy_app_orchestrated', 'manage_domain_orchestrated'];
+  const names = server === 'chain' ? ['cosmos_tx']
+    : ['deploy_app_orchestrated', 'manage_domain_orchestrated', 'lookup_custom_domain_orchestrated'];
   const pending = new Map();
   const send = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
   const result = (id, value) => send({ id, result: value });
   const done = (id, text) => result(id, { content: [{ type: 'text', text }] });
+  const invalid = (id) => result(id, { isError: true,
+    content: [{ type: 'text', text: 'Invalid harmless fixture arguments.' }] });
   function mutate(id, tool) {
     record({ kind: server === 'chain' ? 'direct_mutation_marker' : 'internal_mutation_marker', server, tool });
     done(id, 'Harmless fixture marker written. No real transaction.');
@@ -70,16 +73,23 @@ if (process.argv[2] === 'hook') {
     } else if (message.method === 'tools/list') {
       result(message.id, { tools: names.map((name) => ({ name,
         description: 'Harmless test fixture. Only records markers; never contacts a chain.',
-        inputSchema: name === 'manage_domain_orchestrated'
-          ? { type: 'object', properties: { action: { type: 'string', enum: ['lookup', 'set', 'clear'] } }, required: ['action'], additionalProperties: false }
-          : { type: 'object', properties: {}, additionalProperties: false },
+        inputSchema: name === 'lookup_custom_domain_orchestrated'
+          ? { type: 'object', properties: { fqdn: { type: 'string' } }, required: ['fqdn'], additionalProperties: false }
+          : name === 'manage_domain_orchestrated'
+            ? { type: 'object', properties: { action: { type: 'string', enum: ['set', 'clear'] } }, required: ['action'], additionalProperties: false }
+            : { type: 'object', properties: {}, additionalProperties: false },
       })) });
     } else if (message.method === 'tools/call') {
       const tool = message.params.name;
       if (!names.includes(tool)) throw new Error('Unexpected fixture tool');
-      if (tool === 'manage_domain_orchestrated' && message.params.arguments?.action === 'lookup') {
+      const args = message.params.arguments || {};
+      if (tool === 'manage_domain_orchestrated' && !['set', 'clear'].includes(args.action)) {
+        invalid(message.id);
+      } else if (tool === 'lookup_custom_domain_orchestrated') {
+        if (typeof args.fqdn !== 'string' || !args.fqdn.trim()) return invalid(message.id);
         record({ kind: 'read_only_marker', server, tool });
-        done(message.id, 'Harmless lookup complete. No mutation.');
+        const value = { action: 'lookup', fqdn: args.fqdn.trim(), lease: null };
+        result(message.id, { structuredContent: value, content: [{ type: 'text', text: JSON.stringify(value) }] });
       } else if (process.env.MANIFEST_HOST_FIXTURE_ELICIT === '1') {
         const id = 'fixture-elicitation';
         pending.set(id, { id: message.id, tool });

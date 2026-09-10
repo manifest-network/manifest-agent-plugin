@@ -1,4 +1,5 @@
 ---
+name: author-manifest
 description: >
   Build and validate a Fred container deployment spec interactively
   (single-service or multi-service stack), saving a JSON spec file the
@@ -14,11 +15,16 @@ You are interactively building a Fred container deployment spec. The output is
 a validated JSON file the user can hand to `/manifest-agent:deploy-app` or
 inspect / edit / version-control as a normal file.
 
-The spec uses the same shape `mcp__plugin_manifest-agent_manifest-fred__deploy_app` and
-`mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview` accept:
+The saved file is an orchestrated deployment spec: required `size`, exactly
+one of `image` or `services`, and optional deployment metadata such as
+`storage`, `customDomain`, and `serviceName`. This skill always emits
+`{ size, services: { <name>: { image, ports?, env?, ... } }, storage? }`.
 
-- **Single-service**: `{ image, port, env?, labels?, command?, args?, health_check?, storage?, tmpfs?, init? }`
-- **Multi-service**: `{ services: { <name>: { image, ports, env?, ... }, ... }, storage?, depends_on? }`
+`build_manifest_preview` accepts only manifest fields. For this skill's
+services-map shape, call it with `{ services: SPEC.services }`. Keep `size`,
+`storage`, domain fields and SKU/provider selectors in the saved spec; they
+are not preview arguments. Direct Fred deployment uses a different input
+contract and is not the deployment route for this skill.
 
 **For all user choices, use the `AskUserQuestion` tool.**
 
@@ -57,8 +63,17 @@ Store the choice as `SHAPE` (`single` or `stack`).
 ## Step 2 — Choose SKU size
 
 Call `mcp__plugin_manifest-agent_manifest-fred__browse_catalog`. From the response, build an
-`AskUserQuestion` showing each available SKU's name, price (amount + denom),
-and provider name. The user picks one. Store as `SIZE`.
+`AskUserQuestion` showing each active SKU's `name`, `price` (a string, or
+"unavailable" when null), `unit`, and `provider_uuid` / `provider_url`.
+Do not assume a nested amount/denom price or provider display-name field.
+Store the selected SKU's `name` as `SIZE` and persist `size: SIZE` in the spec.
+
+The name-based picker remains subject to ENG-260: names are not globally
+unique. If multiple active catalog entries share the chosen name, do not
+silently select a provider or deploy ambiguously. Explain the ambiguity and
+stop this authoring flow; an explicitly prepared spec can use the supported
+`skuUuid` and `providerUuid` selectors with its required `size` through
+`/manifest-agent:deploy-app`.
 
 ## Step 3 — Image reference (single-service only)
 
@@ -73,15 +88,15 @@ Store as `IMAGE`. State up-front:
 > `/manifest-agent:deploy-app` runs.
 
 Do NOT attempt to inspect the image client-side. `build_manifest_preview`
-(Step 7) is the validator, and the orchestrated deploy flow re-validates
+(Step 6) is the validator, and the orchestrated deploy flow re-validates
 the image against the provider at broadcast time.
 
-If `SHAPE == stack`: defer image collection to Step 5b.
+If `SHAPE == stack`: defer image collection to Step 4b.
 
 ## Step 4 — Author the spec
 
 Use the `AskUserQuestion` tool throughout. Build a JavaScript object literal
-in your working memory; you'll feed it to `build_manifest_preview` in Step 5.
+in your working memory; preview only its `services` field in Step 6.
 
 ### 4a — Single-service (`SHAPE == single`)
 
@@ -91,21 +106,21 @@ which the simpler `{ image, port }` form doesn't expose. Default service
 name: `"app"` (the user can override).
 
 **Ports** — ask the user for each port-protocol pair (e.g. `"80/tcp"`).
-Multiple ports OK; collect via `AskUserQuestion` looping or as a single
-comma-separated input.
+Multiple ports are allowed, and the map may be omitted for a service with
+no listening ports. Collect via `AskUserQuestion` looping or a single
+comma-separated input. At most one TCP port per service may have
+`ingress: true`; UDP ingress is invalid. Omit `host_port` (only zero or
+omitted is supported).
 
-**Ingress per port** — for each chosen port:
-- If it's the only port AND its number is one of `80, 443, 8080, 8443`
-  (common web ports): `AskUserQuestion` "Default ingress=true (port appears
-  to be a standard web port — Recommended). Confirm?" with options
-  `["Yes (Recommended)", "No (internal only)"]`.
-- Otherwise (multiple ports, OR single non-web port): ask explicitly per
-  port: "Should `<port>` be publicly reachable via the provider's ingress?
-  (Yes / No)" — no default. Be explicit, do not guess.
+**Ingress preference** — ask which eligible TCP port should be the preferred
+HTTP ingress target, or let the provider choose automatically. Set
+`ingress: true` on at most one TCP port per service; all others use false.
+With no preferred port Fred chooses automatically (80, then 8080, then the
+lowest TCP port). `ingress: false` does not make a port private or disable
+HTTP routing. Do not label false as "internal only" or promise isolation.
+UDP ports must have `ingress: false`.
 
-The chosen `ports` map is `{ "<port>/<proto>": { ingress: <bool> }, ... }`
-even when ingress is true (encode it explicitly so the spec is unambiguous
-when re-loaded later).
+The chosen `ports` map is `{ "<port>/<proto>": { ingress: <bool> }, ... }`.
 
 **Cmd / Entrypoint / User / WorkingDir** — DO NOT ask. The image's
 defaults are used by Fred unless overridden in the spec. Skip these
@@ -118,7 +133,8 @@ collect `test` (string array, e.g. `["CMD", "curl", "-f",
 `retries`, `start_period`.
 
 **Storage** — ask: "Add a persistent disk? (Yes / No)". On Yes, present
-storage SKU options from `browse_catalog`.
+storage SKU options from `browse_catalog` and save the chosen storage
+name in top-level `storage`. The same name-ambiguity limitation applies.
 
 **tmpfs** — ask "Need any tmpfs mounts? (Yes / Skip)". On Yes, collect a
 list of paths.
@@ -145,7 +161,7 @@ chmod 600 /tmp/<service>.env
 ```
 Tell them not to use `echo` (it lands in shell history). Wait for them to
 type the path back in chat. Store the path; the values are merged into the
-spec file in Step 6 — they do not flow through this conversation now.
+spec file in Step 7 — they do not flow through this conversation at collection time.
 
 You may combine **Type in chat** and **From a file** (collect non-sensitive
 in chat, then offer the file option for the rest). The file overlays — keys
@@ -153,11 +169,12 @@ present in both are taken from the file.
 
 **Sensitive env values — what this protects, what it doesn't:**
 - The chat input box stays clean — the user does not paste secrets.
-- The values do not enter Claude's conversation context during authoring;
-  the script merges them into the spec file directly.
-- The values **will** appear in the deploy_app MCP tool call args at
-  broadcast time (when `/manifest-agent:deploy-app` later reads the saved
-  spec). Eliminating that exposure entirely needs upstream MCP support.
+- The script merges values directly into the spec file, but Step 7 reads
+  that file back and previews it: the values then enter Claude's context
+  and preview tool arguments during authoring.
+- Values also appear in the orchestrated deployment tool arguments when
+  `/manifest-agent:deploy-app` later loads the saved spec. Eliminating
+  those exposures needs upstream support; do not promise context secrecy.
 
 Suggest the user delete the env file after a successful save.
 
@@ -169,6 +186,7 @@ default Skip)".
 **Final spec object** (always services-map shape, even for one service):
 ```js
 {
+  size: SIZE,
   services: {
     "app": {                     // or a name the user picked
       image: IMAGE,
@@ -192,17 +210,17 @@ Required per service:
 - **`image`** — same format hint as Step 3. Just collect the string; the
   provider validates the registry at deploy time and `build_manifest_preview`
   validates the format.
-- **`ports`** — ask the user to type each port-protocol pair.
+- **`ports`** — optional map; ask for each port-protocol pair if needed.
+  At most one TCP port per service may enable ingress; UDP ingress is
+  invalid. Omit `host_port` (only zero or omitted is supported).
 
-  **Ingress per port**: in stacks the typical pattern is one service is
-  ingress-true (the public web tier) and the rest are ingress-false
-  (internal — DBs, queues, sidecars). For multi-service stacks, **always
-  ask explicitly per port** — do not default. The chosen value goes into
-  `{ "<port>/<proto>": { ingress: <bool> } }`.
+  **Ingress preference**: ask explicitly which TCP port, if any, should be
+  preferred within each service. At most one may be true; false lets Fred's
+  automatic selection apply and does not establish network isolation.
 
 Optional per service (same rules as single-service):
 - `env` — same three-option flow as single-service (file / chat / skip);
-  pass `--service-name <name>` to `merge-env.cjs` in Step 6 so the file's
+  pass `--service-name <name>` to `merge-env.cjs` in Step 7 so the file's
   values land in the right service's env map. Inter-service env wiring
   (e.g. `WORDPRESS_DB_HOST=mysql`, `MYSQL_ROOT_PASSWORD=...`) is the
   user's responsibility — pick whichever input mode fits each value.
@@ -212,17 +230,18 @@ Optional per service (same rules as single-service):
 
 After all services collected, ask:
 - **`storage`** (top-level) — apply to whole stack? If yes, pick SKU.
-- **`depends_on`** (top-level cross-service order) — usually optional.
+- **`depends_on`** belongs inside each dependent service; it is not a
+  top-level spec field.
 
 Final spec object:
 ```js
 {
+  size: SIZE,
   services: {
     "<name>": { image, ports, env?, ... },
     ...
   },
-  storage?,
-  depends_on?
+  storage?
 }
 ```
 
@@ -238,28 +257,29 @@ On **Skip**: continue to Step 6 with no `customDomain` in the spec.
 
 On **Yes**:
 
-1. Ask for the FQDN. Do not validate client-side — `build_manifest_preview`
-   in Step 6 (and the chain itself at deploy time) validates format,
-   lowercase, and reserved-suffix rules. If validation fails there, surface
-   the error and re-ask.
+1. Ask for the FQDN. Domain metadata is validated by the orchestrated
+   deployment flow and chain at deploy time, not by `build_manifest_preview`.
+   Do not claim a successful manifest preview validates or reserves it.
 2. **For stacks (`SHAPE === 'stack'`)**: ask which service the domain
    should attach to via `AskUserQuestion` populated from the keys of the
    spec's `services` map. Store as `serviceName`.
    **For single-service (`SHAPE === 'single'`)**: skip the picker. The
-   single-service shape uses one item; no service name needed.
+   generated spec still uses a services map: set `serviceName` to its
+   sole service key (normally `app`).
 3. Add to the spec object under construction:
    - top-level `customDomain: <fqdn>`
-   - top-level `serviceName: <picked-service>` (stacks only)
+   - top-level `serviceName: <picked-service>` (required for this skill's
+     services-map shape, including a one-service map)
 
-The saved spec file (Step 6) carries `customDomain` + `serviceName`
-verbatim — `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview` and
-`mcp__plugin_manifest-agent_manifest-fred__deploy_app` accept these as top-level input fields,
-so the agent can splat the spec into the deploy call without renaming.
+The saved spec file (Step 7) carries `customDomain` + `serviceName`
+verbatim for `deploy_app_orchestrated`'s `spec` argument. Do not send them
+to `build_manifest_preview` or splat them into direct Fred tools.
 
 ## Step 6 — Validate via build_manifest_preview
 
-Call `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview` with the spec object from
-Step 4 splatted as input arguments. The response shape is:
+Call `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview` with
+`{ services: SPEC.services }`. Preview validates the container manifest,
+not deployment size, storage allocation, domain metadata, or availability. The response shape is:
 
 ```json
 {
@@ -277,7 +297,6 @@ If `validation.valid === false`:
    - Reserved env names (e.g. `PATH`, `HOME`) — pick a different name.
    - Label keys starting with `fred.` — `fred.` is reserved.
    - Service names that are not RFC 1123 DNS labels.
-   - FQDN format issues if `customDomain` is set.
 3. Loop back to Step 4 to fix. Re-call `build_manifest_preview`. Repeat until
    `validation.valid === true`.
 
@@ -363,7 +382,8 @@ idempotent and cheap, and unconditionally re-validating eliminates the
 drift surface a "did we merge anything?" branch creates. Re-load the saved
 spec via `Read` (returns the spec as a structured tool result; any merged
 env values enter your context here) and re-call `build_manifest_preview`
-with the splatted spec. Capture the new `meta_hash_hex` and overwrite
+with `{ services: SAVED_SPEC.services }`. If validation fails, report the
+errors and leave the draft for repair; do not report it as ready to deploy. Capture the new `meta_hash_hex` and overwrite
 `META_HASH` so Step 8's report shows the hash that matches the saved
 file's bytes.
 
@@ -374,7 +394,8 @@ Tell the user:
 ```
 Saved:           <SAVED_PATH>
 meta_hash_hex:   <META_HASH>
-Format:          single | stack
+Format:          stack (services-map shape, even for one service)
+Size:            <SIZE>
 Custom domain:   <fqdn> -> service <name>      (only when set in Step 5)
 
 To deploy:       /manifest-agent:deploy-app <SAVED_PATH>
@@ -386,15 +407,14 @@ safest way to validate changes before deploying.
 
 Omit the `Custom domain:` line if no domain was set in Step 5.
 
-**Version control caveat — only safe when no env files were merged.** If
+**Version control caveat — check for secrets before committing.** If
 the user picked "From a file" for env in Step 4 (single-service or
 per-service in stacks), the saved spec at `<SAVED_PATH>` now contains
 those merged env *values* (DB passwords, API tokens, etc.) verbatim.
 Tell the user explicitly: "this spec contains the env values you merged
 from `<file paths>` — do NOT commit it to a public repository or share
-it without redacting those values first." When no env files were merged
-(everything was typed in chat or skipped), the spec is safe to
-version-control as-is.
+it without redacting those values first." Values typed in chat can also be sensitive. Recommend version control
+only after confirming the spec contains no secrets, regardless of input mode.
 
 ## Step 9 — Record this run in the journal
 
@@ -427,9 +447,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
     {
       "tool": "mcp__manifest-fred__build_manifest_preview",
       "args_redacted": {
-        "summary": { "format": "<single|stack>", "service_count": <N>, "port_count": <N>, "env_count": <N>, "env_keys": ["<KEY1>", "<KEY2>"], "images": ["<image1>"] },
-        "customDomain": "<fqdn or null>",
-        "serviceName": "<service or null>"
+        "summary": { "format": "stack", "service_count": <N>, "port_count": <N>, "env_count": <N>, "env_keys": ["<KEY1>", "<KEY2>"], "images": ["<image1>"] }
       },
       "outcome": "ok",
       "result_summary": { "meta_hash_hex": "<META_HASH>", "format": "<format>", "valid": true }
@@ -449,7 +467,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
 JOURNAL_EOF
 ```
 
-If the user cancelled mid-flow (e.g. chose Skip on every env mode), set
+If the user cancelled mid-flow (skipping optional env fields is not cancellation), set
 `outcome` to `"cancelled"` and reduce `final_state` accordingly. If
 validation in Step 6 looped multiple times before succeeding, only the
 FINAL successful preview goes in `tool_calls[]` (the validation loop is

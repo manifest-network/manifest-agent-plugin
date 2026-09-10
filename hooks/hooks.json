@@ -5,14 +5,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/session-start.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/session-start.sh",
+            "timeout": 90
           }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "^mcp__plugin_manifest-agent_manifest-chain__cosmos_tx$|^mcp__plugin_manifest-agent_manifest-cosmwasm__convert_mfx_to_pwr$|^mcp__plugin_manifest-agent_manifest-fred__deploy_app$|^mcp__plugin_manifest-agent_manifest-fred__restart_app$|^mcp__plugin_manifest-agent_manifest-fred__update_app$|^mcp__plugin_manifest-agent_manifest-lease__fund_credit$|^mcp__plugin_manifest-agent_manifest-lease__close_lease$|^mcp__plugin_manifest-agent_manifest-lease__set_item_custom_domain$|^mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated$|^mcp__plugin_manifest-agent_manifest-agent__manage_domain_orchestrated$|^mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated$",
+        "matcher": "^mcp__plugin_manifest-agent_manifest-chain__cosmos_tx$|^mcp__plugin_manifest-agent_manifest-cosmwasm__convert_mfx_to_pwr$|^mcp__plugin_manifest-agent_manifest-fred__deploy_app$|^mcp__plugin_manifest-agent_manifest-fred__restore_app$|^mcp__plugin_manifest-agent_manifest-fred__restart_app$|^mcp__plugin_manifest-agent_manifest-fred__update_app$|^mcp__plugin_manifest-agent_manifest-lease__fund_credit$|^mcp__plugin_manifest-agent_manifest-lease__close_lease$|^mcp__plugin_manifest-agent_manifest-lease__set_item_custom_domain$|^mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated$|^mcp__plugin_manifest-agent_manifest-agent__manage_domain_orchestrated$|^mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated$",
         "hooks": [
           {
             "type": "command",
