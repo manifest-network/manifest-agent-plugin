@@ -96,6 +96,12 @@ Once your wallet is funded, you deploy in two steps: author a spec file, then de
 
 Walks you through choosing single-service vs multi-service stack, picking a SKU, entering image refs, ports, env vars, optional custom domain, etc. Saves the spec to `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json` (or a user-chosen absolute path). The file is plain JSON — hand-edit it, version-control it, generate it from a script, share it across deploys.
 
+The draft records the compute SKU and provider UUIDs, so identical SKU names
+remain distinct choices. Optional storage is selected on that provider and
+its identity is recorded for comparison before deployment. Storage still
+deploys by name; duplicate storage names within one provider require a
+different choice until the upstream deployment tool supports storage UUIDs.
+
 ### Step 2 — Deploy
 
 ```

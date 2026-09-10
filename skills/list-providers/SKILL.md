@@ -61,8 +61,9 @@ re-order the rows; the script owns the canonical Markdown.
 
 After the table, briefly note what the user can do with this:
 > A specific provider's SKUs are queried via `get_skus` (filtered
-> client-side by `providerUuid`); deploy-time provider selection is
-> not yet wired into `/manifest-agent:deploy-app`.
+> client-side by `providerUuid`). `/manifest-agent:author-manifest` records
+> the selected catalog entry's SKU UUID and provider UUID in the draft;
+> `/manifest-agent:deploy-app` preserves those compute selectors.
 
 Skip this note if the table was empty (`(no providers registered)`) —
 nothing actionable to suggest in that case.

@@ -56,8 +56,10 @@ Branches in priority order:
    ```
    The script prints a JSON array of `{ lease_uuid, image, size,
    deployed_at_iso, chain_id, format?, meta_hash_hex?, schema_version?,
-   custom_domain?, custom_domain_service_name? }`. Surface
-   `custom_domain` in the picker labels when present. Include the
+   sku_uuid?, provider_uuid?, custom_domain?, custom_domain_service_name? }`.
+   Surface `sku_uuid`, `provider_uuid`, and `custom_domain` in the picker
+   when present. Keep the choice keyed by `lease_uuid`; never infer
+   missing SKU IDs from `size` on an older record. Include the
    "Lookup by custom domain" option here too.
 4. **Lookup by custom domain**: when the user picks this option, ask
    for the FQDN, then call:

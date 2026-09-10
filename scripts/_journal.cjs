@@ -73,7 +73,8 @@
  *       (1) deploy_app / build_manifest_preview / deploy_app_orchestrated →
  *           reduce spec to the in-process `summarizeSpec()` output (env
  *           keys-only summary; defined below), preserve whitelisted
- *           top-level fields (customDomain, serviceName, size;
+ *           top-level fields (customDomain, serviceName, size,
+ *           skuUuid, providerUuid;
  *           snake_case aliases also accepted). The orchestrated form
  *           ALWAYS uses the `{ spec: ... }` envelope; the legacy fred
  *           tools tolerate either shape.
@@ -118,7 +119,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { getDataDir } = require('./_io.cjs');
-const { isStack, normalizeServices } = require('./_spec.cjs');
+const { isStack, normalizeServices, skuIdentity } = require('./_spec.cjs');
 
 const SCHEMA_VERSION = 1;
 
@@ -292,7 +293,13 @@ function redactArgs(toolName, rawArgs) {
     // orchestrated tool uses the wrapper shape; legacy fred tools use
     // bare-spec.
     const spec = rawArgs.spec && typeof rawArgs.spec === 'object' ? rawArgs.spec : rawArgs;
-    const out = { summary: summarizeSpec(spec) };
+    const out = {
+      summary: summarizeSpec(spec),
+      // Match the passthrough precedence below: spec strings override
+      // wrapper strings, with camelCase preferred within each source.
+      ...skuIdentity(rawArgs),
+      ...skuIdentity(spec),
+    };
     // Whitelisted passthrough fields. The SPEC stores camelCase
     // (mirroring the underlying TypeScript signature) but the on-wire
     // deploy_app call uses snake_case — accept either alias so the

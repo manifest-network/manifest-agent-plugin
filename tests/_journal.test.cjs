@@ -8,6 +8,14 @@ const { join } = require('node:path');
 
 const _journal = require('../scripts/_journal.cjs');
 
+const DEPLOY_SPEC_TOOLS = [
+  'mcp__manifest-fred__deploy_app',
+  'mcp__manifest-fred__build_manifest_preview',
+  'mcp__manifest-agent__deploy_app_orchestrated',
+];
+const SKU_UUID = '11111111-1111-4111-8111-111111111111';
+const PROVIDER_UUID = '22222222-2222-4222-8222-222222222222';
+
 function withDataDir(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'manifest-journal-test-'));
   const prev = process.env.MANIFEST_PLUGIN_DATA;
@@ -217,6 +225,107 @@ test('redactArgs preserves wrapper-shape passthrough fields at the top level', (
     customDomain: 'outer.example.com',
   });
   assert.equal(out2.customDomain, 'inner.example.com');
+});
+
+test('deploy spec reducers retain canonical SKU identity for flat and stack specs without env values', () => {
+  for (const tool of DEPLOY_SPEC_TOOLS) {
+    for (const shape of [
+      { image: 'nginx', port: 80, env: { DATABASE_URL: 'private-env-value' } },
+      { services: { web: { image: 'nginx', env: { DATABASE_URL: 'private-env-value' } } } },
+    ]) {
+      for (const identity of [
+        { skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID },
+        { sku_uuid: SKU_UUID, provider_uuid: PROVIDER_UUID },
+      ]) {
+        const spec = { ...shape, ...identity, size: 'small' };
+        for (const args of [spec, { spec }]) {
+          const out = _journal.redactArgs(tool, args);
+          assert.equal(out.skuUuid, SKU_UUID, tool);
+          assert.equal(out.providerUuid, PROVIDER_UUID, tool);
+          assert.equal(out.sku_uuid, undefined);
+          assert.equal(out.provider_uuid, undefined);
+          assert.equal(out.size, 'small');
+          assert.deepEqual(out.summary.env_keys, ['DATABASE_URL']);
+          assert.doesNotMatch(JSON.stringify(out), /private-env-value/);
+        }
+      }
+    }
+  }
+});
+
+test('deploy spec reducers preserve identity precedence and skip non-string aliases', () => {
+  const cases = [
+    { specCamel: 'spec-camel', specSnake: 'spec-snake', rawCamel: 'raw-camel', rawSnake: 'raw-snake', expected: 'spec-camel' },
+    { specCamel: {}, specSnake: 'spec-snake', rawCamel: 'raw-camel', rawSnake: 'raw-snake', expected: 'spec-snake' },
+    { specCamel: null, specSnake: [], rawCamel: 'raw-camel', rawSnake: 'raw-snake', expected: 'raw-camel' },
+    { specCamel: false, specSnake: 7, rawCamel: {}, rawSnake: 'raw-snake', expected: 'raw-snake' },
+    { specCamel: null, specSnake: [], rawCamel: {}, rawSnake: false, expected: undefined },
+    { specCamel: '', specSnake: 'spec-snake', rawCamel: 'raw-camel', rawSnake: 'raw-snake', expected: '' },
+  ];
+  for (const tool of DEPLOY_SPEC_TOOLS) {
+    for (const { specCamel, specSnake, rawCamel, rawSnake, expected } of cases) {
+      const out = _journal.redactArgs(tool, {
+        spec: { image: 'nginx', skuUuid: specCamel, sku_uuid: specSnake, providerUuid: specCamel, provider_uuid: specSnake },
+        skuUuid: rawCamel,
+        sku_uuid: rawSnake,
+        providerUuid: rawCamel,
+        provider_uuid: rawSnake,
+      });
+      assert.equal(out.skuUuid, expected, tool);
+      assert.equal(out.providerUuid, expected, tool);
+      assert.equal(out.sku_uuid, undefined);
+      assert.equal(out.provider_uuid, undefined);
+    }
+    // Resolve each identity field independently across the envelope boundary.
+    const out = _journal.redactArgs(tool, { spec: { image: 'nginx', skuUuid: SKU_UUID }, provider_uuid: PROVIDER_UUID });
+    assert.equal(out.skuUuid, SKU_UUID);
+    assert.equal(out.providerUuid, PROVIDER_UUID);
+  }
+});
+
+test('deploy spec reducers keep legacy summaries and never infer identity from names or services', () => {
+  for (const tool of DEPLOY_SPEC_TOOLS) {
+    const legacy = _journal.redactArgs(tool, { spec: { image: 'nginx', port: 80, size: 'small' } });
+    assert.deepEqual(legacy, {
+      summary: { format: 'single', service_count: 1, port_count: 1, env_count: 0, env_keys: [], images: ['nginx'] },
+      size: 'small',
+    });
+    const stack = _journal.redactArgs(tool, {
+      spec: { skuName: 'small', services: { web: { image: 'nginx', skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID } } },
+    });
+    assert.equal(stack.skuUuid, undefined);
+    assert.equal(stack.providerUuid, undefined);
+  }
+});
+
+test('journal records distinguish duplicate SKU names by their selected SKU and provider UUIDs', () => {
+  withDataDir(() => {
+    const identities = [
+      { skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID },
+      { skuUuid: '33333333-3333-4333-8333-333333333333', providerUuid: '44444444-4444-4444-8444-444444444444' },
+    ];
+    let file;
+    for (const identity of identities) {
+      const tool = 'mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated';
+      const args_redacted = _journal.redactArgs(tool, {
+        spec: { image: 'nginx', port: 80, size: 'small', skuName: 'small', ...identity, env: { API_KEY: 'private-env-value' } },
+      });
+      file = _journal.appendRecord(makeRecord({
+        skill: 'deploy-app',
+        tool_calls: [{ tool, args_redacted, outcome: 'ok' }],
+      }));
+    }
+    const content = readFileSync(file, 'utf8');
+    assert.doesNotMatch(content, /private-env-value/);
+    const records = content.trimEnd().split('\n').map((line) => JSON.parse(line));
+    for (let i = 0; i < identities.length; i++) {
+      assert.equal(records[i].schema_version, 1);
+      const args = records[i].tool_calls[0].args_redacted;
+      assert.equal(args.size, 'small');
+      assert.equal(args.skuUuid, identities[i].skuUuid);
+      assert.equal(args.providerUuid, identities[i].providerUuid);
+    }
+  });
 });
 
 // --------------------------------------------------------------------------

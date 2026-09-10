@@ -7,7 +7,7 @@
  *
  * The inner `manifest_json` field can contain user-supplied env values that
  * may be sensitive. This script prints only:
- *   - non-sensitive wrapper fields (image, size, deployed_at_iso, chain_id, etc.)
+ *   - non-sensitive wrapper fields (image, size, SKU/provider UUIDs, etc.)
  *   - structural counts of the manifest (service count, port count)
  *   - environment variable KEYS (never values)
  *
@@ -76,6 +76,9 @@ function parseArgs(argv) {
   lines.push(`Lease UUID:       ${wrapper.lease_uuid || args.leaseUuid}`);
   if (wrapper.image)           lines.push(`Image:            ${wrapper.image}`);
   if (wrapper.size)            lines.push(`Size:             ${wrapper.size}`);
+  // Resolved compute identity is optional; never reconstruct it from size.
+  if (wrapper.sku_uuid)        lines.push(`SKU UUID:         ${wrapper.sku_uuid}`);
+  if (wrapper.provider_uuid)   lines.push(`Provider UUID:    ${wrapper.provider_uuid}`);
   if (wrapper.deployed_at_iso) lines.push(`Deployed at:      ${wrapper.deployed_at_iso}`);
   if (wrapper.chain_id)        lines.push(`Chain:            ${wrapper.chain_id}`);
   if (wrapper.meta_hash_hex)   lines.push(`meta_hash_hex:    ${wrapper.meta_hash_hex}`);

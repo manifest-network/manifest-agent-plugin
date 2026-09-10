@@ -130,6 +130,14 @@ For schema-evolving wrappers (the post-deploy wrapper file written by `manifest-
 - A v(N) fixture asserting the new shape works.
 - A v(N-1) fixture asserting the reader still loads it (missing fields render as undefined, not throw).
 
+ENG-260 reader fixtures also exercise optional `sku_uuid` / `provider_uuid`
+without requiring a schema bump, including names repeated across providers
+and within one provider. MCP 0.22.0 still writes v3 wrappers without these
+fields; the newer fixtures test reader compatibility, not upstream persistence.
+Draft save/env-merge tests verify compute selectors and storage identity
+metadata survive unchanged. Storage-check tests reject a changed UUID or
+ambiguous same-provider name while allowing the same name on another provider.
+
 ## Exercising scripts manually
 
 Useful for debugging without standing up a full Claude session.

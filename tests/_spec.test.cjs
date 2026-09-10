@@ -2,7 +2,10 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { isStack, firstImage, normalizeServices } = require('../scripts/_spec.cjs');
+const { isStack, firstImage, normalizeServices, skuIdentity } = require('../scripts/_spec.cjs');
+
+const SKU_UUID = '11111111-1111-4111-8111-111111111111';
+const PROVIDER_UUID = '22222222-2222-4222-8222-222222222222';
 
 test('isStack: true for services-map shape', () => {
   assert.equal(isStack({ services: { web: { image: 'a' } } }), true);
@@ -62,4 +65,56 @@ test('normalizeServices: tolerates null spec (returns empty single-entry)', () =
   assert.equal(result.length, 1);
   assert.equal(result[0].name, null);
   assert.deepEqual(result[0].raw, {});
+});
+
+test('skuIdentity: projects top-level identity from flat and stack specs', () => {
+  for (const shape of [
+    { image: 'nginx', port: 80, env: { API_KEY: 'private-env-value' } },
+    { services: { web: { image: 'nginx', env: { API_KEY: 'private-env-value' } } } },
+  ]) {
+    assert.deepEqual(skuIdentity({
+      ...shape,
+      skuUuid: SKU_UUID,
+      providerUuid: PROVIDER_UUID,
+      size: 'small',
+      skuName: 'small',
+    }), { skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID });
+  }
+});
+
+test('skuIdentity: accepts snake_case aliases and prefers string camelCase values', () => {
+  assert.deepEqual(skuIdentity({ sku_uuid: SKU_UUID, provider_uuid: PROVIDER_UUID }), {
+    skuUuid: SKU_UUID,
+    providerUuid: PROVIDER_UUID,
+  });
+  assert.deepEqual(skuIdentity({
+    skuUuid: SKU_UUID,
+    sku_uuid: 'other-sku',
+    providerUuid: PROVIDER_UUID,
+    provider_uuid: 'other-provider',
+  }), { skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID });
+  assert.deepEqual(skuIdentity({
+    skuUuid: { value: 'private-value' },
+    sku_uuid: SKU_UUID,
+    providerUuid: false,
+    provider_uuid: PROVIDER_UUID,
+  }), { skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID });
+});
+
+test('skuIdentity: absent or malformed identity produces an empty projection', () => {
+  for (const spec of [
+    null, undefined, false, 7, 'small', [], {},
+    { image: 'nginx', port: 80, size: 'small', skuName: 'small' },
+    { skuUuid: null, sku_uuid: [], providerUuid: 7, provider_uuid: {} },
+    { services: { web: { image: 'nginx', skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID } } },
+  ]) {
+    assert.deepEqual(skuIdentity(spec), {});
+  }
+});
+
+test('skuIdentity: preserves each available string field without inventing its counterpart', () => {
+  assert.deepEqual(skuIdentity({ skuUuid: SKU_UUID, providerUuid: {} }), { skuUuid: SKU_UUID });
+  assert.deepEqual(skuIdentity({ provider_uuid: PROVIDER_UUID }), { providerUuid: PROVIDER_UUID });
+  // This is a projection, not UUID validation: match the journal's string-only whitelist.
+  assert.deepEqual(skuIdentity({ skuUuid: '', sku_uuid: SKU_UUID }), { skuUuid: '' });
 });

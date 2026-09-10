@@ -46,8 +46,34 @@ authoring path through this skill.
 `services` must be present. If an older saved spec omitted `size`, stop
 and ask the user to select a SKU through `/manifest-agent:author-manifest`;
 do not guess a tier. Preserve any `skuUuid` and `providerUuid` supplied
-in the spec. A `services` map requires `serviceName` when `customDomain`
+in the spec: they pin the compute selection even when names repeat. If
+the server rejects the selection, report the error; do not remove the IDs
+or retry with a name-only spec. Older name-only specs remain supported by
+the server's ambiguity checks; never infer or backfill their IDs.
+A `services` map requires `serviceName` when `customDomain`
 is set, even when the map contains only one service.
+
+When either `storageSkuUuid` or `storageProviderUuid` is present, these are
+plugin documentation-only metadata; MCP 0.22.0 does not honor them as
+storage selectors. Call `mcp__plugin_manifest-agent_manifest-fred__browse_catalog`
+and pipe a JSON object containing only `SPEC.storage`, `SPEC.storageSkuUuid`,
+`SPEC.storageProviderUuid`, `SPEC.providerUuid`, and the response as `catalog`
+to the storage check (use those exact field names):
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/check-storage-selection.cjs" <<'STORAGE_EOF'
+{"storage":"<SPEC.storage>","storageSkuUuid":"<SPEC.storageSkuUuid>","storageProviderUuid":"<SPEC.storageProviderUuid>","providerUuid":"<SPEC.providerUuid>","catalog":<browse_catalog response>}
+STORAGE_EOF
+```
+
+On catalog error or nonzero helper exit, report the diagnostic and stop
+before invoking deployment. Ask the user to revisit the storage choice
+through `/manifest-agent:author-manifest`; do not change or remove it
+automatically. On success, retain the metadata in the draft and journal.
+The check verifies the current catalog; upstream still resolves storage
+by name on the compute provider, so this is not an immutable storage pin.
+For an older draft without storage identity metadata, skip this check and
+leave name resolution to the server; do not invent IDs.
 
 ## Step 2 — Invoke the orchestrated tool
 
@@ -147,6 +173,12 @@ summaries/recovery actions. Do not journal the error envelope's `input`
 or copy a spec/environment into error prose. A host denial before
 execution has no executed tool call; leave `tool_calls` empty.
 Do NOT mention the journal write in your reply to the user.
+
+Keep selected compute IDs in `args_redacted` through the reducer. When
+storage metadata is present, include `storage_sku_uuid` and
+`storage_provider_uuid` from the draft in `final_state` as the requested
+storage identity, not proof of the deployed lease item's SKU. Omit them
+for legacy drafts. Actual provider identity comes from the tool result.
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'

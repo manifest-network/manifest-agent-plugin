@@ -48,6 +48,11 @@ Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
 The ENG-130 rewire left five non-obvious decisions documented here so future readers can map skill / script choices back to the rationale:
 
 - **DECISION 1 — `author-manifest` stays plugin-side.** `manifest-mcp-agent` ships no `build_manifest_preview_orchestrated` tool (would have been an upstream ENG-204-tier ticket). The standalone draft-creation flow remains in the plugin over the surviving `save-manifest-draft.cjs` + `merge-env.cjs` helpers. The rewired `deploy-app` skill takes one input (a file path) and points non-file input at `/manifest-agent:author-manifest`; `deploy_app_orchestrated`'s `validateSpec()` requires a complete `DeploySpec` up front, so the rewire converged on author → deploy as two explicit steps rather than the pre-rewire one-shot "deploy with inline author" UX.
+  ENG-260 keeps the exact catalog choice in the draft: `size` plus `skuUuid`
+  and `providerUuid` for compute. MCP 0.22.0 honors these selectors. Storage
+  IDs are recorded as documentation-only metadata because upstream still
+  resolves storage by name on the compute provider; the plugin rechecks
+  the current catalog before deploying a draft with storage identity metadata.
 - **DECISION 2 — saved-manifest read surface stays; write surface moves.** Deleted: `save-manifest.cjs`, `remove-manifest.cjs` (agent-core's `saveManifest()` owns persistence end-to-end via `MANIFEST_AGENT_DATA_DIR`; cleanup is inside `closeLease`'s recovery dispatch). Kept: `list-saved-manifests.cjs` + `summarize-manifest.cjs` (read-only discovery surface used by the lease-UUID pickers in `manage-domain` Step 2b and `troubleshoot-deployment` Step 1) and `save-manifest-draft.cjs` (for `author-manifest`'s draft creation).
 - **DECISION 3 — FQDN validation + DNS pre-check move into agent-core.** Deleted: `validate-domain.cjs`, `dns-precheck.cjs`. agent-core's `manageDomain` runs `validateArgs` (RFC 1123 hostname + scheme rejection + ≤253 char cap) server-side and runs the warn-only DNS probe internally. `build_manifest_preview` validates container manifest fields only; custom-domain metadata is validated during orchestrated deployment.
 - **DECISION 4 — journal mechanism is option-a (skill-side, single-entry-per-orchestrated-call).** The skill prose pipes a record to `journal-write.cjs` with ONE `tool_calls[]` entry per orchestrated invocation. `args_redacted` is produced by `_journal.cjs#redactArgs`'s per-tool reducer (added in ENG-130 for the four new tools). `result_summary` is mined from the orchestrated tool's structured return value. The journal does NOT enumerate inner broadcasts the wrapper dispatches — see "Operation journal" below for the full fidelity-trade-off discussion. `troubleshoot-deployment` is the documented exception: it writes two `tool_calls[]` entries when the cleanup branch fires, because the close call is a separate skill-driven orchestrated tool call after the diagnostic returns (still one entry per orchestrated invocation; the skill just makes two invocations in that branch). The alternative (wrapper-side journal writes) was rejected to keep the plugin's secret-key denylist + record schema out of the upstream package.
@@ -112,6 +117,9 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 - CLI scripts exit `1` on argv/usage errors with a one-line stderr diagnostic.
 - `pre-tool-use.cjs` is the hook payload classifier, invoked by `pre-tool-use.sh`. Its private output is `ask-direct`, `ask-orchestrated`, or `defer`; invalid events exit nonzero. The shell clears Node preload variables and maps only those tokens to fixed host JSON or no decision. Errors, empty output, and unexpected output produce `deny`. The helper exports `decidePermission` for tests.
 - `setup-runtime.cjs` installs or repairs the locked data-directory runtime; `_runtime.cjs` provides the shared Node floor, package/lock fingerprint, process-owner checks, and completion validation used by setup and the launcher. Only setup reclaims stale locks; launchers ignore confirmed dead owners. Completion is platform/architecture-specific but shared across supported stable Node majors for the current JavaScript-only lock. Dependency snapshots and completion validation reject regular `.node` files; adding native dependencies requires explicit Node-specific runtime support. See their tests and the catalog for recovery behavior.
+- `check-storage-selection.cjs` compares a draft's storage identity metadata
+  with `browse_catalog` before deployment. It rejects changed or ambiguous
+  storage selections; it does not add storage UUID support to MCP.
 - `ci/evidence-check.cjs` checks current host-report source hashes and distinguishes historical commit evidence; CI runs it alongside policy completeness. See `docs/approval-validation.md` for rerun and history requirements.
 - `ci/lease-state-parity.cjs --data-dir <runtime-dir>` compares the plugin's numeric `STATES` table with the installed manifestjs `LeaseState` enum, excluding the SDK's `UNRECOGNIZED = -1` sentinel. CI runs it after runtime installation; its unit tests use fixtures and require no runtime packages.
 - Use `rg -n '<script>.cjs' skills/ scripts/` to locate callers — the call graph drifts and isn't worth restating in prose.
@@ -191,13 +199,28 @@ For exercising scripts directly without Claude Code, fixture setup, and the per-
 
 Deployment specs are plain JSON passed as `{spec}` to `deploy_app_orchestrated`.
 They require `size` and exactly one of `image` or `services`. The author skill
-emits a services map even for one service. `storage`, `customDomain`,
-`serviceName`, and optional `skuUuid`/`providerUuid` are deployment metadata.
+emits a services map even for one service, with top-level `skuUuid` and
+`providerUuid` copied from the selected catalog entry's `sku_uuid` and
+`provider_uuid`. Names are display labels and may repeat across or within
+providers; UUIDs identify compute selections. The pinned orchestrator resolves
+the selected active SKU and verifies its provider before planning/deployment.
+`storage`, `customDomain`, `serviceName`, and the compute selectors are
+deployment metadata.
 Preview only manifest fields: `{services: SPEC.services}` for authored specs.
 Direct Fred deploy uses a different contract, including snake-case selectors.
 
-- Flat single-service: `{ size, image, port?, env?, labels?, command?, args?, health_check?, storage?, tmpfs?, init? }`
-- Services map: `{ size, services: { <name>: { image, ports?, env?, depends_on?, ... }, ... }, storage? }`
+- Flat single-service: `{ size, skuUuid?, providerUuid?, image, port?, env?, labels?, command?, args?, health_check?, storage?, tmpfs?, init? }`
+- Authored services map: `{ size, skuUuid, providerUuid, services: { <name>: { image, ports?, env?, depends_on?, ... }, ... }, storage?, storageSkuUuid?, storageProviderUuid? }`
+
+`storageSkuUuid` / `storageProviderUuid` are plugin documentation-only metadata,
+not upstream selectors. Storage must be on the compute provider, and its name
+must identify exactly one active SKU there. Before deploying a draft carrying
+either storage identity field, `check-storage-selection.cjs` verifies both IDs,
+the name, and provider against a fresh catalog. Failure stops before the
+orchestrator; success establishes only the catalog observation. MCP 0.22.0
+still resolves storage by name at execution time. Storage UUID pinning needs
+an upstream contract change. Older drafts without IDs remain readable and
+use upstream name resolution; the plugin does not backfill IDs from names.
 
 `/manifest-agent:author-manifest` walks the user through building one and saves it (default `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json`, or any user-chosen absolute path inside the drafts dir or the system tmpdir). Spec files are user-managed: hand-edit them in `$EDITOR`, version-control them in your app repo, generate them with a script, etc. The plugin doesn't garbage-collect drafts.
 
@@ -235,6 +258,14 @@ Post-ENG-130, agent-core's `saveManifest()` writes the wrapper to `$MANIFEST_AGE
 
 Wrapper schema v3 (written by agent-core; shape unchanged from pre-rewire): `{ schema_version: 3, lease_uuid, deployed_at_iso, deployed_at_unix, chain_id, image, size, meta_hash_hex, format, manifest_json, custom_domain?, custom_domain_service_name? }`. `manifest_json` is the canonical Fred-rendered string and may contain sensitive env values — skills must NOT pretty-print it unredacted.
 
+MCP 0.22.0's writer does not yet persist compute `sku_uuid` / `provider_uuid`.
+The readers accept and surface those optional fields alongside `size` when
+present, without requiring a particular schema version. Until the upstream
+writer adds them, the selected IDs live in authored drafts and journal
+records; the plugin does not edit or supplement the post-deploy wrapper.
+Existing v2/v3 output is unchanged when identifiers are absent, and no IDs
+are inferred from historical names.
+
 **Read surface (plugin-side, kept per DECISION 2):** `summarize-manifest.cjs` produces a redacted summary (env keys only, FQDN-safe). `list-saved-manifests.cjs` enumerates the wrapper directory for the lease-UUID pickers in `manage-domain` Step 2b and `troubleshoot-deployment` Step 1. Both are consumed by skills via subprocess; skills MUST NOT `Read` or `Write` wrappers directly.
 
 **Write surface:** agent-core owns it. The plugin's old `save-manifest.cjs` + `remove-manifest.cjs` helpers are deleted (DECISION 2 — agent-core's `saveManifest()` and cleanup branch inside `closeLease`'s recovery dispatch cover both).
@@ -263,7 +294,11 @@ Every state-changing skill appends one record per invocation to `$MANIFEST_PLUGI
 - Env maps render as sorted keys, never values.
 - The writer is fail-closed (NOT strip-and-continue): any key in the record tree matching `_journal.SECRET_KEY_DENYLIST` (`mnemonic`, `password`, `private_key`, `secret_key`, `api_key`, `auth_token`, `bearer_token`, all with optional `_`/`-` separators) makes `journal-write.cjs` exit 1 and refuse to append. Skills must redact via `_journal.redactArgs` before piping.
 - `manifest_json` is reduced via the in-process `summarizeSpec()` function inside `_journal.cjs` (env keys-only, never values; mirrors the now-deleted standalone `summarize-spec.cjs` script's output shape).
-- Lease UUIDs, addresses, image refs, custom domains, gas-token symbols ARE captured (legitimate non-sensitive blockchain identifiers).
+- Lease/SKU/provider UUIDs, addresses, image refs, custom domains, gas-token symbols ARE captured (legitimate non-sensitive blockchain identifiers).
+- Deploy reducers retain optional `skuUuid` / `providerUuid`, normalizing
+  snake_case aliases through `_spec.cjs#skuIdentity`. Spec fields take
+  precedence over outer arguments. Storage IDs in skill `final_state` are
+  the requested draft identity, not evidence of the deployed lease item's SKU.
 
 **Skills that DON'T write a record**: `manage-domain` lookup sub-flow (dedicated read-only orchestrator), `troubleshoot-deployment` when the user picks "Keep" instead of cleanup (read-only diagnostic — matches pre-rewire posture). The `/manifest-agent:journal` query skill is also read-only.
 

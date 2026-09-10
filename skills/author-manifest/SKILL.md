@@ -18,7 +18,7 @@ inspect / edit / version-control as a normal file.
 The saved file is an orchestrated deployment spec: required `size`, exactly
 one of `image` or `services`, and optional deployment metadata such as
 `storage`, `customDomain`, and `serviceName`. This skill always emits
-`{ size, services: { <name>: { image, ports?, env?, ... } }, storage? }`.
+`{ size, skuUuid, providerUuid, services: { <name>: { image, ports?, env?, ... } }, storage? }`.
 
 `build_manifest_preview` accepts only manifest fields. For this skill's
 services-map shape, call it with `{ services: SPEC.services }`. Keep `size`,
@@ -62,18 +62,26 @@ Store the choice as `SHAPE` (`single` or `stack`).
 
 ## Step 2 — Choose SKU size
 
-Call `mcp__plugin_manifest-agent_manifest-fred__browse_catalog`. From the response, build an
-`AskUserQuestion` showing each active SKU's `name`, `price` (a string, or
-"unavailable" when null), `unit`, and `provider_uuid` / `provider_url`.
-Do not assume a nested amount/denom price or provider display-name field.
-Store the selected SKU's `name` as `SIZE` and persist `size: SIZE` in the spec.
+Call `mcp__plugin_manifest-agent_manifest-fred__browse_catalog`. From its `skus`
+array, build an `AskUserQuestion` with one option per active SKU. Label each
+option `<name> · <provider_uuid> · <price> <unit>`; show its full `sku_uuid`
+and `provider_url` in the description. If labels repeat (even within one
+provider), append `sku_uuid` to the labels. Never merge entries by name.
+`price` is a string, or "unavailable" when null; do not assume a nested
+amount/denom price or provider display-name field.
 
-The name-based picker remains subject to ENG-260: names are not globally
-unique. If multiple active catalog entries share the chosen name, do not
-silently select a provider or deploy ambiguously. Explain the ambiguity and
-stop this authoring flow; an explicitly prepared spec can use the supported
-`skuUuid` and `providerUuid` selectors with its required `size` through
-`/manifest-agent:deploy-app`.
+Bind the choice to the exact catalog entry: store `sku_uuid` as `SKU_UUID`,
+`provider_uuid` as `PROVIDER_UUID`, and `name` as `SIZE`. The catalog field
+is `sku_uuid`, not `uuid`. Do not offer an entry missing either identifier;
+report incomplete catalog data if there are no usable choices. If a typed
+answer names several entries, ask the user to choose the exact UUID.
+
+Persist `skuUuid: SKU_UUID` and `providerUuid: PROVIDER_UUID` at the spec's
+top level for both deployment shapes. These selectors are honored by the
+pinned MCP 0.22.0 orchestrator; `size: SIZE` remains a required descriptive
+name. A stack uses the same compute SKU for all services. Do not resolve
+the choice again by name or substitute another SKU if this UUID later
+becomes unavailable.
 
 ## Step 3 — Image reference (single-service only)
 
@@ -133,8 +141,19 @@ collect `test` (string array, e.g. `["CMD", "curl", "-f",
 `retries`, `start_period`.
 
 **Storage** — ask: "Add a persistent disk? (Yes / No)". On Yes, present
-storage SKU options from `browse_catalog` and save the chosen storage
-name in top-level `storage`. The same name-ambiguity limitation applies.
+active storage SKU options from `browse_catalog` on `PROVIDER_UUID` only,
+using the same labels and exact-entry selection as Step 2. Save the name
+in top-level `storage`, plus `storageSkuUuid` and `storageProviderUuid`
+from that entry's `sku_uuid` and `provider_uuid`.
+
+These storage IDs are **documentation-only metadata**: MCP 0.22.0 resolves
+`storage` by name within the compute provider and has no storage UUID
+selector. If that provider has multiple active entries with the storage
+name, explain that this storage choice cannot yet be deployed by UUID;
+ask for a different storage choice or no disk. Do not switch providers or
+drop the disk silently. `/manifest-agent:deploy-app` rechecks the recorded
+storage identity before invoking deployment; it cannot pin storage by UUID
+during the upstream call. Include this limitation when storage is chosen.
 
 **tmpfs** — ask "Need any tmpfs mounts? (Yes / Skip)". On Yes, collect a
 list of paths.
@@ -187,6 +206,8 @@ default Skip)".
 ```js
 {
   size: SIZE,
+  skuUuid: SKU_UUID,
+  providerUuid: PROVIDER_UUID,
   services: {
     "app": {                     // or a name the user picked
       image: IMAGE,
@@ -194,7 +215,7 @@ default Skip)".
       env?, labels?, health_check?, tmpfs?, init?, ...
     }
   },
-  storage?
+  storage?, storageSkuUuid?, storageProviderUuid?
 }
 ```
 
@@ -229,7 +250,10 @@ Optional per service (same rules as single-service):
 - Skip asking about `command` / `args` / `user` — image defaults apply.
 
 After all services collected, ask:
-- **`storage`** (top-level) — apply to whole stack? If yes, pick SKU.
+- **`storage`** (top-level) — apply to whole stack? If yes, use the storage
+  picker and duplicate-name guard from 4a, restricted to `PROVIDER_UUID`.
+  Persist `storage`, `storageSkuUuid`, and `storageProviderUuid` at the
+  top level; the IDs remain documentation-only metadata.
 - **`depends_on`** belongs inside each dependent service; it is not a
   top-level spec field.
 
@@ -237,11 +261,13 @@ Final spec object:
 ```js
 {
   size: SIZE,
+  skuUuid: SKU_UUID,
+  providerUuid: PROVIDER_UUID,
   services: {
     "<name>": { image, ports, env?, ... },
     ...
   },
-  storage?
+  storage?, storageSkuUuid?, storageProviderUuid?
 }
 ```
 
@@ -396,6 +422,9 @@ Saved:           <SAVED_PATH>
 meta_hash_hex:   <META_HASH>
 Format:          stack (services-map shape, even for one service)
 Size:            <SIZE>
+SKU UUID:        <SKU_UUID>
+Provider UUID:   <PROVIDER_UUID>
+Storage:         <storage> · <storageSkuUuid> · <storageProviderUuid> (when set; IDs are documentation only)
 Custom domain:   <fqdn> -> service <name>      (only when set in Step 5)
 
 To deploy:       /manifest-agent:deploy-app <SAVED_PATH>
@@ -405,7 +434,9 @@ skill (or `build_manifest_preview` directly) on a hand-edited spec is the
 safest way to validate changes before deploying.
 ```
 
-Omit the `Custom domain:` line if no domain was set in Step 5.
+Omit absent storage/domain lines. When storage is set, explain that the
+deployment tool resolves storage by name within this provider; its UUID is
+recorded for comparison, not enforced as a deployment selector.
 
 **Version control caveat — check for secrets before committing.** If
 the user picked "From a file" for env in Step 4 (single-service or
@@ -458,6 +489,10 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
     "saved_path": "<SAVED_PATH>",
     "meta_hash_hex": "<META_HASH>",
     "format": "<single|stack>",
+    "sku_uuid": "<SKU_UUID>",
+    "provider_uuid": "<PROVIDER_UUID>",
+    "storage_sku_uuid": "<storageSkuUuid or null>",
+    "storage_provider_uuid": "<storageProviderUuid or null>",
     "custom_domain": "<fqdn or null>",
     "custom_domain_service_name": "<service or null>"
   },

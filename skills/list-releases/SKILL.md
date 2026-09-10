@@ -48,6 +48,9 @@ Branches in priority order, mirroring `manage-domain` Step 3 and
    ```bash
    node "$MANIFEST_PLUGIN_ROOT/scripts/list-saved-manifests.cjs"
    ```
+   Show lease UUID, image, size, and any `sku_uuid` / `provider_uuid` in
+   the picker. Keep the choice keyed by `lease_uuid`; never infer missing
+   SKU IDs from a name on an older record.
 4. **Last resort**: ask the user to paste a UUID. Validate against the
    UUID regex before continuing.
 
