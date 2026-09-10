@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  mkdtempSync, rmSync, writeFileSync, readFileSync, copyFileSync, mkdirSync, chmodSync, existsSync,
+  mkdtempSync, rmSync, writeFileSync, readFileSync, copyFileSync, mkdirSync, chmodSync, existsSync, symlinkSync,
 } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
@@ -427,6 +427,30 @@ test('missing dependency with the MCP binary intact refuses startup until explic
   });
 });
 
+test('self-referential setup lock reports the data-file error without recommending plugin reinstall', () => {
+  withData((data) => {
+    const lockPath = join(data, LOCK_FILE);
+    symlinkSync(LOCK_FILE, lockPath);
+    const r = runWrapper('agent', { data });
+    assert.equal(r.status, 1);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /checking runtime dependencies \(ELOOP\)/);
+    assert.match(r.stderr, /\.runtime-setup\.lock/);
+    assert.doesNotMatch(r.stderr, /Reinstall the plugin|Unable to read the plugin runtime definition/);
+  });
+});
+
+test('missing plugin lock definition reports its runtime phase and filesystem code', () => {
+  withData((data) => {
+    rmSync(join(data, '.fixture-plugin', 'package-lock.json'));
+    const r = runWrapper('agent', { data });
+    assert.equal(r.status, 1);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /checking runtime dependencies \(ENOENT\)/);
+    assert.match(r.stderr, /plugin package\.json\/package-lock\.json/);
+  });
+});
+
 test('malformed config diagnostic never repeats source text containing a password', () => {
   withData((data) => {
     writeFileSync(join(data, 'config.json'), '{"agent":{"keyPassword":"CONFIG_PASSWORD_SECRET"}, INVALID');
@@ -448,6 +472,86 @@ test('non-object config JSON reports the invalid root shape without exposing its
       assert.match(r.stderr, /Invalid config: config\.json must contain a JSON object/);
       assert.match(r.stderr, /manifest-agent:init-agent/);
       assert.doesNotMatch(r.stderr, /CONFIG_ROOT_SECRET|Manifest MCP startup failed|TypeError/);
+    });
+  }
+});
+
+test('ordinary missing config fields identify the field before checking runtime setup', () => {
+  for (const [remove, expected] of [
+    [(config) => { delete config.activeChain; }, /missing activeChain/],
+    [(config) => { delete config.gasPrice; }, /missing gasPrice/],
+    [(config) => { delete config.chains.testnet.rpcUrl; }, /chains\.testnet missing fields: rpcUrl/],
+  ]) {
+    withData((data) => {
+      const path = join(data, 'config.json');
+      const config = JSON.parse(readFileSync(path, 'utf8'));
+      remove(config);
+      writeFileSync(path, JSON.stringify(config));
+      const r = runWrapper('agent', { data });
+      assert.equal(r.status, 1);
+      assert.equal(r.stdout, '');
+      assert.match(r.stderr, expected);
+      assert.doesNotMatch(r.stderr, /Waiting for|fixture-password/);
+    });
+  }
+});
+
+test('config IO, validation IO, env construction, and temporary-directory failures retain their phases safely', () => {
+  const cases = [
+    {
+      phase: 'reading config.json', code: 'EISDIR',
+      prepare(data) {
+        rmSync(join(data, 'config.json'));
+        mkdirSync(join(data, 'config.json'));
+      },
+    },
+    {
+      phase: 'validating config.json', code: 'EIO',
+      prepare(data) {
+        const preload = join(data, 'wallet-io-error.cjs');
+        writeFileSync(preload, `
+          const fs = require('node:fs');
+          const original = fs.existsSync;
+          fs.existsSync = (path) => {
+            if (String(path).endsWith('/fixture-wallet.json')) {
+              throw Object.assign(new Error('VALIDATION_PASSWORD_SECRET'), { code: 'EIO' });
+            }
+            return original(path);
+          };
+        `);
+        return { NODE_OPTIONS: `--require=${JSON.stringify(preload)}` };
+      },
+    },
+    {
+      phase: 'building the MCP environment',
+      prepare(data) {
+        const path = join(data, 'config.json');
+        const config = JSON.parse(readFileSync(path, 'utf8'));
+        // A manually edited object cannot be converted into a gas multiplier;
+        // its contents must not become part of the unexpected-error message.
+        config.gasMultiplier = { toString: null, valueOf: 'ENVIRONMENT_PASSWORD_SECRET' };
+        writeFileSync(path, JSON.stringify(config));
+      },
+    },
+    {
+      phase: 'creating the MCP working directory', code: 'ENOTDIR',
+      prepare(data) {
+        const tmp = join(data, 'not-a-directory');
+        writeFileSync(tmp, 'TEMP_FILE_PASSWORD_SECRET');
+        return { TMPDIR: tmp };
+      },
+    },
+  ];
+  for (const { phase, code, prepare } of cases) {
+    withData((data) => {
+      const extraEnv = prepare(data) || {};
+      const r = runWrapper('agent', { data, extraEnv });
+      assert.equal(r.status, 1);
+      assert.equal(r.stdout, '');
+      const detail = code ? ` (${code})` : '';
+      assert.ok(r.stderr.includes(`Manifest MCP startup failed while ${phase}${detail}.`), r.stderr);
+      if (phase === 'creating the MCP working directory') assert.match(r.stderr, /Check the system temporary directory/);
+      assert.doesNotMatch(r.stderr, /VALIDATION_PASSWORD_SECRET|ENVIRONMENT_PASSWORD_SECRET|TEMP_FILE_PASSWORD_SECRET|fixture-password|\n\s+at /);
     });
   }
 });

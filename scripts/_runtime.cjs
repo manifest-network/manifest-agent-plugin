@@ -115,8 +115,8 @@ function snapshotDependencies(dataDir) {
   const files = [];
   function visit(relative) {
     const absolute = join(dataDir, relative);
-    if (relative.endsWith('.node')) throw new Error(`Native addon requires Node-specific runtime support: ${relative}`);
     const stat = lstatSync(absolute);
+    if (stat.isFile() && relative.endsWith('.node')) throw new Error(`Native addon requires Node-specific runtime support: ${relative}`);
     if (stat.isSymbolicLink()) files.push([relative, 'link', readlinkSync(absolute)]);
     else if (stat.isDirectory()) {
       for (const name of readdirSync(absolute).sort()) visit(`${relative}/${name}`);
@@ -156,9 +156,9 @@ function inspectRuntime(dataDir, pluginRoot) {
         throw new Error('The runtime completion record is invalid.');
       }
       const [relative, type, expected] = entry;
-      if (relative.endsWith('.node')) throw new Error(`Native addon requires Node-specific runtime support: ${relative}`);
       const absolute = join(dataDir, relative);
       const stat = lstatSync(absolute);
+      if (stat.isFile() && relative.endsWith('.node')) throw new Error(`Native addon requires Node-specific runtime support: ${relative}`);
       if (type === 'file' ? !stat.isFile() || stat.size !== expected :
           type === 'link' ? !stat.isSymbolicLink() || readlinkSync(absolute) !== expected : true) {
         throw new Error(`The installed runtime is incomplete: ${relative}`);

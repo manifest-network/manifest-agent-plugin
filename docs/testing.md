@@ -48,7 +48,12 @@ Lock tests distinguish dead or reused PIDs from live parent/worker processes,
 including a ready runtime with a stale lock. Injected-clock tests exercise the
 unmodified two-second grace, 25-second launcher bound and 60-second setup bound.
 Failure tests verify empty-log cleanup, useful-log retention, distinct completion
-diagnostics, native-addon rejection and secret-safe startup errors.
+diagnostics, native-addon rejection and secret-safe startup errors across phases.
+Dangling lock symlinks and repeated lock races must yield to the event loop and
+respect setup's deadline; lock-read failures must identify the runtime phase.
+The SessionStart hook's 90-second timeout retains 30 seconds beyond the default
+60-second contention bound. Native-addon checks allow `.node` directory names
+and symlinks while rejecting actual `.node` files.
 
 ## Test file layout
 

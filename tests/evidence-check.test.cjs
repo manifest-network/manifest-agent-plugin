@@ -39,6 +39,47 @@ test('current source hashes and recorded historical commit hashes both verify', 
   assert.deepEqual(result.records.map((r) => r.verification), ['workspace', 'commit']);
 });
 
+for (const status of ['current', 'historical']) {
+  for (const field of ['date', 'claudeVersion', 'scope']) {
+    test(`${status} evidence requires nonblank text for ${field}`, (t) => {
+      const f = fixture(t);
+      const record = f[status];
+      const original = record[field];
+      for (const invalid of [undefined, null, 42, true, {}, [], '', ' \t\n']) {
+        if (invalid === undefined) delete record[field];
+        else record[field] = invalid;
+        f.save(status, record);
+        assert.ok(f.check().failures.includes(`${status}.json: Evidence requires its recorded ${field}.`),
+          `${status}.${field} must reject ${JSON.stringify(invalid) ?? 'a missing field'}`);
+      }
+      record[field] = original;
+      f.save(status, record);
+      assert.deepEqual(f.check().failures, []);
+    });
+  }
+}
+
+for (const [field, invalidValues] of [
+  ['permissionMode', [undefined, null, 'bypassPermissions', '', 1]],
+  ['toolPreallowed', [undefined, null, false, 1, 'true']],
+  ['tool', [undefined, null, 'mcp__plugin_manifest-agent_manifest-chain__cosmos_tx', 'deploy_app_orchestrated', '']],
+]) {
+  test(`historical evidence preserves the recorded ${field} setting`, (t) => {
+    const f = fixture(t);
+    const original = f.historical[field];
+    for (const invalid of invalidValues) {
+      if (invalid === undefined) delete f.historical[field];
+      else f.historical[field] = invalid;
+      f.save('historical', f.historical);
+      assert.ok(f.check().failures.includes(`historical.json: Historical ${field} does not match the expected recorded outcome.`),
+        `historical.${field} must reject ${JSON.stringify(invalid) ?? 'a missing field'}`);
+    }
+    f.historical[field] = original;
+    f.save('historical', f.historical);
+    assert.deepEqual(f.check().failures, []);
+  });
+}
+
 test('a changed current hook fails rather than silently retaining old evidence', (t) => {
   const f = fixture(t);
   writeFileSync(join(f.root, 'hooks/hooks.json'), 'changed hook\n');

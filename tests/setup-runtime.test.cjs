@@ -3,12 +3,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync,
-  cpSync, statSync, symlinkSync, utimesSync, chmodSync } = require('node:fs');
+  cpSync, statSync, lstatSync, readlinkSync, symlinkSync, utimesSync, chmodSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawn, spawnSync, fork } = require('node:child_process');
 const { setupRuntime, acquireLock, LOCK_FILE, processStartTime, parseProcessStartTime } = require('../scripts/setup-runtime.cjs');
 const { assertNodeVersion, inspectRuntime, COMPLETION_FILE, RUNTIME_PLATFORM } = require('../scripts/_runtime.cjs');
+const hooks = require('../hooks/hooks.json');
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'manifest runtime '));
@@ -254,9 +255,74 @@ test('the default lock wait holds a live owner for 60 seconds before reporting t
     assert.equal(waited, 60000, 'exercise the default deadline without a timeout override');
     assert.equal(clock, 60000);
     assert.equal(diagnostic.length, 1);
-    assert.match(diagnostic[0], /waiting up to 60 seconds/);
+    assert.match(diagnostic[0], /waiting to acquire runtime setup lock.*up to 60 seconds/);
     assert.equal(readFileSync(join(f.dataDir, LOCK_FILE), 'utf8'), initialOwner, 'a timed-out waiter must preserve the live owner');
+    const sessionHook = hooks.hooks.SessionStart.flatMap((entry) => entry.hooks)
+      .find((hook) => hook.command.includes('scripts/session-start.sh'));
+    assert.equal(sessionHook.timeout, 90, 'the host must leave time to surface a setup timeout');
+    assert.ok(sessionHook.timeout * 1000 > waited, 'SessionStart must outlast the measured default lock wait');
   } finally { console.error = previous; release(); }
+});
+
+test('a dangling setup-lock symlink times out while yielding and leaves the symlink untouched', (t) => {
+  const f = fixture(t);
+  const lock = join(f.dataDir, LOCK_FILE);
+  const target = join(f.root, 'absent-lock-target');
+  symlinkSync(target, lock);
+  const program = `
+const { acquireLock } = require(process.argv[1]);
+let ticks = 0;
+const timer = setInterval(() => ticks++, 2);
+const started = performance.now();
+(async () => {
+  try { const release = await acquireLock(process.argv[2], { timeoutMs: 40, pollMs: 5 }); release(); console.log(JSON.stringify({ acquired: true, ticks })); }
+  catch (error) { console.log(JSON.stringify({ error: error.message, ticks, elapsed: performance.now() - started })); }
+  finally { clearInterval(timer); }
+})();
+`;
+  // A test-runner timeout cannot interrupt a synchronous loop. Keep this in
+  // a separately killable child so the old continue bug fails safely.
+  const result = spawnSync(process.execPath, ['-e', program, join(f.pluginRoot, 'scripts/setup-runtime.cjs'), f.dataDir], {
+    encoding: 'utf8', timeout: 2000, killSignal: 'SIGKILL',
+  });
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.status, 0, result.stderr);
+  const outcome = JSON.parse(result.stdout);
+  assert.match(outcome.error, /Timed out waiting/);
+  assert.ok(outcome.ticks > 0, 'waiting must permit timers and signal handlers to run');
+  assert.ok(outcome.elapsed >= 40);
+  assert.equal(lstatSync(lock).isSymbolicLink(), true);
+  assert.equal(readlinkSync(lock), target);
+  assert.equal(existsSync(target), false);
+});
+
+test('repeated stale lock replacements share one deadline and yield between attempts', async (t) => {
+  const f = fixture(t);
+  const lock = join(f.dataDir, LOCK_FILE);
+  const replaceStaleOwner = () => writeFileSync(lock, '{"pid":0,"token":"inactive-owner"}');
+  replaceStaleOwner();
+  let clock = 0;
+  let waits = 0;
+  await assert.rejects(acquireLock(f.dataDir, {
+    timeoutMs: 20, pollMs: 5, now: () => clock,
+    sleep: async (ms) => { waits++; clock += ms; replaceStaleOwner(); },
+  }), /Timed out waiting/);
+  assert.equal(clock, 20, 'reclaiming a stale owner must not reset the deadline');
+  assert.equal(waits, 4, 'each unsuccessful attempt must yield before retrying');
+});
+
+test('reclaiming a stale lock symlink preserves the referenced file', async (t) => {
+  const f = fixture(t);
+  const target = join(f.root, 'external-owner.json');
+  const contents = '{"pid":0,"token":"inactive-external-record"}';
+  writeFileSync(target, contents);
+  symlinkSync(target, join(f.dataDir, LOCK_FILE));
+  const release = await acquireLock(f.dataDir, { timeoutMs: 100, pollMs: 5 });
+  try {
+    assert.equal(lstatSync(join(f.dataDir, LOCK_FILE)).isFile(), true);
+    assert.equal(readFileSync(target, 'utf8'), contents);
+  } finally { release(); }
+  assert.equal(readFileSync(target, 'utf8'), contents);
 });
 
 test('rejects plugin-root and symlinked child data paths before modifying the plugin', async (t) => {

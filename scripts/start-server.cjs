@@ -10,7 +10,7 @@
  * Usage: node start-server.cjs <chain|lease|fred|cosmwasm|agent>
  */
 
-const { assertNodeVersion, waitForRuntime } = require('./_runtime.cjs');
+const { assertNodeVersion, waitForRuntime, LOCK_FILE } = require('./_runtime.cjs');
 try {
   assertNodeVersion();
 } catch (error) {
@@ -80,7 +80,9 @@ async function startServer() {
   let config;
   try {
     config = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
-  } catch {
+  } catch (error) {
+    // Filesystem failures need their reading phase and safe errno diagnostic.
+    if (!(error instanceof SyntaxError)) throw error;
     // JSON parser messages can include the invalid source text, including a
     // wallet password. Report only the file to repair.
     console.error(`Failed to parse ${CONFIG_PATH}. Repair the JSON or re-run /manifest-agent:init-agent.`);
@@ -128,15 +130,9 @@ async function startServer() {
   // --- Pre-flight: runtime setup may still be starting in SessionStart ---
   startupPhase = 'checking runtime dependencies';
   const binaryPath = join(AGENT_DIR, 'node_modules', '.bin', `manifest-mcp-${serverName}`);
-  let runtime;
-  try {
-    runtime = await waitForRuntime(AGENT_DIR, resolve(__dirname, '..'), {
-      onWaiting: () => console.error('Waiting for Manifest runtime setup to complete...'),
-    });
-  } catch {
-    console.error('Unable to read the plugin runtime definition. Reinstall the plugin, then run setup-runtime.cjs.');
-    process.exit(1);
-  }
+  const runtime = await waitForRuntime(AGENT_DIR, resolve(__dirname, '..'), {
+    onWaiting: () => console.error('Waiting for Manifest runtime setup to complete...'),
+  });
   if (!runtime.ready) {
     console.error(`MCP runtime dependencies are missing, incomplete, or out of date: ${runtime.reason}`);
     console.error('Run node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs" to repair dependencies, then reconnect the MCP servers.');
@@ -224,13 +220,7 @@ async function startServer() {
   // SIGKILL cannot run cleanup and may leave an empty 0700 directory for the OS
   // temp cleaner. Do not sweep other sessions' directories from this process.
   startupPhase = 'creating the MCP working directory';
-  let serverCwd;
-  try {
-    serverCwd = mkdtempSync(join(tmpdir(), 'manifest-mcp-cwd-'));
-  } catch {
-    console.error('Failed to create an isolated MCP working directory. Check the system temporary directory.');
-    process.exit(1);
-  }
+  const serverCwd = mkdtempSync(join(tmpdir(), 'manifest-mcp-cwd-'));
   process.on('exit', () => rmSync(serverCwd, { recursive: true, force: true }));
   startupPhase = `launching manifest-mcp-${serverName}`;
   child = spawn(binaryPath, [], { stdio: 'inherit', env, cwd: serverCwd });
@@ -263,6 +253,12 @@ startServer().catch((error) => {
   const code = error && typeof error === 'object'
     ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
   const detail = SAFE_ERROR_CODES.has(code) ? ` (${code})` : '';
-  console.error(`Manifest MCP startup failed while ${startupPhase}${detail}. Check config.json and runtime setup, then reconnect the server.`);
+  let guidance = 'Check config.json and runtime setup';
+  if (startupPhase === 'checking runtime dependencies') {
+    guidance = `Check runtime data at ${AGENT_DIR}, including ${LOCK_FILE}, and the plugin package.json/package-lock.json`;
+  } else if (startupPhase === 'creating the MCP working directory') {
+    guidance = 'Check the system temporary directory';
+  }
+  console.error(`Manifest MCP startup failed while ${startupPhase}${detail}. ${guidance}, then reconnect the server.`);
   process.exitCode = 1;
 });

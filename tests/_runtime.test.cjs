@@ -197,7 +197,20 @@ test('native addons cannot be stamped or accepted as a runtime shared across Nod
   completion.files.push(['node_modules/dep/addon.node', 'file', 23]);
   writeFileSync(path, JSON.stringify(completion));
   assert.match(inspectRuntime(f.data, f.plugin).reason, /Native addon requires Node-specific runtime support/);
-  rmSync(addon);
-  symlinkSync('package.json', addon);
+});
+
+test('a .node suffix on package directories or symlinks does not imply a native addon', (t) => {
+  const f = fixture(t);
+  mkdirSync(join(f.data, 'node_modules/javascript.node'));
+  writeFileSync(join(f.data, 'node_modules/javascript.node/index.cjs'), 'module.exports = 42;');
+  symlinkSync('package.json', join(f.data, 'node_modules/dep/alias.node'));
+  symlinkSync('../javascript.node', join(f.data, 'node_modules/dep/directory.node'));
+  f.stamp();
+  const completion = JSON.parse(readFileSync(join(f.data, COMPLETION_FILE), 'utf8'));
+  assert.ok(completion.files.some(([path, type]) => path === 'node_modules/javascript.node/index.cjs' && type === 'file'));
+  assert.ok(completion.files.some(([path, type]) => path === 'node_modules/dep/alias.node' && type === 'link'));
+  assert.equal(inspectRuntime(f.data, f.plugin).ready, true);
+  // A directory suffix must neither abort traversal nor hide an actual addon.
+  writeFileSync(join(f.data, 'node_modules/javascript.node/addon.node'), 'native fixture');
   assert.throws(() => snapshotDependencies(f.data), /Native addon requires Node-specific runtime support/);
 });

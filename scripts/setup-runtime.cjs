@@ -45,19 +45,20 @@ async function acquireLock(dataDir, {
     }
     try {
       const owner = readSetupLock(dataDir);
-      if (!owner) continue;
-      if (!owner.active) {
+      if (owner && !owner.active) {
         const before = owner.stat;
         const after = statSync(path);
         if (before.ino === after.ino && before.mtimeMs === after.mtimeMs) unlinkSync(path);
-        continue;
       }
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    // Every unsuccessful exclusive-open attempt shares the deadline and
+    // yields, including disappearing owners, dangling symlinks and stale
+    // records replaced during inspection. None may spin in a continue loop.
     if (now() - started >= timeoutMs) {
-      throw new Error('Timed out waiting for another runtime setup process. Retry after that process finishes.');
+      throw new Error(`Timed out waiting to acquire runtime setup lock ${path}. Check the lock and retry after any active installer finishes.`);
     }
     if (!reportedWait) {
-      console.error(`manifest-agent: another runtime installer holds ${path}; waiting up to ${timeoutMs / 1000} seconds before returning. Retry setup after that installer finishes.`);
+      console.error(`manifest-agent: waiting to acquire runtime setup lock ${path}; up to ${timeoutMs / 1000} seconds before returning.`);
       reportedWait = true;
     }
     await sleep(pollMs);

@@ -116,11 +116,16 @@ fresh host test of every 0.22.0 tool.
 
 Review follow-up: MCP launchers await concurrent SessionStart setup with bounded
 failure diagnostics; supported stable Node majors share the installed JavaScript
-runtime; `.node` addons are rejected until Node-specific runtime support exists.
+runtime; regular `.node` files are rejected until Node-specific runtime support
+exists, while directory and symlink names alone do not identify native addons.
 Setup and launchers share process-owner checks, so dead owners no longer delay
-startup. Linux process identity also distinguishes reused PIDs. Setup contention
-is visible, handled npm failures retain only nonempty logs, and completion errors
+startup. Linux process identity also distinguishes reused PIDs. Setup retries
+yield and stay bounded even for malformed lock paths; launcher diagnostics
+identify lock-read failures without misdirecting users to reinstall the plugin.
+Setup contention is visible, handled npm failures retain only nonempty logs, and completion errors
 identify the invalid metadata. Unsupported prerelease Node builds receive a
 distinct diagnostic. Tests exercise the actual timing defaults. Host evidence
 checks require substantive case results as well as historical/current source
 hashes; historical byte validation requires the recorded Git object locally.
+SIGKILL can leave an empty private MCP working directory for the OS temp cleaner;
+normal exits remove it.

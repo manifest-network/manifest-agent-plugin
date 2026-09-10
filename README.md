@@ -325,11 +325,17 @@ exited; launchers ignore those locks without removing them. On Linux, recorded
 process start times also distinguish reused PIDs. Older locks or platforms without process
 identity stay conservative: do not remove a lock while an installer is running.
 After verifying that neither its parent nor worker is an installer, a stale lock
-can be removed before retrying setup. Runtime errors identify dependency failures
+can be removed before retrying setup. Setup also bounds retries for malformed
+lock paths. Lock-read errors report their startup phase and filesystem code;
+inspect the lock in the data directory. Runtime errors identify dependency failures
 and invalid completion schema, fingerprint, platform or file inventory. Unexpected
 startup failures report their phase and a recognized error code when available,
 without printing config values. Switching between supported stable Node majors
 does not itself require reinstalling this JavaScript-only runtime.
+
+A forced SIGKILL can leave an empty private `manifest-mcp-cwd-*` directory in
+the system temp directory. Normal exits clean it up; the OS temp cleaner can
+remove leftovers.
 
 ### "Out of gas" during a broadcast
 
