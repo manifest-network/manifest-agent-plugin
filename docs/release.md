@@ -105,8 +105,9 @@ GitHub Releases can be deleted; the underlying tag can be deleted with `git push
 - Published saved records remain schema 3; v2/v3 summaries stay readable and
   redacted. No local record migration or deletion accompanies this update.
 - ENG-158 aligns the plugin helper with the billing proto: 3 is CLOSED, 4 is
-  REJECTED, and 5 is EXPIRED; all three are terminal. The legacy
-  INSUFFICIENT_FUNDS string remains terminal without a numeric mapping.
+  REJECTED, and 5 is EXPIRED; all three are terminal. INSUFFICIENT_FUNDS is
+  not in the chain enum; the string remains terminal for compatibility with
+  agent-core's public type and terminal set, without a numeric mapping.
   Orchestrated flows continue to decode states upstream.
 - ENG-260 still owns full
   SKU/provider UUID selection and persistence; authoring saves required size and

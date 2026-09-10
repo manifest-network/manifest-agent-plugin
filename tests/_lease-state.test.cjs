@@ -41,11 +41,11 @@ test('decode() returns undefined for non-canonical strings', () => {
   assert.equal(decode(''), 'LEASE_STATE_UNSPECIFIED');
 });
 
-test('legacy INSUFFICIENT_FUNDS string remains terminal without a numeric mapping', () => {
-  const legacy = 'LEASE_STATE_INSUFFICIENT_FUNDS';
-  assert.equal(decode(legacy), legacy);
-  assert.equal(isTerminal(decode(legacy)), true);
-  assert.equal(Object.values(STATES).includes(legacy), false);
+test('INSUFFICIENT_FUNDS string remains terminal for agent-core compatibility without a numeric mapping', () => {
+  const name = 'LEASE_STATE_INSUFFICIENT_FUNDS';
+  assert.equal(decode(name), name);
+  assert.equal(isTerminal(decode(name)), true);
+  assert.equal(Object.values(STATES).includes(name), false);
 });
 
 test('unknown canonical strings pass through without being classified as terminal', () => {

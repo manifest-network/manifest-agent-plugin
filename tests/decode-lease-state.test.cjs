@@ -24,7 +24,7 @@ for (const [value, name, terminal] of CHAIN_STATES) {
   });
 }
 
-test('CLI retains terminal classification for the legacy INSUFFICIENT_FUNDS name', () => {
+test('CLI retains terminal classification for INSUFFICIENT_FUNDS for agent-core compatibility', () => {
   const name = 'LEASE_STATE_INSUFFICIENT_FUNDS';
   const result = runScript('decode-lease-state.cjs', ['--state', name, '--json']);
   assert.equal(result.status, 0, result.stderr);

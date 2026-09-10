@@ -20,8 +20,9 @@
  *
  * Terminal states: `LEASE_STATE_CLOSED`, `LEASE_STATE_REJECTED`, and
  * `LEASE_STATE_EXPIRED`. EXPIRED means a PENDING lease timed out awaiting
- * provider acknowledgement. The legacy `LEASE_STATE_INSUFFICIENT_FUNDS`
- * string is also treated as terminal, but has no current numeric mapping.
+ * provider acknowledgement. `LEASE_STATE_INSUFFICIENT_FUNDS` remains
+ * terminal for compatibility with agent-core's public type and terminal
+ * set, but is not a chain enum value and has no numeric mapping.
  *
  * Usage:
  *   node decode-lease-state.cjs --state 2

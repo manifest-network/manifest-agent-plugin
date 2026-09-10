@@ -5,12 +5,13 @@
  * scripts. Matches manifestjs's dist/codegen/liftedinit/billing/v1/types.js.
  *
  * Terminal states: CLOSED (normal closure and final settlement), REJECTED
- * (provider rejected the lease), and EXPIRED (a PENDING lease timed out
- * awaiting provider acknowledgement). Rejected and expired leases return
- * their locked credit to the tenant.
+ * (provider rejected the lease or the tenant cancelled it while PENDING),
+ * and EXPIRED (a PENDING lease timed out awaiting provider acknowledgement).
+ * Rejected and expired leases return their locked credit to the tenant.
  *
- * INSUFFICIENT_FUNDS is no longer in the chain enum. Its legacy string is
- * retained as terminal defensively; no current numeric state maps to it.
+ * INSUFFICIENT_FUNDS is not in the chain enum. Its string remains terminal
+ * for compatibility with agent-core's public LeaseStateName type and
+ * terminal set; no numeric state maps to it.
  */
 
 const STATES = {

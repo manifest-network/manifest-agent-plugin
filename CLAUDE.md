@@ -113,6 +113,7 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 - `pre-tool-use.cjs` is the hook payload classifier, invoked by `pre-tool-use.sh`. Its private output is `ask-direct`, `ask-orchestrated`, or `defer`; invalid events exit nonzero. The shell clears Node preload variables and maps only those tokens to fixed host JSON or no decision. Errors, empty output, and unexpected output produce `deny`. The helper exports `decidePermission` for tests.
 - `setup-runtime.cjs` installs or repairs the locked data-directory runtime; `_runtime.cjs` provides the shared Node floor, package/lock fingerprint, process-owner checks, and completion validation used by setup and the launcher. Only setup reclaims stale locks; launchers ignore confirmed dead owners. Completion is platform/architecture-specific but shared across supported stable Node majors for the current JavaScript-only lock. Dependency snapshots and completion validation reject regular `.node` files; adding native dependencies requires explicit Node-specific runtime support. See their tests and the catalog for recovery behavior.
 - `ci/evidence-check.cjs` checks current host-report source hashes and distinguishes historical commit evidence; CI runs it alongside policy completeness. See `docs/approval-validation.md` for rerun and history requirements.
+- `ci/lease-state-parity.cjs --data-dir <runtime-dir>` compares the plugin's numeric `STATES` table with the installed manifestjs `LeaseState` enum, excluding the SDK's `UNRECOGNIZED = -1` sentinel. CI runs it after runtime installation; its unit tests use fixtures and require no runtime packages.
 - Use `rg -n '<script>.cjs' skills/ scripts/` to locate callers — the call graph drifts and isn't worth restating in prose.
 
 ## config.json → MCP env var mapping
@@ -238,7 +239,7 @@ Wrapper schema v3 (written by agent-core; shape unchanged from pre-rewire): `{ s
 
 **Write surface:** agent-core owns it. The plugin's old `save-manifest.cjs` + `remove-manifest.cjs` helpers are deleted (DECISION 2 — agent-core's `saveManifest()` and cleanup branch inside `closeLease`'s recovery dispatch cover both).
 
-Naturally-expired leases leave their saved manifest in place — the file is the historical record. There is no periodic sweep. Lease lifecycle (active / closed / expired) is queried fresh from chain state via `app_status` rather than tracked in the wrapper.
+Saved manifests are historical records; there is no periodic sweep when a lease becomes terminal. Credit exhaustion closes an active lease (`CLOSED`); provider rejection or tenant cancellation while pending produces `REJECTED`; a pending acknowledgement timeout produces `EXPIRED`. Query the current lease state via `app_status`; the wrapper does not track its lifecycle.
 
 ### Wrapper schema evolution
 
