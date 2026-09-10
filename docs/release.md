@@ -83,7 +83,7 @@ Don't tag the hotfix branch directly. The release workflow refuses to release a 
 
 GitHub Releases can be deleted; the underlying tag can be deleted with `git push origin :v<version>`. Marketplace caches may still serve the yanked version until Claude Code refreshes them. Prefer cutting a new patch release with the fix over deleting; the bump path is faster and surfaces the fix in changelogs.
 
-## Next release: runtime compatibility (ENG-893)
+## Next release: runtime compatibility and lease states (ENG-893, ENG-158)
 
 - Requires Node 22.19.0+; CI covers that floor and Node 24. MCP is pinned to
   0.22.0 with a tracked lockfile. Consumer overrides carry upstream ENG-269/270/748
@@ -104,8 +104,11 @@ GitHub Releases can be deleted; the underlying tag can be deleted with `git push
   has no fee-estimation interface, and must not be blindly retried.
 - Published saved records remain schema 3; v2/v3 summaries stay readable and
   redacted. No local record migration or deletion accompanies this update.
-- Existing ENG-158 still owns the plugin helper's numeric terminal-state mapping;
-  current orchestrated flows decode states upstream. ENG-260 still owns full
+- ENG-158 aligns the plugin helper with the billing proto: 3 is CLOSED, 4 is
+  REJECTED, and 5 is EXPIRED; all three are terminal. The legacy
+  INSUFFICIENT_FUNDS string remains terminal without a numeric mapping.
+  Orchestrated flows continue to decode states upstream.
+- ENG-260 still owns full
   SKU/provider UUID selection and persistence; authoring saves required size and
   stops on ambiguous names. MCP 0.22.0's saved wrapper still lacks UUID selectors.
 
