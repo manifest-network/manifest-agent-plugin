@@ -6,7 +6,7 @@
  *
  * BACKGROUND
  *
- * The canonical Cosmos LeaseState integer ↔ name mapping lives in
+ * The canonical Manifest LeaseState integer ↔ name mapping lives in
  * `scripts/_lease-state.cjs` and is exposed as a CLI by
  * `scripts/decode-lease-state.cjs`. The companion test at
  * `tests/_lease-state.test.cjs` pins every encoding form the chain

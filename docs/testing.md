@@ -4,7 +4,8 @@ This document covers running and adding tests for the manifest-agent plugin. For
 
 ## Running tests
 
-The test suite uses `node:test` and `node:assert` — no framework dependency.
+The test suite uses `node:test` and `node:assert` and runs with only Node's
+standard library (`npm test` needs no runtime packages or `NODE_PATH`).
 Runtime support starts at Node 22.19.0. CI tests that exact floor and Node 24
 with the tracked MCP 0.22.0 dependency lock.
 
@@ -34,6 +35,16 @@ guard. They do not broadcast or contact providers:
 ```bash
 node ci/mcp-tool-policy.cjs --data-dir "$INSTALL_DIR"
 node ci/launcher-transport.cjs --data-dir "$INSTALL_DIR"
+```
+
+The lease-state parity check reads the installed manifestjs `LeaseState` enum
+and compares its numeric chain states with `scripts/_lease-state.cjs`.
+It excludes the SDK's `UNRECOGNIZED = -1` sentinel and fails on added,
+removed, or remapped states. CI runs it after installing the locked runtime;
+the check's unit tests use fixtures, keeping `npm test` independent of the SDK.
+
+```bash
+node ci/lease-state-parity.cjs --data-dir "$INSTALL_DIR"
 ```
 
 The launcher check exercises all five configured servers and verifies strict

@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Decode a Cosmos LeaseState integer or JSON-encoded string to its canonical
+ * Decode a Manifest LeaseState integer or JSON-encoded string to its canonical
  * `LEASE_STATE_*` name, plus a `terminal` flag callers can use to decide
  * whether the lease is past the point where any further state transitions
  * are possible (i.e. safe to clean up local artifacts).
@@ -18,13 +18,11 @@
  * the LLM to recall enum mappings — a known hallucination source for
  * chain-specific enums.
  *
- * Terminal states: `LEASE_STATE_CLOSED` AND `LEASE_STATE_INSUFFICIENT_FUNDS`.
- * The chain transitions a lease through INSUFFICIENT_FUNDS when its credit
- * reservation runs out OR when close_lease is invoked manually (observed
- * post-broadcast: a successful close-lease tx may leave the lease in
- * INSUFFICIENT_FUNDS state with `closedAt` populated, rather than directly
- * in CLOSED). Skills that gate cleanup on "state == CLOSED only" miss this
- * case and orphan the local saved-manifest record. Treat both as terminal.
+ * Terminal states: `LEASE_STATE_CLOSED`, `LEASE_STATE_REJECTED`, and
+ * `LEASE_STATE_EXPIRED`. EXPIRED means a PENDING lease timed out awaiting
+ * provider acknowledgement. `LEASE_STATE_INSUFFICIENT_FUNDS` remains
+ * terminal for compatibility with agent-core's public type and terminal
+ * set, but is not a chain enum value and has no numeric mapping.
  *
  * Usage:
  *   node decode-lease-state.cjs --state 2

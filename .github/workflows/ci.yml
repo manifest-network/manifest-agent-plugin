@@ -103,6 +103,9 @@ jobs:
         # Starts the pinned servers offline and sends initialize/tools/list only.
         run: node ci/mcp-tool-policy.cjs --data-dir "$HOME/.manifest-agent"
 
+      - name: Verify lease-state mapping against installed manifestjs
+        run: node ci/lease-state-parity.cjs --data-dir "$HOME/.manifest-agent"
+
       - name: Verify published servers through the real launcher
         run: node ci/launcher-transport.cjs --data-dir "$HOME/.manifest-agent"
 
