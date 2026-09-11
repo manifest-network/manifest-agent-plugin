@@ -101,6 +101,9 @@ remain distinct choices. Optional storage is selected on that provider and
 its identity is recorded for comparison before deployment. Storage still
 deploys by name; duplicate storage names within one provider require a
 different choice until the upstream deployment tool supports storage UUIDs.
+The catalog does not identify SKU types; use a storage SKU documented by
+the provider. The current deployment confirmation omits storage pricing,
+and its transaction estimate excludes the additional storage lease item.
 
 ### Step 2 — Deploy
 

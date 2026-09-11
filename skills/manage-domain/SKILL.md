@@ -85,8 +85,8 @@ If `ACTION === "set"` or `ACTION === "clear"`:
    ```
    The script prints a JSON array of `{ lease_uuid, image, ..., custom_domain? }`;
    surface that and any `sku_uuid` / `provider_uuid` in the picker.
-   Keep the choice keyed by `lease_uuid`; do not infer missing SKU IDs
-   from a name on an older record.
+   Keep the choice keyed by `lease_uuid`; never infer missing SKU IDs
+   from `size` on an older record.
 4. Ask the user to paste a UUID. Validate against the regex.
 
 **Collect FQDN (set only)**: ask the user for the FQDN as a plain string.

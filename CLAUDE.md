@@ -216,11 +216,24 @@ Direct Fred deploy uses a different contract, including snake-case selectors.
 not upstream selectors. Storage must be on the compute provider, and its name
 must identify exactly one active SKU there. Before deploying a draft carrying
 either storage identity field, `check-storage-selection.cjs` verifies both IDs,
-the name, and provider against a fresh catalog. Failure stops before the
+the name, and provider against a fresh catalog. It reads the original draft
+via `--spec-file` and the JSON catalog on stdin from a file serialized by the
+host Write tool. Untrusted catalog values never enter shell source. Compute
+`skuUuid` can supply its provider when `providerUuid` is omitted; name and
+compute selector whitespace is trimmed as upstream does, without rewriting
+the draft. Identifier comparison remains case-sensitive. Failure stops before the
 orchestrator; success establishes only the catalog observation. MCP 0.22.0
 still resolves storage by name at execution time. Storage UUID pinning needs
-an upstream contract change. Older drafts without IDs remain readable and
+the upstream contract change tracked by [ENG-295](https://linear.app/liftedinit/issue/ENG-295).
+Older drafts without IDs remain readable and
 use upstream name resolution; the plugin does not backfill IDs from names.
+
+Catalog records have no compute/storage category. The user must identify a
+provider-documented storage SKU; identity checks do not establish suitability.
+MCP 0.22.0 also omits storage pricing from the confirmation plan and the
+additional storage lease item from fee simulation. Author/deploy skills
+disclose this limitation; an upstream change is required to include storage
+in the plan and estimate ([ENG-944](https://linear.app/liftedinit/issue/ENG-944)).
 
 `/manifest-agent:author-manifest` walks the user through building one and saves it (default `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json`, or any user-chosen absolute path inside the drafts dir or the system tmpdir). Spec files are user-managed: hand-edit them in `$EDITOR`, version-control them in your app repo, generate them with a script, etc. The plugin doesn't garbage-collect drafts.
 
@@ -295,9 +308,13 @@ Every state-changing skill appends one record per invocation to `$MANIFEST_PLUGI
 - The writer is fail-closed (NOT strip-and-continue): any key in the record tree matching `_journal.SECRET_KEY_DENYLIST` (`mnemonic`, `password`, `private_key`, `secret_key`, `api_key`, `auth_token`, `bearer_token`, all with optional `_`/`-` separators) makes `journal-write.cjs` exit 1 and refuse to append. Skills must redact via `_journal.redactArgs` before piping.
 - `manifest_json` is reduced via the in-process `summarizeSpec()` function inside `_journal.cjs` (env keys-only, never values; mirrors the now-deleted standalone `summarize-spec.cjs` script's output shape).
 - Lease/SKU/provider UUIDs, addresses, image refs, custom domains, gas-token symbols ARE captured (legitimate non-sensitive blockchain identifiers).
-- Deploy reducers retain optional `skuUuid` / `providerUuid`, normalizing
-  snake_case aliases through `_spec.cjs#skuIdentity`. Spec fields take
-  precedence over outer arguments. Storage IDs in skill `final_state` are
+- Deploy reducers retain optional `skuUuid` / `providerUuid` only from each
+  tool's accepted input location: `spec` for orchestrated deployment and
+  root snake_case fields for direct Fred deployment. Preview has no selectors.
+  `_spec.cjs#skuIdentity` trims selector strings and uses a snake_case alias
+  only when its camelCase field is absent. Blank/malformed camelCase fields
+  suppress their aliases and are omitted, preventing an ignored alias or
+  outer field from being journaled as a pin. Storage IDs in skill `final_state` are
   the requested draft identity, not evidence of the deployed lease item's SKU.
 
 **Skills that DON'T write a record**: `manage-domain` lookup sub-flow (dedicated read-only orchestrator), `troubleshoot-deployment` when the user picks "Keep" instead of cleanup (read-only diagnostic — matches pre-rewire posture). The `/manifest-agent:journal` query skill is also read-only.

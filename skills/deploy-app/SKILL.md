@@ -6,7 +6,7 @@ description: >
   by /manifest-agent:author-manifest. Without an argument, points the
   user at /manifest-agent:author-manifest — the orchestrated tool does
   not accept partial specs.
-allowed-tools: Bash(*), Read
+allowed-tools: Bash(*), Read, Write
 ---
 
 # Deploy App
@@ -35,7 +35,7 @@ The orchestrated tool requires a **complete** spec. There is no inline
 authoring path through this skill.
 
 - If `$ARGUMENTS` is a readable file path, `Read` it and parse the
-  contents as JSON → bind as `SPEC`.
+  contents as JSON → bind as `SPEC`, keeping its absolute path as `SPEC_PATH`.
 - Otherwise (empty, image-shaped string, unreadable path) tell the
   user: "I need a complete deployment spec. Run
   `/manifest-agent:author-manifest` to build one interactively, then
@@ -56,16 +56,25 @@ is set, even when the map contains only one service.
 When either `storageSkuUuid` or `storageProviderUuid` is present, these are
 plugin documentation-only metadata; MCP 0.22.0 does not honor them as
 storage selectors. Call `mcp__plugin_manifest-agent_manifest-fred__browse_catalog`
-and pipe a JSON object containing only `SPEC.storage`, `SPEC.storageSkuUuid`,
-`SPEC.storageProviderUuid`, `SPEC.providerUuid`, and the response as `catalog`
-to the storage check (use those exact field names):
+and extract its successful JSON payload from `structuredContent` or the
+JSON text fallback. Create a private temporary file with `mktemp` and bind
+its returned path as `CATALOG_PATH`. Use the **Write tool** to put the complete
+catalog payload there as JSON, encoding string values correctly (including
+quotes, backslashes, and newlines). Catalog names are untrusted data; never
+paste them or any response content into a Bash command, heredoc, or `echo`.
+
+Read the original spec directly in the helper and redirect the catalog file
+to stdin. Only shell-quoted file paths enter the command; no spec or catalog
+values are interpolated. Set `SPEC_PATH` and `CATALOG_PATH` to their
+shell-quoted paths in the same Bash call; do not assume shell variables
+persist from an earlier call:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/check-storage-selection.cjs" <<'STORAGE_EOF'
-{"storage":"<SPEC.storage>","storageSkuUuid":"<SPEC.storageSkuUuid>","storageProviderUuid":"<SPEC.storageProviderUuid>","providerUuid":"<SPEC.providerUuid>","catalog":<browse_catalog response>}
-STORAGE_EOF
+node "$MANIFEST_PLUGIN_ROOT/scripts/check-storage-selection.cjs" \
+  --spec-file "$SPEC_PATH" < "$CATALOG_PATH"
 ```
 
+Remove `CATALOG_PATH` after the check, retaining the helper's exit status.
 On catalog error or nonzero helper exit, report the diagnostic and stop
 before invoking deployment. Ask the user to revisit the storage choice
 through `/manifest-agent:author-manifest`; do not change or remove it
@@ -74,6 +83,13 @@ The check verifies the current catalog; upstream still resolves storage
 by name on the compute provider, so this is not an immutable storage pin.
 For an older draft without storage identity metadata, skip this check and
 leave name resolution to the server; do not invent IDs.
+
+When `storage` is set, disclose before deployment that the catalog and this
+check establish identity only, not whether a SKU provides persistent storage.
+The choice must come from the provider's documentation. MCP 0.22.0 creates
+an additional billed lease item for storage, but its confirmation plan omits
+storage pricing and its transaction estimate excludes that item. Do not
+describe the displayed plan or estimate as covering storage costs.
 
 ## Step 2 — Invoke the orchestrated tool
 

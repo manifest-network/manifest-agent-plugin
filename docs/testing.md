@@ -137,6 +137,12 @@ fields; the newer fixtures test reader compatibility, not upstream persistence.
 Draft save/env-merge tests verify compute selectors and storage identity
 metadata survive unchanged. Storage-check tests reject a changed UUID or
 ambiguous same-provider name while allowing the same name on another provider.
+They execute the deploy skill's documented shell command with a serialized
+catalog file containing quotes, backslashes, a heredoc delimiter, and shell
+syntax in a SKU name. The check must preserve that name, leave the original
+spec unchanged, omit its env values, and execute no catalog-supplied commands.
+Journal tests also reject ignored selector locations and aliases suppressed
+by empty camelCase fields, matching the pinned MCP contract.
 
 ## Exercising scripts manually
 

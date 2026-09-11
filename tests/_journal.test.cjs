@@ -227,59 +227,91 @@ test('redactArgs preserves wrapper-shape passthrough fields at the top level', (
   assert.equal(out2.customDomain, 'inner.example.com');
 });
 
-test('deploy spec reducers retain canonical SKU identity for flat and stack specs without env values', () => {
-  for (const tool of DEPLOY_SPEC_TOOLS) {
-    for (const shape of [
-      { image: 'nginx', port: 80, env: { DATABASE_URL: 'private-env-value' } },
-      { services: { web: { image: 'nginx', env: { DATABASE_URL: 'private-env-value' } } } },
+test('deploy reducers retain accepted SKU selectors for flat and stack specs without env values', () => {
+  for (const shape of [
+    { image: 'nginx', port: 80, env: { DATABASE_URL: 'private-env-value' } },
+    { services: { web: { image: 'nginx', env: { DATABASE_URL: 'private-env-value' } } } },
+  ]) {
+    const spec = { ...shape, size: 'small' };
+    for (const [tool, args] of [
+      ['mcp__manifest-fred__deploy_app', { ...spec, sku_uuid: SKU_UUID, provider_uuid: PROVIDER_UUID }],
+      ['mcp__manifest-agent__deploy_app_orchestrated', { spec: { ...spec, skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID } }],
+      ['mcp__manifest-agent__deploy_app_orchestrated', { spec: { ...spec, sku_uuid: SKU_UUID, provider_uuid: PROVIDER_UUID } }],
     ]) {
-      for (const identity of [
-        { skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID },
-        { sku_uuid: SKU_UUID, provider_uuid: PROVIDER_UUID },
-      ]) {
-        const spec = { ...shape, ...identity, size: 'small' };
-        for (const args of [spec, { spec }]) {
-          const out = _journal.redactArgs(tool, args);
-          assert.equal(out.skuUuid, SKU_UUID, tool);
-          assert.equal(out.providerUuid, PROVIDER_UUID, tool);
-          assert.equal(out.sku_uuid, undefined);
-          assert.equal(out.provider_uuid, undefined);
-          assert.equal(out.size, 'small');
-          assert.deepEqual(out.summary.env_keys, ['DATABASE_URL']);
-          assert.doesNotMatch(JSON.stringify(out), /private-env-value/);
-        }
-      }
+      const out = _journal.redactArgs(tool, args);
+      assert.equal(out.skuUuid, SKU_UUID, tool);
+      assert.equal(out.providerUuid, PROVIDER_UUID, tool);
+      assert.equal(out.sku_uuid, undefined);
+      assert.equal(out.provider_uuid, undefined);
+      assert.equal(out.size, 'small');
+      assert.deepEqual(out.summary.env_keys, ['DATABASE_URL']);
+      assert.doesNotMatch(JSON.stringify(out), /private-env-value/);
     }
   }
 });
 
-test('deploy spec reducers preserve identity precedence and skip non-string aliases', () => {
-  const cases = [
-    { specCamel: 'spec-camel', specSnake: 'spec-snake', rawCamel: 'raw-camel', rawSnake: 'raw-snake', expected: 'spec-camel' },
-    { specCamel: {}, specSnake: 'spec-snake', rawCamel: 'raw-camel', rawSnake: 'raw-snake', expected: 'spec-snake' },
-    { specCamel: null, specSnake: [], rawCamel: 'raw-camel', rawSnake: 'raw-snake', expected: 'raw-camel' },
-    { specCamel: false, specSnake: 7, rawCamel: {}, rawSnake: 'raw-snake', expected: 'raw-snake' },
-    { specCamel: null, specSnake: [], rawCamel: {}, rawSnake: false, expected: undefined },
-    { specCamel: '', specSnake: 'spec-snake', rawCamel: 'raw-camel', rawSnake: 'raw-snake', expected: '' },
-  ];
-  for (const tool of DEPLOY_SPEC_TOOLS) {
-    for (const { specCamel, specSnake, rawCamel, rawSnake, expected } of cases) {
-      const out = _journal.redactArgs(tool, {
-        spec: { image: 'nginx', skuUuid: specCamel, sku_uuid: specSnake, providerUuid: specCamel, provider_uuid: specSnake },
-        skuUuid: rawCamel,
-        sku_uuid: rawSnake,
-        providerUuid: rawCamel,
-        provider_uuid: rawSnake,
-      });
-      assert.equal(out.skuUuid, expected, tool);
-      assert.equal(out.providerUuid, expected, tool);
-      assert.equal(out.sku_uuid, undefined);
-      assert.equal(out.provider_uuid, undefined);
+test('orchestrated identity never falls through blank or malformed camelCase to snake_case or outer selectors', () => {
+  const tool = 'mcp__manifest-agent__deploy_app_orchestrated';
+  for (const camel of ['', ' \t\n', null, {}, false, 7]) {
+    const out = _journal.redactArgs(tool, {
+      spec: { image: 'nginx', skuUuid: camel, sku_uuid: SKU_UUID, providerUuid: camel, provider_uuid: PROVIDER_UUID },
+      skuUuid: SKU_UUID, sku_uuid: SKU_UUID,
+      providerUuid: PROVIDER_UUID, provider_uuid: PROVIDER_UUID,
+    });
+    assert.equal(Object.hasOwn(out, 'skuUuid'), false);
+    assert.equal(Object.hasOwn(out, 'providerUuid'), false);
+  }
+  const out = _journal.redactArgs(tool, {
+    spec: { image: 'nginx', skuUuid: SKU_UUID, sku_uuid: 'ignored-sku', providerUuid: PROVIDER_UUID, provider_uuid: 'ignored-provider' },
+    skuUuid: 'ignored-outer-sku', providerUuid: 'ignored-outer-provider',
+  });
+  assert.equal(out.skuUuid, SKU_UUID);
+  assert.equal(out.providerUuid, PROVIDER_UUID);
+});
+
+test('deploy reducers omit selectors in locations the pinned MCP tool does not accept', () => {
+  const identity = { skuUuid: SKU_UUID, sku_uuid: SKU_UUID, providerUuid: PROVIDER_UUID, provider_uuid: PROVIDER_UUID };
+  for (const [tool, args] of [
+    ['mcp__manifest-agent__deploy_app_orchestrated', { image: 'nginx', ...identity }],
+    ['mcp__manifest-agent__deploy_app_orchestrated', { spec: { image: 'nginx' }, ...identity }],
+    ['mcp__manifest-fred__deploy_app', { image: 'nginx', skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID }],
+    ['mcp__manifest-fred__deploy_app', { spec: { image: 'nginx', ...identity } }],
+    ['mcp__manifest-fred__build_manifest_preview', { image: 'nginx', ...identity }],
+    ['mcp__manifest-fred__build_manifest_preview', { spec: { image: 'nginx', ...identity }, ...identity }],
+  ]) {
+    const out = _journal.redactArgs(tool, args);
+    assert.equal(Object.hasOwn(out, 'skuUuid'), false, tool);
+    assert.equal(Object.hasOwn(out, 'providerUuid'), false, tool);
+  }
+  // Fred consumes only root snake_case; unsupported camelCase does not win.
+  const fred = _journal.redactArgs('mcp__manifest-fred__deploy_app', {
+    image: 'nginx', skuUuid: 'ignored', providerUuid: 'ignored',
+    sku_uuid: SKU_UUID, provider_uuid: PROVIDER_UUID,
+  });
+  assert.equal(fred.skuUuid, SKU_UUID);
+  assert.equal(fred.providerUuid, PROVIDER_UUID);
+  const partial = _journal.redactArgs('mcp__manifest-agent__deploy_app_orchestrated', {
+    spec: { image: 'nginx', skuUuid: SKU_UUID }, provider_uuid: PROVIDER_UUID,
+  });
+  assert.equal(partial.skuUuid, SKU_UUID);
+  assert.equal(Object.hasOwn(partial, 'providerUuid'), false);
+});
+
+test('deploy reducers normalize selector whitespace and omit blank selectors', () => {
+  for (const value of ['', ' \t\n', ` ${SKU_UUID}\n`]) {
+    for (const [tool, args] of [
+      ['mcp__manifest-fred__deploy_app', { image: 'nginx', sku_uuid: value, provider_uuid: value }],
+      ['mcp__manifest-agent__deploy_app_orchestrated', { spec: { image: 'nginx', skuUuid: value, providerUuid: value } }],
+      ['mcp__manifest-agent__deploy_app_orchestrated', { spec: { image: 'nginx', sku_uuid: value, provider_uuid: value } }],
+    ]) {
+      const out = _journal.redactArgs(tool, args);
+      assert.equal(out.skuUuid, value.trim() || undefined, tool);
+      assert.equal(out.providerUuid, value.trim() || undefined, tool);
+      if (!value.trim()) {
+        assert.equal(Object.hasOwn(out, 'skuUuid'), false, tool);
+        assert.equal(Object.hasOwn(out, 'providerUuid'), false, tool);
+      }
     }
-    // Resolve each identity field independently across the envelope boundary.
-    const out = _journal.redactArgs(tool, { spec: { image: 'nginx', skuUuid: SKU_UUID }, provider_uuid: PROVIDER_UUID });
-    assert.equal(out.skuUuid, SKU_UUID);
-    assert.equal(out.providerUuid, PROVIDER_UUID);
   }
 });
 

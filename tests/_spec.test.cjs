@@ -82,7 +82,7 @@ test('skuIdentity: projects top-level identity from flat and stack specs', () =>
   }
 });
 
-test('skuIdentity: accepts snake_case aliases and prefers string camelCase values', () => {
+test('skuIdentity: accepts snake_case aliases only when camelCase is undefined', () => {
   assert.deepEqual(skuIdentity({ sku_uuid: SKU_UUID, provider_uuid: PROVIDER_UUID }), {
     skuUuid: SKU_UUID,
     providerUuid: PROVIDER_UUID,
@@ -98,7 +98,7 @@ test('skuIdentity: accepts snake_case aliases and prefers string camelCase value
     sku_uuid: SKU_UUID,
     providerUuid: false,
     provider_uuid: PROVIDER_UUID,
-  }), { skuUuid: SKU_UUID, providerUuid: PROVIDER_UUID });
+  }), {});
 });
 
 test('skuIdentity: absent or malformed identity produces an empty projection', () => {
@@ -115,6 +115,21 @@ test('skuIdentity: absent or malformed identity produces an empty projection', (
 test('skuIdentity: preserves each available string field without inventing its counterpart', () => {
   assert.deepEqual(skuIdentity({ skuUuid: SKU_UUID, providerUuid: {} }), { skuUuid: SKU_UUID });
   assert.deepEqual(skuIdentity({ provider_uuid: PROVIDER_UUID }), { providerUuid: PROVIDER_UUID });
-  // This is a projection, not UUID validation: match the journal's string-only whitelist.
-  assert.deepEqual(skuIdentity({ skuUuid: '', sku_uuid: SKU_UUID }), { skuUuid: '' });
+});
+
+test('skuIdentity: blank camelCase selectors omit identity without falling through to aliases', () => {
+  for (const blank of ['', ' ', '\t\n']) {
+    assert.deepEqual(skuIdentity({
+      skuUuid: blank, sku_uuid: SKU_UUID,
+      providerUuid: blank, provider_uuid: PROVIDER_UUID,
+    }), {});
+    assert.deepEqual(skuIdentity({ sku_uuid: blank, provider_uuid: blank }), {});
+  }
+});
+
+test('skuIdentity: normalizes surrounding whitespace like the upstream SKU resolver', () => {
+  assert.deepEqual(skuIdentity({ skuUuid: ` ${SKU_UUID}\t`, provider_uuid: `\n${PROVIDER_UUID} ` }), {
+    skuUuid: SKU_UUID,
+    providerUuid: PROVIDER_UUID,
+  });
 });

@@ -63,18 +63,33 @@ Store the choice as `SHAPE` (`single` or `stack`).
 ## Step 2 — Choose SKU size
 
 Call `mcp__plugin_manifest-agent_manifest-fred__browse_catalog`. From its `skus`
-array, build an `AskUserQuestion` with one option per active SKU. Label each
-option `<name> · <provider_uuid> · <price> <unit>`; show its full `sku_uuid`
-and `provider_url` in the description. If labels repeat (even within one
-provider), append `sku_uuid` to the labels. Never merge entries by name.
-`price` is a string, or "unavailable" when null; do not assume a nested
-amount/denom price or provider display-name field.
+array, retain active entries with both `sku_uuid` and `provider_uuid`.
+Use this picker for compute and, with the restrictions in 4a, storage:
+
+- Keep one catalog snapshot and sort by `provider_uuid`, then `sku_uuid`.
+  Label each SKU option `<name> · <full sku_uuid>`; describe its full
+  `provider_uuid`, `provider_url`, and `<price> <unit>`. `price` is a string,
+  or "unavailable" when null; do not assume a nested amount/denom price or
+  provider display-name field. Never merge entries by name.
+- Every `AskUserQuestion` has `multiSelect: false` and 2–4 options. With
+  no usable compute entries, report the unavailable/incomplete catalog and
+  stop without a picker. With no usable storage entries, offer **Refresh
+  catalog** / **No disk**; refresh restarts storage selection and **No disk**
+  omits storage and its IDs. With one entry, offer its SKU option plus
+  **Cancel** for compute or **No disk** for storage. **Cancel** ends authoring.
+- With 2–4 entries, offer them directly. With more than four, split the
+  sorted entries into pages of two, adding **Previous page** and **Next
+  page** only where those pages exist. Thus a first page has three options,
+  a middle page four, and the last page two or three. Navigation changes
+  only the page; it never selects a SKU or writes an identifier.
 
 Bind the choice to the exact catalog entry: store `sku_uuid` as `SKU_UUID`,
 `provider_uuid` as `PROVIDER_UUID`, and `name` as `SIZE`. The catalog field
 is `sku_uuid`, not `uuid`. Do not offer an entry missing either identifier;
-report incomplete catalog data if there are no usable choices. If a typed
-answer names several entries, ask the user to choose the exact UUID.
+the picker label must map back to that exact entry in the snapshot. If a
+typed answer names several entries, ask the user to choose the exact UUID
+using the same picker; never treat a partial UUID or a navigation response
+as a selection.
 
 Persist `skuUuid: SKU_UUID` and `providerUuid: PROVIDER_UUID` at the spec's
 top level for both deployment shapes. These selectors are honored by the
@@ -140,11 +155,14 @@ collect `test` (string array, e.g. `["CMD", "curl", "-f",
 "http://localhost:8080/health"]`), and optional `interval`, `timeout`,
 `retries`, `start_period`.
 
-**Storage** — ask: "Add a persistent disk? (Yes / No)". On Yes, present
-active storage SKU options from `browse_catalog` on `PROVIDER_UUID` only,
-using the same labels and exact-entry selection as Step 2. Save the name
-in top-level `storage`, plus `storageSkuUuid` and `storageProviderUuid`
-from that entry's `sku_uuid` and `provider_uuid`.
+**Storage** — ask: "Add a persistent disk? (Yes / No)". On Yes, show active
+catalog entries on `PROVIDER_UUID` only, using the Step 2 picker. The catalog
+has no compute/storage type discriminator: ask the user to identify a
+storage SKU documented by this provider; a name such as `storage-*` does
+not establish suitability. If the user cannot identify one, offer
+**Choose another SKU** / **No disk**. Save the selected name in top-level
+`storage`, plus `storageSkuUuid` and `storageProviderUuid` from that entry's
+`sku_uuid` and `provider_uuid`; do not certify its storage suitability.
 
 These storage IDs are **documentation-only metadata**: MCP 0.22.0 resolves
 `storage` by name within the compute provider and has no storage UUID
@@ -154,6 +172,10 @@ ask for a different storage choice or no disk. Do not switch providers or
 drop the disk silently. `/manifest-agent:deploy-app` rechecks the recorded
 storage identity before invoking deployment; it cannot pin storage by UUID
 during the upstream call. Include this limitation when storage is chosen.
+Also explain that storage adds a lease item and its price is omitted from
+MCP 0.22.0's deployment plan; the create-lease fee estimate includes only
+compute items. Do not present that plan or estimate as covering the full
+storage deployment cost.
 
 **tmpfs** — ask "Need any tmpfs mounts? (Yes / Skip)". On Yes, collect a
 list of paths.
@@ -437,6 +459,8 @@ safest way to validate changes before deploying.
 Omit absent storage/domain lines. When storage is set, explain that the
 deployment tool resolves storage by name within this provider; its UUID is
 recorded for comparison, not enforced as a deployment selector.
+Repeat the storage cost limitation from 4a: the upstream plan omits its
+price, and the fee estimate omits its extra lease item.
 
 **Version control caveat — check for secrets before committing.** If
 the user picked "From a file" for env in Step 4 (single-service or

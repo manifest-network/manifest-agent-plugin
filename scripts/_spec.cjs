@@ -12,6 +12,7 @@
  * The shape branch lives here so all consumers agree on how to detect
  * and walk the two forms. Current consumers:
  *   - _journal.cjs (isStack, normalizeServices, skuIdentity)
+ *   - check-storage-selection.cjs (skuIdentity)
  *   - save-manifest-draft.cjs (firstImage)
  *   - merge-env.cjs (isStack)
  *
@@ -28,9 +29,11 @@
  *     otherwise. `raw` is the per-service object exactly as the spec
  *     stores it (no field projection — leave that to callers).
  *   skuIdentity(spec) — projects optional top-level skuUuid/providerUuid
- *     strings, accepting snake_case aliases. CamelCase strings win.
- *     Returns {} when absent or malformed; does not resolve SKU names
- *     or infer a deployment identity from per-service fields.
+ *     strings using MCP 0.22.0's selector semantics: snake_case aliases
+ *     apply only when camelCase is undefined; selected strings are trimmed
+ *     like the upstream SKU resolver. Blank or malformed selected values
+ *     are omitted without falling through to an alias. Does not resolve
+ *     SKU names or infer deployment identity from per-service fields.
  */
 
 function isStack(spec) {
@@ -59,8 +62,8 @@ function skuIdentity(spec) {
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return {};
   const out = {};
   for (const [camel, snake] of [['skuUuid', 'sku_uuid'], ['providerUuid', 'provider_uuid']]) {
-    if (typeof spec[camel] === 'string') out[camel] = spec[camel];
-    else if (typeof spec[snake] === 'string') out[camel] = spec[snake];
+    const value = spec[camel] === undefined ? spec[snake] : spec[camel];
+    if (typeof value === 'string' && value.trim()) out[camel] = value.trim();
   }
   return out;
 }
