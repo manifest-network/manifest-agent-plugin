@@ -1,4 +1,5 @@
 ---
+name: list-providers
 description: >
   List registered providers on the active Manifest chain. Read-only.
   Defaults to active providers only; pass `--all` as the argument to
@@ -6,6 +7,8 @@ description: >
   provider-aware deploy flows.
 allowed-tools: Bash(*), Read
 ---
+
+<!-- Generated from workflows/list-providers.md by ci/build-packages.cjs. -->
 
 # List Providers
 

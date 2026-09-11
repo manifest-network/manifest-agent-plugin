@@ -1,0 +1,38 @@
+{
+  "name": "manifest-agent",
+  "version": "0.4.0",
+  "description": "Author complete Manifest deployment specs, deploy applications and manage leases from Codex.",
+  "author": {
+    "name": "The Lifted Initiative",
+    "url": "https://liftedinit.org"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Manifest Agent",
+    "shortDescription": "Deploy and manage apps on Manifest.",
+    "longDescription": "Shared Manifest deployment and lease workflows with native Codex confirmation, isolated local wallets and a reproducible runtime.",
+    "developerName": "The Lifted Initiative",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Author a Manifest deployment spec.",
+      "Deploy my complete Manifest spec.",
+      "Check my Manifest leases and balances."
+    ]
+  },
+  "mcpServers": "./.mcp.json",
+  "homepage": "https://github.com/manifest-network/manifest-agent-plugin",
+  "repository": "https://github.com/manifest-network/manifest-agent-plugin",
+  "license": "MIT",
+  "keywords": [
+    "manifest",
+    "blockchain",
+    "cosmos",
+    "mcp",
+    "deployment"
+  ]
+}

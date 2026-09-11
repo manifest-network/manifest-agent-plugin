@@ -1,12 +1,14 @@
 ---
+name: journal
 description: >
   Query the operation journal — the read-only audit trail of every
   state-changing skill invocation. Filter by date, skill, lease UUID,
-  signer address, or outcome. User-invoked only — not for Claude to
-  auto-discover.
+  signer address, or outcome. Use when the user requests this operation.
 allowed-tools: Bash(*)
 disable-model-invocation: true
 ---
+
+<!-- Generated from workflows/journal.md by ci/build-packages.cjs. -->
 
 # Journal
 

@@ -1,11 +1,14 @@
 ---
+name: import-key
 description: >
   Import an existing mnemonic phrase into the Manifest agent config.
   The mnemonic flows through scripts via stdin and never enters the
-  conversation. User-invoked only — not for Claude to auto-discover.
+  conversation. Use when the user requests this operation.
 allowed-tools: Bash(*)
 disable-model-invocation: true
 ---
+
+<!-- Generated from workflows/import-key.md by ci/build-packages.cjs. -->
 
 # Import Existing Key
 
@@ -51,7 +54,7 @@ chmod 600 /tmp/mnemonic.txt
 Wait for the user to provide the file path before proceeding.
 
 **CRITICAL**: Do NOT ask the user to paste the mnemonic in the conversation.
-Do NOT read the mnemonic file. The file content must never enter Claude's context.
+Do NOT read the mnemonic file. The file content must never enter Claude Code's context.
 
 ## Step 2 — Import key and update config
 
@@ -64,7 +67,7 @@ cat MNEMONIC_FILE | node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix
 ```
 
 The mnemonic flows through the pipe (file → import-key → write-config).
-Claude sees only the bash invocation (the file path, but not contents)
+Claude Code sees only the bash invocation (the file path, but not contents)
 and `write-config.cjs`'s safe stdout JSON.
 
 Parse the JSON output to get `address` and `activeChain`.
@@ -115,7 +118,7 @@ Do NOT mention the journal write in your reply to the user.
 ## Security notes
 
 - The mnemonic NEVER appears in this conversation. The user creates a file
-  containing it, and the skill pipes that file through scripts without Claude
+  containing it, and the skill pipes that file through scripts without Claude Code
   ever seeing the content.
 - The key password also never appears — it flows via pipe from import-key to
   write-config.

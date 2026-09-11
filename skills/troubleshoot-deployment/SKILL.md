@@ -12,6 +12,8 @@ description: >
 allowed-tools: Bash(*), Read
 ---
 
+<!-- Generated from workflows/troubleshoot-deployment.md by ci/build-packages.cjs. -->
+
 # Troubleshoot Deployment
 
 You are producing a unified troubleshooting report for a deployed app on
@@ -121,15 +123,16 @@ On **Close**, invoke:
 mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated({ lease_uuid: LEASE_UUID })
 ```
 
-Claude Code evaluates the PreToolUse hook on the outer close invocation
-before execution. Once allowed, the server requests native action
+Claude Code evaluates the PreToolUse hook before this outer invocation starts. A denied call does not reach the MCP server.
+
+The server requests native action
 confirmation through MCP elicitation, performs the applicable stop
 operation, and verifies the terminal chain state. The close recap does not guarantee a
 numeric fee estimate. Claude Code renders the elicitation request
 and returns the user's answer; do not reprint its message, forward the
 answer yourself, or add another prose confirmation. The earlier Close /
 Keep choice selects the cleanup action. Internal SDK operations do not
-trigger additional host PreToolUse events.
+trigger additional host host tool events.
 
 Check for an error envelope before capturing successful `CLOSE_RESULT`
 (`{ leaseUuid, finalState }`). Report the exact terminal state;

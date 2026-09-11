@@ -12,6 +12,8 @@ description: >
 allowed-tools: Bash(*), Read
 ---
 
+<!-- Generated from workflows/manage-domain.md by ci/build-packages.cjs. -->
+
 # Manage Custom Domain
 
 You are setting, clearing, or looking up a custom domain on a Manifest
@@ -112,13 +114,14 @@ mcp__plugin_manifest-agent_manifest-agent__manage_domain_orchestrated({
 })
 ```
 
-For set/clear, Claude Code evaluates the PreToolUse hook on this outer
-invocation before execution. Once allowed, the server requests native
+Claude Code evaluates the PreToolUse hook before this outer invocation starts. A denied call does not reach the MCP server.
+
+The server requests native
 elicitation for the domain action. The pinned tool's action recap does
 not guarantee a numeric fee estimate. Claude Code renders
 the request and returns the user's answer; do not reprint the message,
 forward the answer yourself, or ask for a duplicate prose confirmation.
-The internal SDK write does not produce a separate host PreToolUse event.
+The internal SDK write does not produce a separate host host tool event.
 The orchestrated tool verifies the on-chain result and reports mismatches.
 
 Read `structuredContent` or parse the JSON text fallback; check for

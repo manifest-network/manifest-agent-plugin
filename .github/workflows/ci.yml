@@ -58,14 +58,21 @@ jobs:
         run: |
           PKG=$(node -p "require('./package.json').version")
           PLUGIN=$(node -p "require('./.claude-plugin/plugin.json').version")
-          if [ "$PKG" != "$PLUGIN" ]; then
-            echo "Version mismatch: package.json=$PKG .claude-plugin/plugin.json=$PLUGIN" >&2
+          CODEX=$(node -p "require('./hosts/codex/manifest-agent/.codex-plugin/plugin.json').version")
+          LOCK=$(node -p "require('./package-lock.json').packages[''].version")
+          if [ "$PKG" != "$PLUGIN" ] || [ "$PKG" != "$CODEX" ] || [ "$PKG" != "$LOCK" ]; then
+            echo "Version mismatch: package=$PKG Claude=$PLUGIN Codex=$CODEX lock=$LOCK" >&2
             exit 1
           fi
-          echo "Both manifests at version $PKG"
+          echo "Both host manifests and runtime at version $PKG"
+
+      - name: Verify shared skills and build the native Codex package
+        run: npm run build:codex
 
       - name: Verify recorded host evidence provenance
-        run: node ci/evidence-check.cjs
+        run: |
+          node ci/evidence-check.cjs
+          node ci/host-acceptance.cjs
 
       - name: Verify PreToolUse policy completeness (matcher tools named in policy + CLAUDE.md parity)
         # Checks the dependency-free matcher / runtime policy / docs contract.
@@ -109,6 +116,9 @@ jobs:
       - name: Verify published servers through the real launcher
         run: node ci/launcher-transport.cjs --data-dir "$HOME/.manifest-agent"
 
+      - name: Verify both host launchers and pinned workflow contracts
+        run: node ci/host-contracts.cjs --data-dir "$HOME/.manifest-agent"
+
       - name: Run unit tests
         # Tests use `node:test` + `node:assert` (no test framework dep). The
         # NODE_PATH points at the same install populated above so any future
@@ -126,3 +136,27 @@ jobs:
         # above). `network`-tagged blocks are inventoried-but-skipped unless
         # DOCS_CI_RUN_NETWORK=1.
         run: NODE_PATH="$HOME/.manifest-agent/node_modules" npm run test:docs
+
+      - name: Upload native Codex package
+        if: matrix.node == '24'
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-agent-codex
+          path: dist/codex
+          include-hidden-files: true
+
+  codex-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install the characterized Codex host
+        run: npm install --global @openai/codex@0.153.4
+      - name: Exercise native discovery and form confirmation with harmless fixtures
+        run: node ci/codex-host-smoke.cjs --out codex-host-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codex-host-report
+          path: codex-host-report.json

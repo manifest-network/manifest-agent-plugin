@@ -24,6 +24,7 @@ const { tmpdir, constants: { signals, errno } } = require('node:os');
 const { spawn } = require('node:child_process');
 const { getDataDir } = require('./_io.cjs');
 
+const skillCommand = (name) => `${process.env.MANIFEST_PLUGIN_HOST === 'codex' ? '$' : '/'}manifest-agent:${name}`;
 const VALID_SERVERS = ['chain', 'lease', 'fred', 'cosmwasm', 'agent'];
 let AGENT_DIR;
 try {
@@ -73,7 +74,7 @@ async function startServer() {
   // --- Pre-flight: config.json ---
   if (!existsSync(CONFIG_PATH)) {
     console.error(`Config not found at ${CONFIG_PATH}`);
-    console.error('Run /manifest-agent:init-agent to set up.');
+    console.error(`Run ${skillCommand('init-agent')} to set up.`);
     process.exit(1);
   }
 
@@ -85,14 +86,14 @@ async function startServer() {
     if (!(error instanceof SyntaxError)) throw error;
     // JSON parser messages can include the invalid source text, including a
     // wallet password. Report only the file to repair.
-    console.error(`Failed to parse ${CONFIG_PATH}. Repair the JSON or re-run /manifest-agent:init-agent.`);
+    console.error(`Failed to parse ${CONFIG_PATH}. Repair the JSON or re-run ${skillCommand('init-agent')}.`);
     process.exit(1);
   }
 
   // --- Validate config fields ---
   startupPhase = 'validating config.json';
   if (config === null || typeof config !== 'object' || Array.isArray(config)) {
-    console.error('Invalid config: config.json must contain a JSON object. Re-run /manifest-agent:init-agent.');
+    console.error(`Invalid config: config.json must contain a JSON object. Re-run ${skillCommand('init-agent')}.`);
     process.exit(1);
   }
   const { activeChain, gasPrice, gasMultiplier, chains, agent } = config;
@@ -102,7 +103,7 @@ async function startServer() {
   }
 
   if (!gasPrice) {
-    console.error('Invalid config: missing gasPrice. Re-run /manifest-agent:init-agent.');
+    console.error(`Invalid config: missing gasPrice. Re-run ${skillCommand('init-agent')}.`);
     process.exit(1);
   }
 
@@ -117,13 +118,13 @@ async function startServer() {
   // mnemonic or the upstream binary's default ~/.manifest/key.json wallet.
   if (typeof agent?.keyFile !== 'string' || !agent.keyFile.trim()
     || typeof agent.keyPassword !== 'string') {
-    console.error('Invalid config: agent.keyFile and agent.keyPassword are required. Re-run /manifest-agent:init-agent.');
+    console.error(`Invalid config: agent.keyFile and agent.keyPassword are required. Re-run ${skillCommand('init-agent')}.`);
     process.exit(1);
   }
   const keyFile = resolve(AGENT_DIR, agent.keyFile);
   if (!existsSync(keyFile)) {
     console.error(`Configured wallet file not found at ${keyFile}`);
-    console.error('Run /manifest-agent:import-key to restore the configured wallet.');
+    console.error(`Run ${skillCommand('import-key')} to restore the configured wallet.`);
     process.exit(1);
   }
 
@@ -199,7 +200,7 @@ async function startServer() {
   if (serverName === 'chain' && activeChain === 'testnet' && !chain.faucetUrl) {
     console.error(
       'Warning: testnet config has no faucetUrl — the request_faucet tool will not be available. ' +
-      'Run /manifest-agent:refresh-registry to pick up the latest chain data.'
+      `Run ${skillCommand('refresh-registry')} to pick up the latest chain data.`
     );
   }
 

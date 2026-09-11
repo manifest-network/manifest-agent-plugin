@@ -4,11 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A Claude Code plugin (`manifest-agent`) that bootstraps an autonomous agent for the Manifest blockchain. It installs MCP tooling, manages keypairs, fetches chain registry data, and configures everything so the agent can interact with testnet or mainnet.
+A Claude Code and native Codex plugin (`manifest-agent`) that bootstraps an autonomous agent for the Manifest blockchain. It installs MCP tooling, manages keypairs, fetches chain registry data, and configures everything so the agent can interact with testnet or mainnet.
+
+**Shared workflow source:** edit `workflows/<name>.md`; run `npm run build:skills`
+to regenerate the shipped Claude skills. `npm run build:codex` checks those
+files and builds a separate native package in `dist/codex`. Host fragments
+in `hosts/` contain only host integration differences. The builder resolves
+MCP names, skill invocations, local tools and questions before installation;
+the model never translates Claude tool names into Codex names.
 
 ## Architecture
 
 **Plugin root is read-only in production.** Marketplace installs copy the plugin to `~/.claude/plugins/cache/`. All mutable state lives in `${CLAUDE_PLUGIN_DATA}` — Claude Code's persistent per-plugin data directory, resolved at runtime to `~/.claude/plugins/data/<id>/` and exposed to scripts as `$MANIFEST_PLUGIN_DATA` (exported by the SessionStart hook).
+
+That path is preserved for Claude. Codex resolves its independent data root
+through `_host.cjs`: `MANIFEST_CODEX_DATA`, otherwise
+`${XDG_DATA_HOME:-$HOME/.local/share}/manifest-agent/codex`. Host adapters
+supply the same `MANIFEST_PLUGIN_ROOT`, `MANIFEST_PLUGIN_DATA`, `NODE_PATH`
+contract. Mutable config, wallets, chain metadata, drafts, saved manifests,
+journals and dependency installs are isolated per host. Shared data directories
+are unsupported; no automatic wallet or chain migration occurs.
+
+Codex's `codex-server.cjs` performs locked setup, then wraps the shared launcher
+with `_mcp-bridge.cjs`. It injects the generated runtime policy into MCP
+initialization, refuses reviewed mutations without native form support, and
+confirms direct writes. Orchestrated forms, progress, cancellation and partial
+results remain upstream-owned. Codex ships no Claude hooks and does not use
+`CLAUDE_ENV_FILE`. Skills load `host-env.cjs codex --shell` exports in each
+shell call. See `docs/codex.md` and `docs/host-acceptance.md`.
 
 ```
 Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
@@ -79,7 +102,14 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 
 ### `references/` files and cross-skill loading
 
-Post-ENG-130 there are no shared references. The plugin-root
+Codex packages generate `references/runtime-policy.md` from the canonical
+transaction policy in `scripts/session-start.sh`, replacing only the host
+enforcement paragraphs. Consumers are all Codex skills and the MCP adapter;
+variables are `MANIFEST_PLUGIN_ROOT` and `MANIFEST_PLUGIN_DATA` supplied by
+`host-env.cjs`. Restart-confirmation fragments in `hosts/<host>/` are consumed
+only by the `restart-app` generator with `LEASE_UUID` and `IMAGE` in scope.
+
+The former plugin-root
 `references/{readiness-branching,billing-tx-confirm,verify-recover}.md`
 and `skills/deploy-app/references/*.md` files were all deleted because
 their content (readiness branching, billing-tx confirm scaffold, post-

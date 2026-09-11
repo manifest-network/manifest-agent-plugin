@@ -10,6 +10,11 @@ const { spawnSync } = require('node:child_process');
 const SCRIPT = join(__dirname, '..', 'scripts', 'session-start.sh');
 const hooks = require('../hooks/hooks.json');
 
+function copyHostAdapter(root) {
+  mkdirSync(join(root, 'scripts'), { recursive: true });
+  for (const name of ['host-env.cjs', '_host.cjs']) cpSync(join(__dirname, '../scripts', name), join(root, 'scripts', name));
+}
+
 // Tools the session-start.sh hook needs available in PATH. Used to build a
 // jq-less PATH for testing the grep+sed fallback: we create a shim directory
 // containing symlinks to everything EXCEPT jq, then set PATH to just that
@@ -17,12 +22,13 @@ const hooks = require('../hooks/hooks.json');
 // named `jq` is reachable.
 const HOOK_TOOLS = [
   'bash', 'sh', 'cat', 'grep', 'head', 'sed', 'cp', 'diff', 'rm', 'mkdir',
-  'chmod', 'true', 'false', 'env', 'printf', 'tr', 'cut',
+  'chmod', 'node', 'true', 'false', 'env', 'printf', 'tr', 'cut',
 ];
 
 function buildShimWithoutJq() {
   const shim = mkdtempSync(join(tmpdir(), 'session-start-shim-no-jq-'));
   for (const t of HOOK_TOOLS) {
+    if (t === 'node') { symlinkSync(process.execPath, join(shim, t)); continue; }
     for (const dir of ['/bin', '/usr/bin', '/usr/local/bin']) {
       const src = join(dir, t);
       if (existsSync(src)) {
@@ -41,6 +47,7 @@ function buildShimWithoutJq() {
 function runHook({ stdin = '', pathOverride } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'session-start-root-'));
   const data = mkdtempSync(join(tmpdir(), 'session-start-data-'));
+  copyHostAdapter(root);
   const envFile = join(mkdtempSync(join(tmpdir(), 'session-start-env-')), 'env');
   const env = {
     PATH: pathOverride !== undefined ? pathOverride : process.env.PATH,
@@ -123,6 +130,7 @@ test('registered SessionStart command emits policy and usable exports from a spa
     mkdirSync(join(root, 'scripts'), { recursive: true });
     mkdirSync(data);
     cpSync(SCRIPT, join(root, 'scripts/session-start.sh'));
+    copyHostAdapter(root);
     const env = { PATH: process.env.PATH, CLAUDE_PLUGIN_ROOT: root, CLAUDE_PLUGIN_DATA: data, CLAUDE_ENV_FILE: envFile };
     const command = hooks.hooks.SessionStart[0].hooks[0].command;
     const result = spawnSync('/bin/bash', ['-c', command], {
@@ -239,6 +247,7 @@ function bootstrapFixture(t, setupSource) {
   const data = join(dir, 'new runtime data');
   mkdirSync(join(root, 'scripts'), { recursive: true });
   cpSync(SCRIPT, join(root, 'scripts/session-start.sh'));
+    copyHostAdapter(root);
   writeFileSync(join(root, 'package.json'), '{}');
   writeFileSync(join(root, 'scripts/setup-runtime.cjs'), setupSource);
   const env = { PATH: process.env.PATH, CLAUDE_PLUGIN_ROOT: root, CLAUDE_PLUGIN_DATA: data, CLAUDE_ENV_FILE: join(dir, 'session env') };
@@ -279,6 +288,7 @@ test('SessionStart propagates runtime setup failures after emitting policy and e
 test('SessionStart reports missing Node before running dependency setup', (t) => {
   const f = bootstrapFixture(t, 'throw new Error("must not execute");');
   withShimWithoutJq((shim) => {
+    rmSync(join(shim, 'node'));
     const result = f.run({ PATH: shim });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Node 22\.19\.0\+ is required/);

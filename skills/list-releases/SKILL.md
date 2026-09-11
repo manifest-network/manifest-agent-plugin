@@ -1,4 +1,5 @@
 ---
+name: list-releases
 description: >
   Show the release/version history for a deployed Manifest app.
   Read-only. Optional argument: a lease UUID (omit to pick from active
@@ -6,6 +7,8 @@ description: >
   newest first; rolling back to a prior release is out of scope here.
 allowed-tools: Bash(*), Read
 ---
+
+<!-- Generated from workflows/list-releases.md by ci/build-packages.cjs. -->
 
 # List Releases
 

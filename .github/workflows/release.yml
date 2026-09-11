@@ -37,13 +37,24 @@ jobs:
           TAG="${GITHUB_REF_NAME#v}"
           PKG=$(node -p "require('./package.json').version")
           PLUGIN=$(node -p "require('./.claude-plugin/plugin.json').version")
-          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$PLUGIN" ]; then
-            echo "Version mismatch: tag=$TAG package.json=$PKG plugin.json=$PLUGIN" >&2
+          CODEX=$(node -p "require('./hosts/codex/manifest-agent/.codex-plugin/plugin.json').version")
+          LOCK=$(node -p "require('./package-lock.json').packages[''].version")
+          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$PLUGIN" ] || [ "$TAG" != "$CODEX" ] || [ "$TAG" != "$LOCK" ]; then
+            echo "Version mismatch: tag=$TAG package=$PKG Claude=$PLUGIN Codex=$CODEX lock=$LOCK" >&2
             exit 1
           fi
           echo "All versions match: $TAG"
+
+      - name: Require current interactive and live compatibility evidence
+        run: node ci/host-acceptance.cjs --release
+
+      - name: Build the native Codex release archive
+        run: |
+          npm run build:codex
+          tar -czf "manifest-agent-codex-${GITHUB_REF_NAME}.tar.gz" -C dist codex
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          files: manifest-agent-codex-*.tar.gz

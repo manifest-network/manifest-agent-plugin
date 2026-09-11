@@ -1,5 +1,14 @@
 # Testing
 
+Native Codex packaging, concurrent host runtimes, confirmation, cancellation
+and the release evidence matrix are covered in
+[host-acceptance.md](host-acceptance.md). Build with `npm run build:codex`;
+generated Claude skill drift fails the build. `ci/host-contracts.cjs` compares
+both real launchers against the installed runtime and tests published callback
+contracts offline. `ci/codex-host-smoke.cjs` characterizes the actual Codex
+app-server with harmless fixtures; CI pins Codex CLI 0.153.4. These checks do
+not substitute for interactive UI and live testnet evidence.
+
 This document covers running and adding tests for the manifest-agent plugin. For the higher-level architecture, see [`../CLAUDE.md`](../CLAUDE.md).
 
 ## Running tests
