@@ -196,8 +196,11 @@ storage metadata is present, include `storage_sku_uuid` and
 storage identity, not proof of the deployed lease item's SKU. Omit them
 for legacy drafts. Actual provider identity comes from the tool result.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with the following shape. The
+placeholders describe in-memory values; do not substitute them into shell
+source or treat this sketch as already serialized JSON.
+
+```text
 {
   "skill": "deploy-app",
   "active_chain": "<activeChain from Step 0>",
@@ -217,5 +220,24 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [{ "class": "<error class>", "mcp_error_code": "<returned code>", "message": "<concise safe error message; omit this object on success>" }],
   "recovery_actions": ["<completed recovery outcome, omit entry when none>"]
 }
-JOURNAL_EOF
 ```
+
+Create a private temporary file with `mktemp` and capture its path as
+`JOURNAL_PATH`. Use the **Write tool** to serialize the complete redacted
+record to that file as JSON, correctly encoding quotes, backslashes, and
+newlines in every string. Redaction removes secrets, but fields such as
+`args_redacted.size` still contain provider-controlled catalog data. Never
+paste the record, its fields, or tool responses into a Bash command,
+heredoc, or `echo`.
+
+Set `JOURNAL_PATH` to its shell-quoted path in the same Bash call; do not
+assume shell variables persist from an earlier call. Pass the file to the
+writer through stdin:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+```
+
+Remove the temporary file after the call, preserving the writer's exit
+status. If appending fails, report the journal diagnostic without
+rerunning deployment; a journal failure does not undo the deployed lease.

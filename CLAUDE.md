@@ -303,6 +303,12 @@ Every state-changing skill appends one record per invocation to `$MANIFEST_PLUGI
 
 **Writing**: skills pipe a JSON record to `journal-write.cjs`. The writer auto-fills `timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` (from `$MANIFEST_SESSION_ID`); runs `validateRecord` (fail-closed against `SECRET_KEY_DENYLIST` — see below); appends one line via `fs.appendFileSync(... { flag: 'a' })`. Concurrency story: on Linux ext4 / xfs the inode mutex serializes concurrent `write(2)` calls to a regular file, so a record under `MAX_RECORD_BYTES` (4 KiB) appends without interleaving in practice — best-effort, not a POSIX guarantee (`PIPE_BUF` formally applies to pipes / FIFOs only). Records exceeding 4 KiB are replaced with a smaller `journal_truncated` marker so realistic concurrent writes stay in the single-`write(2)` regime and the daily file never carries a torn line.
 
+`deploy-app` serializes the complete redacted record with the host Write
+tool into a private temporary file, then passes it via stdin redirection.
+Only the file path enters shell source. Redaction removes secret values;
+it does not make remaining values such as provider-controlled SKU names
+safe to interpolate into a shell command or heredoc.
+
 **Redaction discipline** — same posture as `summarize-manifest.cjs`:
 - Env maps render as sorted keys, never values.
 - The writer is fail-closed (NOT strip-and-continue): any key in the record tree matching `_journal.SECRET_KEY_DENYLIST` (`mnemonic`, `password`, `private_key`, `secret_key`, `api_key`, `auth_token`, `bearer_token`, all with optional `_`/`-` separators) makes `journal-write.cjs` exit 1 and refuse to append. Skills must redact via `_journal.redactArgs` before piping.

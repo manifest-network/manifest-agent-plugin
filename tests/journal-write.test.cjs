@@ -2,10 +2,11 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, rmSync, readFileSync, statSync, existsSync } = require('node:fs');
+const { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, existsSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
+const _journal = require('../scripts/_journal.cjs');
 
 const SCRIPT = join(__dirname, '..', 'scripts', 'journal-write.cjs');
 
@@ -63,6 +64,63 @@ test('happy path: appends a record and returns the journal file path', () => {
     const record = JSON.parse(lines[0]);
     assert.equal(record.skill, 'set-gas-price');
     assert.equal(record.outcome, 'success');
+  });
+});
+
+test('deploy skill journal command reads serialized records without interpreting spec text', () => {
+  withDataDir((dataDir) => {
+    const pluginRoot = join(__dirname, '..');
+    const skill = readFileSync(join(pluginRoot, 'skills', 'deploy-app', 'SKILL.md'), 'utf8');
+    const journalBlock = [...skill.matchAll(/```bash\n([\s\S]*?)\n```/g)]
+      .find((match) => match[1].includes('scripts/journal-write.cjs'));
+    assert.ok(journalBlock, 'deploy skill must include a journal-write bash command');
+
+    const markerPath = join(dataDir, 'shell-marker');
+    const size = `small"\\\nJOURNAL_EOF\ntouch '${markerPath}'\n$(touch '${markerPath}')\n\`touch '${markerPath}'\``;
+    const secret = 'private-deploy-environment-value';
+    const tool = 'mcp__manifest-agent__deploy_app_orchestrated';
+    const argsRedacted = _journal.redactArgs(tool, {
+      spec: { image: 'nginx:1.27', port: 80, size, env: { API_KEY: secret } },
+    });
+    const recordJson = JSON.stringify(makeRecord({
+      skill: 'deploy-app',
+      intent: 'deploy nginx',
+      plan_summary: 'deploy single spec',
+      tool_calls: [{ tool, args_redacted: argsRedacted, outcome: 'ok', result_summary: {} }],
+      final_state: {},
+    }));
+    assert.equal(recordJson.includes(secret), false, 'reduce environment values before serialization');
+    const journalPath = join(dataDir, 'journal record.json');
+    writeFileSync(journalPath, recordJson, { mode: 0o600 });
+
+    // Execute the documented command, so returning to an interpolated heredoc
+    // breaks this regression even when the journal writer itself is unchanged.
+    const r = spawnSync('bash', ['-c', journalBlock[1]], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        MANIFEST_PLUGIN_ROOT: pluginRoot,
+        MANIFEST_PLUGIN_DATA: dataDir,
+        MANIFEST_SESSION_ID: '',
+        JOURNAL_PATH: journalPath,
+      },
+    });
+    assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+    const filePath = join(dataDir, 'journal', `${todayUtc()}.jsonl`);
+    assert.equal(r.stdout.trim(), filePath, 'stdout must contain only the journal path');
+    const contents = readFileSync(filePath, 'utf8');
+    const lines = contents.trimEnd().split('\n');
+    assert.equal(lines.length, 1);
+    const record = JSON.parse(lines[0]);
+    assert.equal(record.skill, 'deploy-app');
+    assert.deepEqual(record.tool_calls[0].args_redacted, argsRedacted);
+    assert.equal(record.tool_calls[0].args_redacted.size, size);
+    assert.deepEqual(record.tool_calls[0].args_redacted.summary.env_keys, ['API_KEY']);
+    assert.equal(existsSync(markerPath), false, 'spec text must never execute as shell commands');
+    for (const output of [contents, r.stdout, r.stderr]) {
+      assert.equal(output.includes(secret), false, 'environment values must not reach journal output');
+    }
+    assert.equal(statSync(filePath).mode & 0o777, 0o600);
   });
 });
 

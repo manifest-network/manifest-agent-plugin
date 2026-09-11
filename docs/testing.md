@@ -143,6 +143,10 @@ syntax in a SKU name. The check must preserve that name, leave the original
 spec unchanged, omit its env values, and execute no catalog-supplied commands.
 Journal tests also reject ignored selector locations and aliases suppressed
 by empty camelCase fields, matching the pinned MCP contract.
+The journal-write integration test executes the deploy skill's journal
+command with a serialized record containing the same hostile SKU-name
+patterns. It verifies literal preservation, no shell execution, and no
+environment secret in the journal or command output.
 
 ## Exercising scripts manually
 
