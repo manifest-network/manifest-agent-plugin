@@ -26,7 +26,9 @@
  *      regime — see `_journal.cjs`'s header for the concurrency model).
  *
  * Usage:
- *   echo '<record-json>' | node journal-write.cjs [--dry-run]
+ *   node journal-write.cjs [--dry-run] < record.json
+ * Serialize dynamic record values to a file; never interpolate them into
+ * shell source. Redacted values such as SKU names can still be untrusted.
  *
  * Stdout (success): the journal file path that was appended to (mirrors
  *   the UX of save-manifest.cjs).

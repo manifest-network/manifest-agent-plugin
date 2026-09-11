@@ -73,10 +73,12 @@
  *       (1) deploy_app / build_manifest_preview / deploy_app_orchestrated →
  *           reduce spec to the in-process `summarizeSpec()` output (env
  *           keys-only summary; defined below), preserve whitelisted
- *           top-level fields (customDomain, serviceName, size;
- *           snake_case aliases also accepted). The orchestrated form
- *           ALWAYS uses the `{ spec: ... }` envelope; the legacy fred
- *           tools tolerate either shape.
+ *           fields (customDomain, serviceName, size; snake_case aliases
+ *           also accepted). SKU/provider identity follows MCP 0.22.0:
+ *           orchestrated selectors come only from `{ spec: ... }`;
+ *           direct deploy selectors use root snake_case; previews do not
+ *           select a SKU. The summary tolerates historical bare/wrapped
+ *           shapes for all three tools.
  *       (2) manage_domain_orchestrated → normalize { action, lease_uuid?,
  *           fqdn?, service_name? } to camelCase output keys (leaseUuid,
  *           customDomain, serviceName). No secrets — every field is a
@@ -118,7 +120,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { getDataDir } = require('./_io.cjs');
-const { isStack, normalizeServices } = require('./_spec.cjs');
+const { isStack, normalizeServices, skuIdentity } = require('./_spec.cjs');
 
 const SCHEMA_VERSION = 1;
 
@@ -276,8 +278,9 @@ function redactArgs(toolName, rawArgs) {
   // structured spec (potentially carrying user env values). Reduce it via
   // the in-process `summarizeSpec()` helper (env-keys-only summary; see
   // its definition above). The orchestrated form ALWAYS uses the
-  // `{ spec: ... }` envelope per its MCP inputSchema; the legacy fred
-  // tools tolerate either bare-spec or wrapped. Sharing the branch avoids
+  // `{ spec: ... }` envelope per its MCP inputSchema; direct Fred tools
+  // take a bare spec. The summary also tolerates historical wrapped Fred
+  // records. Sharing the branch avoids
   // duplicating the summarizer + passthrough discipline across three tool
   // names. `dataDir` is intentionally NOT in the passthrough — the
   // orchestrated tool reads it from the server env (MANIFEST_AGENT_DATA_DIR)
@@ -288,11 +291,22 @@ function redactArgs(toolName, rawArgs) {
     || toolName === 'mcp__manifest-fred__build_manifest_preview'
     || toolName === 'mcp__manifest-agent__deploy_app_orchestrated'
   ) {
-    // Tolerate two call shapes: a bare spec, or `{ spec: ... }`. The
-    // orchestrated tool uses the wrapper shape; legacy fred tools use
-    // bare-spec.
+    // Keep historical summary shapes readable. Identity uses the actual
+    // tool contract below, so an ignored selector cannot look applied.
     const spec = rawArgs.spec && typeof rawArgs.spec === 'object' ? rawArgs.spec : rawArgs;
-    const out = { summary: summarizeSpec(spec) };
+    const out = {
+      summary: summarizeSpec(spec),
+    };
+    if (toolName === 'mcp__manifest-agent__deploy_app_orchestrated') {
+      // Outer fields are not forwarded by the MCP envelope, including
+      // when an inner selector is absent or explicitly blank.
+      Object.assign(out, skuIdentity(rawArgs.spec));
+    } else if (toolName === 'mcp__manifest-fred__deploy_app') {
+      Object.assign(out, skuIdentity({
+        skuUuid: rawArgs.sku_uuid,
+        providerUuid: rawArgs.provider_uuid,
+      }));
+    }
     // Whitelisted passthrough fields. The SPEC stores camelCase
     // (mirroring the underlying TypeScript signature) but the on-wire
     // deploy_app call uses snake_case — accept either alias so the

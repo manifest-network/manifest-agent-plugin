@@ -7,7 +7,7 @@
  * Output (JSON array, pretty-printed): one entry per file, with ONLY the
  * non-sensitive wrapper fields:
  *
- *   { lease_uuid, image, size, deployed_at_iso, chain_id,
+ *   { lease_uuid, image, size, sku_uuid?, provider_uuid?, deployed_at_iso, chain_id,
  *     format?, meta_hash_hex?, schema_version?,
  *     custom_domain?, custom_domain_service_name? }
  *
@@ -31,7 +31,7 @@ const { readdirSync, readFileSync, statSync } = require('node:fs');
 const { join, basename } = require('node:path');
 const { getDataDir } = require('./_io.cjs');
 
-const SAFE_FIELDS = ['lease_uuid', 'image', 'size', 'deployed_at_iso', 'chain_id', 'format', 'meta_hash_hex', 'schema_version', 'custom_domain', 'custom_domain_service_name'];
+const SAFE_FIELDS = ['lease_uuid', 'image', 'size', 'sku_uuid', 'provider_uuid', 'deployed_at_iso', 'chain_id', 'format', 'meta_hash_hex', 'schema_version', 'custom_domain', 'custom_domain_service_name'];
 
 (async () => {
   // getDataDir() lookup belongs inside the IIFE so a missing

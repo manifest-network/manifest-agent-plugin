@@ -130,6 +130,24 @@ For schema-evolving wrappers (the post-deploy wrapper file written by `manifest-
 - A v(N) fixture asserting the new shape works.
 - A v(N-1) fixture asserting the reader still loads it (missing fields render as undefined, not throw).
 
+ENG-260 reader fixtures also exercise optional `sku_uuid` / `provider_uuid`
+without requiring a schema bump, including names repeated across providers
+and within one provider. MCP 0.22.0 still writes v3 wrappers without these
+fields; the newer fixtures test reader compatibility, not upstream persistence.
+Draft save/env-merge tests verify compute selectors and storage identity
+metadata survive unchanged. Storage-check tests reject a changed UUID or
+ambiguous same-provider name while allowing the same name on another provider.
+They execute the deploy skill's documented shell command with a serialized
+catalog file containing quotes, backslashes, a heredoc delimiter, and shell
+syntax in a SKU name. The check must preserve that name, leave the original
+spec unchanged, omit its env values, and execute no catalog-supplied commands.
+Journal tests also reject ignored selector locations and aliases suppressed
+by empty camelCase fields, matching the pinned MCP contract.
+The journal-write integration test executes the deploy skill's journal
+command with a serialized record containing the same hostile SKU-name
+patterns. It verifies literal preservation, no shell execution, and no
+environment secret in the journal or command output.
+
 ## Exercising scripts manually
 
 Useful for debugging without standing up a full Claude session.

@@ -11,15 +11,13 @@
  *
  * The shape branch lives here so all consumers agree on how to detect
  * and walk the two forms. Current consumers:
- *   - render-intent-recap.cjs (normalizeServices)
- *   - summarize-spec.cjs (isStack, normalizeServices)
- *   - extract-primary-image.cjs (firstImage) — used by deploy-app orchestrator
+ *   - _journal.cjs (isStack, normalizeServices, skuIdentity)
+ *   - check-storage-selection.cjs (skuIdentity)
  *   - save-manifest-draft.cjs (firstImage)
  *   - merge-env.cjs (isStack)
- * Without this module the isStack check was inlined 5 places.
  *
  * Underscore prefix marks this as a sibling-only helper. Skills MUST NOT
- * shell out to it; consume `extract-primary-image.cjs` instead.
+ * shell out to it; sibling scripts consume it via require('./_spec.cjs').
  *
  * Exports:
  *   isStack(spec) — true when the services-map shape is used.
@@ -30,6 +28,12 @@
  *     `null` for legacy single-service and the services-map key
  *     otherwise. `raw` is the per-service object exactly as the spec
  *     stores it (no field projection — leave that to callers).
+ *   skuIdentity(spec) — projects optional top-level skuUuid/providerUuid
+ *     strings using MCP 0.22.0's selector semantics: snake_case aliases
+ *     apply only when camelCase is undefined; selected strings are trimmed
+ *     like the upstream SKU resolver. Blank or malformed selected values
+ *     are omitted without falling through to an alias. Does not resolve
+ *     SKU names or infer deployment identity from per-service fields.
  */
 
 function isStack(spec) {
@@ -54,4 +58,14 @@ function normalizeServices(spec) {
   return [{ name: null, raw: spec || {} }];
 }
 
-module.exports = { isStack, firstImage, normalizeServices };
+function skuIdentity(spec) {
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return {};
+  const out = {};
+  for (const [camel, snake] of [['skuUuid', 'sku_uuid'], ['providerUuid', 'provider_uuid']]) {
+    const value = spec[camel] === undefined ? spec[snake] : spec[camel];
+    if (typeof value === 'string' && value.trim()) out[camel] = value.trim();
+  }
+  return out;
+}
+
+module.exports = { isStack, firstImage, normalizeServices, skuIdentity };
