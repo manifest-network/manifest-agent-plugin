@@ -135,3 +135,10 @@ test('historical terminal evidence verifies its recorded commit and is never fre
   sources['ci/terminal-host-smoke.cjs'] = 'modified';
   assert.throws(() => validateReport(report, { historicalSources: () => sources }), /Historical source differs/);
 });
+
+for (const host of ['claude', 'codex']) test(`archived ${host} terminal evidence preserves the complete observed matrix`, () => {
+  const report = JSON.parse(fs.readFileSync(join(__dirname, '../docs/host-evidence', `${host}-terminal.json`)));
+  assert.equal(report.host, host);
+  assert.equal(validateReport(report).status, 'historical');
+  assert.throws(() => validateReport(report, { requireCurrent: true }), /Fresh current/);
+});
