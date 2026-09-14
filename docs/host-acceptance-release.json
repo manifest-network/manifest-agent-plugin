@@ -4,11 +4,19 @@
   "upstreamVersion": "0.22.0",
   "hosts": {
     "claude": {
-      "interactive": { "status": "pending" },
+      "interactive": {
+        "status": "pending",
+        "terminalEvidencePath": "docs/host-evidence/claude-terminal.json",
+        "remaining": "Published-version upgrade and saved-record preservation; terminal cancellation visibility limitations are recorded in the fixture evidence."
+      },
       "testnet": { "status": "pending" }
     },
     "codex": {
-      "interactive": { "status": "pending" },
+      "interactive": {
+        "status": "pending",
+        "terminalEvidencePath": "docs/host-evidence/codex-terminal.json",
+        "remaining": "Published-version upgrade and saved-record preservation; terminal progress/cancellation visibility limitations are recorded in the fixture evidence."
+      },
       "testnet": { "status": "pending" }
     }
   }

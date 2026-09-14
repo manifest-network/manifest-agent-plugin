@@ -36,17 +36,84 @@ Its callback cases cover unavailable elicitation, decline, cancel, complete
 success, declined paid-partial recovery and cancellation after broadcast.
 These fixtures do not test the real provider/chain orchestration itself.
 
+## Interactive terminal fixtures
+
+With Claude Code **2.1.270**, Codex CLI **0.154.0**, and tmux installed:
+
+```bash
+node ci/terminal-host-smoke.cjs --host claude --out /tmp/claude-terminal.json
+node ci/terminal-host-smoke.cjs --host codex --out /tmp/codex-terminal.json
+node ci/terminal-host-smoke.cjs --check /tmp/claude-terminal.json --require-current
+node ci/terminal-host-smoke.cjs --check /tmp/codex-terminal.json --require-current
+```
+
+The harness runs actual interactive terminals, sends scripted keystrokes,
+and captures rendered screens at each permission boundary. Local deterministic
+model responses request one harmless MCP operation; the model never supplies
+approval answers. The shipped hooks, launchers, policy, skills and generated
+Codex package are exercised with the dependency runtime replaced by a fixture
+whose only mutation is a temporary marker. No chain, provider, funded wallet,
+real API credentials or GUI is involved. Temporary homes, tmux sessions and
+the loopback API are cleaned up after each case. The CLI versions are checked
+before execution; review menu and prompt behavior before changing the pins.
+
+Each host covers fresh discovery, outer denial, direct mutation acceptance
+and decline, orchestrated acceptance, decline and cancellation, declined
+paid-partial recovery, and cancellation after a simulated broadcast. Reports
+retain source hashes, exact versions, keys, rendered screens, MCP events and
+marker counts before and after confirmation. `--case <name>` runs one case
+for diagnosis and produces only partial evidence.
+
+The Claude fixture uses `--plugin-dir` and its production SessionStart hook.
+Claude assigns inline plugin data to
+`<CLAUDE_CONFIG_DIR>/plugins/data/manifest-agent-inline`; the harmless runtime
+is prepared there before launch. Codex installs through a temporary local
+marketplace. Both hosts must discover all five servers before the first
+prompt is submitted. Claude's exact test tool is preallowed so the visible
+outer prompt proves that the plugin's hook still requests permission.
+
+Terminal results use a scripted summary of the actual returned tool output;
+they do not validate model reasoning or the full deployment workflow.
+Published-version upgrades and preservation of real saved records remain
+separate acceptance work. A stopped tool can lose its late result or warning
+in the host UI; inspect the captured cancellation screen as well as the
+fixture event log before claiming that a partial deployment was visible.
+
+The recorded [Claude terminal run](host-evidence/claude-terminal.json) and
+[Codex terminal run](host-evidence/codex-terminal.json) each cover all nine
+cases. The reports are historical snapshots of their full source commit;
+`--check <report> --require-history` verifies those bytes when the commit is
+available. Without that commit, validation explicitly reports metadata-only
+verification. A partial `--case` report cannot pass full-matrix validation.
+
+| Observed behavior | Claude Code 2.1.270 | Codex CLI 0.154.0 |
+| --- | --- | --- |
+| Outer denial | No MCP tool call, zero markers | No MCP tool call, zero markers |
+| Native decline | MCP action `decline`, zero markers | Default `False` submits action `accept` with `confirm: false`, zero markers |
+| Native cancellation | MCP action `cancel`, zero markers | MCP action `cancel`, zero markers |
+| Accepted direct/orchestrated operation | Exactly one marker | Exactly one marker |
+| Declined recovery after simulated payment | `partial` and fixture lease ID visible | `partial` and fixture lease ID visible |
+| In-flight progress | `plan_ready` and `broadcast_complete` visible | Calling/working indicator; phase notifications not visible |
+| Escape after simulated broadcast | MCP cancellation received; late warning emitted but absent from final screen | Terminal interrupted; no MCP cancellation observed in the two-second window |
+
+Neither host retained the fixture lease ID on its final interruption screen.
+These observations leave post-broadcast outcomes uncertain from the terminal
+alone. Preserve identifiers and inspect existing records before retrying an
+interrupted deployment. Terminal fixture coverage does not close the full
+interactive release row: published-version upgrade/record preservation and
+the live workflow still need their own evidence.
+
 ## Matrix
 
 | Scenario | Local CI | Real Claude host | Real Codex host | Live testnet |
 | --- | --- | --- | --- | --- |
-| Clean discovery, 14 skills, 5 servers | Generated package and launcher checks | Existing install path retained | App-server fixture recorded | Pending |
+| Clean discovery, 14 skills, 5 servers | Generated package and launcher checks | Terminal skill menu and 5 servers | Terminal skill menu and 5 servers; full inventory in app-server fixture | Pending |
 | Runtime repair/upgrade preserves records | Setup tests and concurrent host-process test | Existing hook/bootstrap tests | Reinstall preserves fixture config | Pending |
 | Author/validate and shared tool names | Existing draft/spec tests; pinned inventory | Full workflow pending | Full workflow pending | Pending |
-| Decline before mutation | All 12 reviewed mutations gated; zero markers | Existing 14-case host report and historical terminal report | Direct + orchestrated form decline, zero markers | Pending |
-| Complete/active deployment | Native transport and pinned callback cases | Full workflow pending | App-server fixture | Pending |
-| Cancel before execution | Adapter and pinned callback cases | Recorded host cancel | App-server form cancel | Pending |
-| Paid partial and post-broadcast cancellation | Identifiers, progress and warning preserved | Current full UI observation pending | Partial app-server result; cancellation/progress UI pending | Pending |
+| Decline before mutation | All 12 reviewed mutations gated; zero markers | Terminal direct + orchestrated denial, zero markers | Terminal direct + orchestrated denial, zero markers | Pending |
+| Complete/active deployment | Native transport and pinned callback cases | Terminal fixture success; live workflow pending | Terminal fixture success; live workflow pending | Pending |
+| Cancel before execution | Adapter and pinned callback cases | Terminal native cancel | Terminal native cancel | Pending |
+| Paid partial and post-broadcast cancellation | Identifiers, progress and warning preserved | Partial result visible; late warning lost on interruption | Partial result visible; cancellation/phase visibility limitations above | Pending |
 | Status, troubleshoot, domain, restart, balance, providers | Existing helpers; pinned tool references; native restart fixture | Full sequence pending | Full sequence pending | Pending |
 | Saved records and journals | Existing v2/v3 readers; isolated concurrent persistence | Real record sequence pending | Real record sequence pending | Pending |
 
