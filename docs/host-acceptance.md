@@ -107,15 +107,22 @@ the live workflow still need their own evidence.
 
 | Scenario | Local CI | Real Claude host | Real Codex host | Live testnet |
 | --- | --- | --- | --- | --- |
-| Clean discovery, 14 skills, 5 servers | Generated package and launcher checks | Terminal skill menu and 5 servers | Terminal skill menu and 5 servers; full inventory in app-server fixture | Pending |
-| Runtime repair/upgrade preserves records | Setup tests and concurrent host-process test | Existing hook/bootstrap tests | Reinstall preserves fixture config | Pending |
-| Author/validate and shared tool names | Existing draft/spec tests; pinned inventory | Full workflow pending | Full workflow pending | Pending |
-| Decline before mutation | All 12 reviewed mutations gated; zero markers | Terminal direct + orchestrated denial, zero markers | Terminal direct + orchestrated denial, zero markers | Pending |
-| Complete/active deployment | Native transport and pinned callback cases | Terminal fixture success; live workflow pending | Terminal fixture success; live workflow pending | Pending |
-| Cancel before execution | Adapter and pinned callback cases | Terminal native cancel | Terminal native cancel | Pending |
-| Paid partial and post-broadcast cancellation | Identifiers, progress and warning preserved | Partial result visible; late warning lost on interruption | Partial result visible; cancellation/phase visibility limitations above | Pending |
-| Status, troubleshoot, domain, restart, balance, providers | Existing helpers; pinned tool references; native restart fixture | Full sequence pending | Full sequence pending | Pending |
-| Saved records and journals | Existing v2/v3 readers; isolated concurrent persistence | Real record sequence pending | Real record sequence pending | Pending |
+| Clean discovery, 14 skills, 5 servers | Generated package and launcher checks | Terminal skill menu and 5 servers | Terminal skill menu and 5 servers; full inventory in app-server fixture | Fresh isolated runtime and host startup |
+| Runtime repair/upgrade preserves records | Setup tests and concurrent host-process test | Existing hook/bootstrap tests | Reinstall preserves fixture config | Upgrade not exercised |
+| Author/validate and shared tool names | Existing draft/spec tests; pinned inventory | Real preview of operator-authored spec | Real preview of operator-authored spec | Passed with local model driver |
+| Decline before mutation | All 12 reviewed mutations gated; zero markers | Terminal direct + orchestrated denial, zero markers | Terminal direct + orchestrated denial, zero markers | Fixture only |
+| Complete/active deployment | Native transport and pinned callback cases | Native forms; active live app; HTTPS 200 | Native forms; active live app; HTTPS 200 | Passed |
+| Cancel before execution | Adapter and pinned callback cases | Terminal native cancel | Terminal native cancel | Fixture only |
+| Paid partial and post-broadcast cancellation | Identifiers, progress and warning preserved | Partial result visible; late warning lost on interruption | Partial result visible; cancellation/phase visibility limitations above | Not induced |
+| Status, troubleshoot, domain, restart, balance, providers | Existing helpers; pinned tool references; native restart fixture | Live sequence passed | Live sequence passed | On-chain domain set/clear; no custom DNS/TLS |
+| Saved records and journals | Existing v2/v3 readers; isolated concurrent persistence | Helpers read one live manifest and five journal records | Helpers read one live manifest and five journal records | Operator invoked repository helpers |
+| Cleanup | Fixture roots removed | Closed lease; no provider instances or domain claim | Closed lease; no provider instances or domain claim | Empty wallet; local keys/data removed; accepted test credit remains |
+
+The [2026-09-14 live acceptance report](live-testnet-acceptance.md) records both
+hosts' real MCP/chain/provider operations at source commit `9963fe3`, with
+public transaction receipts, terminal excerpts, costs and cleanup evidence in
+[live-testnet.json](host-evidence/live-testnet.json). The model driver was local;
+authoring and journal invocation were performed by the acceptance operator.
 
 Claude evidence and its precise limitations remain in
 [approval-validation.md](approval-validation.md). Codex evidence is recorded
@@ -159,10 +166,13 @@ passwords, mnemonics, private keys and application secret values.
    verification results and final cleanup state (including any residue).
 
 Record completed UI/live runs in repository evidence files and reference them
-from [host-acceptance-release.json](host-acceptance-release.json). Pending
-entries are intentional: no live funds, provider or domain was selected for
-this implementation run. Tagged releases create the existing GitHub release
-first. A separate Codex artifact job uses `--codex-release-status`: pending
+from [host-acceptance-release.json](host-acceptance-release.json). Both testnet
+rows now reference the completed live lifecycle run. Their cleanup declaration
+covers temporary resources and local account data; the separately recorded
+unused testnet billing credit was accepted by the user. Interactive rows remain
+pending for published-version upgrade and saved-record preservation.
+Tagged releases create the existing GitHub release first. A separate Codex
+artifact job uses `--codex-release-status`: pending
 Codex rows or evidence for another version skip the archive successfully.
 Complete Codex rows must pass source, coverage and cleanup validation. The
 job then runs and validates fresh host fixtures before attaching the archive.
