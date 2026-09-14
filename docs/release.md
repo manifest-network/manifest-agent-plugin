@@ -1,6 +1,6 @@
 # Releasing
 
-The release process is tag-driven. Pushing any `v*.*.*` tag triggers `.github/workflows/release.yml`; the workflow checks reachability from `origin/main`, version consistency and host acceptance evidence, then creates a GitHub Release with the native Codex archive and generated notes.
+The release process is tag-driven. Pushing any `v*.*.*` tag triggers `.github/workflows/release.yml`; the workflow checks reachability from `origin/main` and version consistency, then creates a GitHub Release with generated notes. A separate job attaches the native Codex archive only when its acceptance evidence is complete. Pending Codex evidence does not block Claude-only releases.
 
 ## Versioning
 
@@ -33,7 +33,8 @@ node -e "
 "
 # Refresh root package metadata in the tracked lock, preserving resolutions.
 npm install --package-lock-only --ignore-scripts
-# Refresh the host evidence for this version before committing; see below.
+# Codex host fixtures run in CI; the committed historical report stays intact.
+# For a Codex archive, also record this version's UI/live evidence (see below).
 git add package.json package-lock.json .claude-plugin/plugin.json hosts/codex/manifest-agent/.codex-plugin/plugin.json
 git commit -m "chore: bump plugin version to $NEW_VERSION"
 
@@ -50,9 +51,9 @@ The release workflow then:
 
 1. Verifies the tag is reachable from `origin/main` (refuses to release tags pointing off-branch).
 2. Verifies the tag string (minus the `v` prefix) matches all manifest versions and the lockfile root.
-3. Runs `ci/host-acceptance.cjs --release`; pending or stale interactive/testnet evidence blocks publication.
-4. Builds `manifest-agent-codex-v<VERSION>.tar.gz` with its native marketplace, skills, scripts and locked dependency definition. Dependencies and user data are not included.
-5. Creates a GitHub Release with `generate_release_notes: true` and attaches the archive. Claude continues to install the repository plugin.
+3. Creates a GitHub Release with `generate_release_notes: true`. Claude continues to install the repository plugin.
+4. In a dependent job, runs `ci/host-acceptance.cjs --codex-release-status`. Pending Codex interactive/testnet rows or evidence for another version skip the archive successfully. Complete rows must pass source, coverage and cleanup validation; malformed evidence fails this artifact job without removing the existing release.
+5. If eligible, runs Codex fixtures and validates their fresh report, then builds and attaches `manifest-agent-codex-v<VERSION>.tar.gz` with its native marketplace, skills, scripts and locked dependency definition. Dependencies and user data are not included.
 
 ## When to release
 
@@ -69,8 +70,8 @@ There's no fixed cadence. Cut a release when:
 - [ ] `manifest-mcp-node` version in `package.json` is the one you intend to ship (CLAUDE.md "Custom domains" mentions a minimum version — confirm it's still accurate after the bump).
 - [ ] No undocumented breaking changes — check `git log` since the previous tag for any commit that renamed a script, removed a flag, or changed a skill argument shape.
 - [ ] The installed MCP inventory check (`ci/mcp-tool-policy.cjs`) and policy-completeness check pass for the pinned package; record the host-validation status separately (see [`approval-validation.md`](approval-validation.md)).
-- [ ] Native build, `ci/host-contracts.cjs`, and the Codex host smoke pass. Regenerate `docs/host-evidence/codex-app-server.json` by running the harness after source/version changes; do not only replace its hashes.
-- [ ] Complete the interactive and testnet matrix in [`host-acceptance.md`](host-acceptance.md), record reviewed transcripts, and update `host-acceptance-release.json` for the new version and exact source hashes. `node ci/host-acceptance.cjs --release` passes and all testnet resources are cleaned up.
+- [ ] Native build, `ci/host-contracts.cjs`, and the fresh Codex host report pass in CI. Keep the committed historical report's hashes and source commit intact; source/version changes do not require a local Codex run.
+- [ ] For a Codex archive, complete the Codex interactive and testnet rows in [`host-acceptance.md`](host-acceptance.md), record reviewed transcripts, and update `host-acceptance-release.json` for the new version and exact source hashes. `node ci/host-acceptance.cjs --codex-release-status` reports `eligible=true` and all testnet resources are cleaned up. The full both-host matrix remains required before claiming full compatibility.
 
 ## Native Codex compatibility release (ENG-894)
 
@@ -90,7 +91,8 @@ that cannot present native prompts support the read-only workflow subset.
 
 Current evidence includes the real Codex 0.153.4 app-server with harmless
 fixtures, both pinned launchers and published callback contracts. Interactive
-UI and live testnet coverage remain explicit prerequisites for publication.
+UI and live testnet coverage remain explicit prerequisites for publishing
+the Codex archive; Claude-only releases can proceed independently.
 
 ## Hotfixes
 

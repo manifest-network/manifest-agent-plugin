@@ -156,6 +156,8 @@ jobs:
         run: npm install --global @openai/codex@0.153.4
       - name: Exercise native discovery and form confirmation with harmless fixtures
         run: node ci/codex-host-smoke.cjs --out codex-host-report.json
+      - name: Verify fresh evidence against this checkout
+        run: node ci/host-acceptance.cjs --report codex-host-report.json --require-current
       - uses: actions/upload-artifact@v4
         with:
           name: codex-host-report

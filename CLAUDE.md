@@ -25,13 +25,15 @@ contract. Mutable config, wallets, chain metadata, drafts, saved manifests,
 journals and dependency installs are isolated per host. Shared data directories
 are unsupported; no automatic wallet or chain migration occurs.
 
-Codex's `codex-server.cjs` performs locked setup, then wraps the shared launcher
-with `_mcp-bridge.cjs`. It injects the generated runtime policy into MCP
-initialization, refuses reviewed mutations without native form support, and
-confirms direct writes. Orchestrated forms, progress, cancellation and partial
+Codex's `codex-server.cjs` validates packaged assets before locked setup, then
+wraps the shared launcher with `_mcp-bridge.cjs`. The agent server injects the
+generated runtime policy into MCP initialization once. Every adapter refuses
+reviewed mutations without native form support and confirms direct writes.
+Orchestrated forms, progress, cancellation and partial
 results remain upstream-owned. Codex ships no Claude hooks and does not use
-`CLAUDE_ENV_FILE`. Skills load `host-env.cjs codex --shell` exports in each
-shell call. See `docs/codex.md` and `docs/host-acceptance.md`.
+`CLAUDE_ENV_FILE`. Skills source their packaged `env.sh` helper in each shell
+call; it locates `host-env.cjs` without pre-existing root exports. See
+`docs/codex.md` and `docs/host-acceptance.md`.
 
 ```
 Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)

@@ -16,6 +16,7 @@ NODE_PATH="$INSTALL_DIR/node_modules" npm test
 node ci/mcp-tool-policy.cjs --data-dir "$INSTALL_DIR"
 node ci/host-contracts.cjs --data-dir "$INSTALL_DIR"
 node ci/codex-host-smoke.cjs --out /tmp/codex-host.json
+node ci/host-acceptance.cjs --report /tmp/codex-host.json --require-current
 ```
 
 The Codex harness requires CLI 0.153.4, installs into an isolated temporary
@@ -51,9 +52,20 @@ These fixtures do not test the real provider/chain orchestration itself.
 
 Claude evidence and its precise limitations remain in
 [approval-validation.md](approval-validation.md). Codex evidence is recorded
-in [codex-app-server.json](host-evidence/codex-app-server.json). Its source
-hashes are checked by `ci/host-acceptance.cjs` and must be refreshed by an
-actual harness run after a relevant implementation change.
+in [codex-app-server.json](host-evidence/codex-app-server.json). This committed
+run is historical evidence for `8d05aad`; its original observations and hashes
+are preserved. `ci/host-acceptance.cjs` checks historical hashes against the
+full recorded commit when available. Shallow or squashed checkouts explicitly
+report metadata-only validation when that commit is absent; `--require-history`
+requires the old source bytes. Historical records never claim current coverage.
+
+The `codex-host` CI job generates a fresh report and validates it with
+`--report codex-host-report.json --require-current` before uploading it. Current
+reports must match every source hash, package version and workflow in the
+checkout. Routine changes and version bumps do not require a local Codex run
+to rewrite the historical report. When archiving a current report, set
+`source_status` to `historical` and record its full source commit in `head`;
+never refresh hashes without running the harness.
 
 ## Remaining release evidence
 
@@ -82,8 +94,17 @@ passwords, mnemonics, private keys and application secret values.
 Record completed UI/live runs in repository evidence files and reference them
 from [host-acceptance-release.json](host-acceptance-release.json). Pending
 entries are intentional: no live funds, provider or domain was selected for
-this implementation run. `node ci/host-acceptance.cjs --release` blocks the
-compatibility release until both host rows contain complete evidence for the
-current package version. A maintainer must review the evidence's contents;
-the gate checks its declared coverage and provenance fields, not the truth
-of a manual transcript.
+this implementation run. Tagged releases create the existing GitHub release
+first. A separate Codex artifact job uses `--codex-release-status`: pending
+Codex rows or evidence for another version skip the archive successfully.
+Complete Codex rows must pass source, coverage and cleanup validation. The
+job then runs and validates fresh host fixtures before attaching the archive.
+Claude's pending rows do not gate that Codex artifact or the existing release.
+Malformed completed Codex evidence fails the artifact job; the existing
+GitHub release remains available.
+
+To check the full compatibility matrix explicitly, run
+`node ci/host-acceptance.cjs --report /tmp/codex-host.json --release` after a
+fresh harness run. This requires both hosts' interactive and testnet rows for
+the current package. A maintainer must review the evidence's contents; the
+gate checks declared coverage and provenance, not the truth of a transcript.

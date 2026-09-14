@@ -74,9 +74,13 @@ test('host cancellation withdraws a pending confirmation and a late acceptance d
   f.bridge.fromClient(request(2, 'tools/call', { name: 'restart_app' }));
   const id = f.client[0].id;
   f.bridge.fromClient({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 2 } });
+  assert.deepEqual(f.client[1], { jsonrpc: '2.0', method: 'notifications/cancelled', params: {
+    requestId: id, reason: 'Operation cancelled before execution; no mutation was sent.',
+  } });
   f.bridge.fromClient({ jsonrpc: '2.0', id, result: { action: 'accept', content: { confirm: true } } });
   assert.equal(f.server.filter((message) => message.method === 'tools/call').length, 0);
   assert.equal(f.timers.size, 0);
+  assert.equal(f.client.length, 2, 'Withdraw the prompt without responding to the retired tool request');
 });
 
 test('upstream prompt cancellation uses the client-visible ID and late responses stay retired', (t) => {

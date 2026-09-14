@@ -9,6 +9,9 @@ const { spawn, spawnSync } = require('node:child_process');
 const { buildCodex } = require('../ci/build-packages.cjs');
 const { prepareFixture, LEASE } = require('./fixtures/native-host-fixture.cjs');
 const { peer } = require('./fixtures/json-rpc-peer.cjs');
+const { packagedAssets } = require('../scripts/codex-server.cjs');
+const { acquireLock } = require('../scripts/setup-runtime.cjs');
+const { setTimeout: delay } = require('node:timers/promises');
 
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'manifest native transport '));
@@ -41,15 +44,21 @@ test('native launcher validates arguments before setup', () => {
   }
 });
 
-test('all five native launchers initialize with policy and keep Claude state isolated', async (t) => {
+test('all five native launchers preserve upstream instructions and inject shared policy exactly once', async (t) => {
   const f = await fixture(t);
+  let policies = 0;
   await Promise.all(['chain', 'lease', 'fred', 'cosmwasm', 'agent'].map(async (server) => {
     const { client, initialized } = await f.connect(server);
-    assert.match(initialized.instructions, /cosmos_estimate_fee/);
-    assert.match(initialized.instructions, /unknown outcome/);
+    assert.match(initialized.instructions, new RegExp(`Upstream fixture ${server} instructions`));
+    if (server === 'agent') {
+      assert.match(initialized.instructions, /cosmos_estimate_fee/);
+      assert.match(initialized.instructions, /unknown outcome/);
+      policies++;
+    } else assert.equal(initialized.instructions, `Upstream fixture ${server} instructions.`);
     assert.ok((await client.request('tools/list', {})).tools.length);
     await client.close();
   }));
+  assert.equal(policies, 1);
   assert.equal(fs.existsSync(join(f.root, 'unrelated Claude data')), false);
   assert.equal(fs.existsSync(join(f.root, 'stale data')), false);
   assert.equal(fs.existsSync(join(f.pluginRoot, 'node_modules')), false);
@@ -58,6 +67,66 @@ test('all five native launchers initialize with policy and keep Claude state iso
     assert.equal(e.host, 'codex');
     assert.equal(e.data, f.dataDir);
   }
+});
+
+test('missing or invalid packaged assets fail before creating runtime data or installing dependencies', (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'manifest-assets-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const plugin = buildCodex({ out: join(root, 'package') });
+  const dataDir = join(root, 'must-not-be-created');
+  const run = (launcher, data = dataDir) => spawnSync(process.execPath, [launcher, 'chain'], {
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, MANIFEST_CODEX_DATA: data }, encoding: 'utf8', timeout: 5000,
+  });
+  for (const [file, invalid] of [['mcp-policy.json', null], ['mcp-policy.json', '{bad'], ['mcp-policy.json', '{"chain":[]}'],
+    ['mcp-policy.json', '{"chain":[3]}'], ['references/runtime-policy.md', null], ['references/runtime-policy.md', ' \n'],
+    ['.mcp.json', '{"mcpServers":{}}']]) {
+    const path = join(plugin, file);
+    const original = fs.readFileSync(path);
+    if (invalid === null) fs.rmSync(path); else fs.writeFileSync(path, invalid);
+    const result = run(join(plugin, 'scripts/codex-server.cjs'));
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /package assets are missing or invalid; rebuild/);
+    assert.equal(fs.existsSync(dataDir), false);
+    fs.writeFileSync(path, original);
+  }
+  const checkout = resolve(__dirname, '../scripts/codex-server.cjs');
+  assert.match(run(checkout, resolve(__dirname, '../must-not-be-created')).stderr, /package assets are missing or invalid/);
+});
+
+test('Codex setup waiters can acquire a lock after 60 seconds within the packaged startup budget', async (t) => {
+  const f = await fixture(t);
+  const { lockOptions } = packagedAssets(f.pluginRoot, 'chain');
+  const release = await acquireLock(f.dataDir);
+  t.after(release);
+  let elapsed = 0;
+  const waiterRelease = await acquireLock(f.dataDir, { ...lockOptions, now: () => elapsed,
+    sleep: async () => { elapsed += 35000; if (elapsed > 60000) release(); },
+  });
+  waiterRelease();
+  assert.equal(elapsed, 70000);
+  const startupMs = JSON.parse(fs.readFileSync(join(f.pluginRoot, '.mcp.json'))).mcpServers['manifest-chain'].startup_timeout_sec * 1000;
+  assert.ok(lockOptions.timeoutMs < startupMs && lockOptions.timeoutMs >= startupMs - 10000);
+});
+
+test('native launcher drains a complete final 2 MiB frame for a slow reader before exiting', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const { client, child } = await f.connect('fred');
+  const closed = new Promise((resolve) => child.once('close', resolve));
+  child.stdout.pause();
+  t.after(() => child.stdout.resume());
+  const response = client.request('tools/call', { name: 'app_status', arguments: { fixture_scenario: 'final_large_frame' } });
+  // Attach a rejection handler while the stream is deliberately paused.
+  response.catch(() => {});
+  const deadline = Date.now() + 5000;
+  while (!f.events().some((event) => event.kind === 'final_frame_written')) {
+    assert.ok(Date.now() < deadline, 'Upstream must finish its frame while the host reader is paused');
+    await delay(10);
+  }
+  await delay(100);
+  child.stdout.resume();
+  const result = await response;
+  assert.equal(result.content[0].text, 'x'.repeat(2 * 1024 * 1024));
+  assert.equal(await closed, 0, client.stderr);
 });
 
 test('native launcher rejects missing and URL-only forms before either direct or orchestrated writes', async (t) => {

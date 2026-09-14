@@ -12,22 +12,38 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { constants: { signals } } = require('node:os');
 
+function packagedAssets(pluginRoot, server) {
+  try {
+    const mutations = JSON.parse(readFileSync(join(pluginRoot, 'mcp-policy.json'), 'utf8'));
+    const instructions = readFileSync(join(pluginRoot, 'references', 'runtime-policy.md'), 'utf8');
+    const config = JSON.parse(readFileSync(join(pluginRoot, '.mcp.json'), 'utf8'));
+    const startupMs = config.mcpServers?.[`manifest-${server}`]?.startup_timeout_sec * 1000;
+    if (!Array.isArray(mutations[server]) || !mutations[server].length
+      || !mutations[server].every((name) => typeof name === 'string' && /^[a-z_]+$/.test(name))
+      || !instructions.trim() || !Number.isFinite(startupMs) || startupMs <= 10000) throw new Error('Invalid package');
+    // Leave ten seconds of the host's startup budget for launching the server
+    // after another process finishes the shared install.
+    return { mutations: mutations[server], instructions: server === 'agent' ? instructions : '',
+      lockOptions: { timeoutMs: startupMs - 10000 } };
+  } catch {
+    throw new Error('Codex package assets are missing or invalid; rebuild with npm run build:codex and launch the generated package, or reinstall the Codex plugin.');
+  }
+}
+
 async function main() {
   const server = process.argv[2];
   if (process.argv.length !== 3 || !['chain', 'lease', 'fred', 'cosmwasm', 'agent'].includes(server)) {
     throw new Error('Usage: node codex-server.cjs <chain|lease|fred|cosmwasm|agent>');
   }
   const host = resolveHost('codex');
+  const { mutations, instructions, lockOptions } = packagedAssets(host.pluginRoot, server);
   Object.assign(process.env, host.env);
-  await setupRuntime(host);
-  const mutations = JSON.parse(readFileSync(join(host.pluginRoot, 'mcp-policy.json'), 'utf8'));
-  const instructions = readFileSync(join(host.pluginRoot, 'references', 'runtime-policy.md'), 'utf8');
-  if (!Array.isArray(mutations[server])) throw new Error('Packaged MCP mutation policy is missing; rebuild or reinstall the Codex package.');
+  await setupRuntime({ ...host, lockOptions });
   const child = spawn(process.execPath, [join(__dirname, 'start-server.cjs'), server], {
     env: process.env, stdio: ['pipe', 'pipe', 'inherit'],
   });
   const send = (stream, message) => stream.write(`${JSON.stringify(message)}\n`);
-  const bridge = createBridge({ serverName: server, mutations: mutations[server], instructions,
+  const bridge = createBridge({ serverName: server, mutations, instructions,
     sendClient: (message) => send(process.stdout, message),
     sendServer: (message) => send(child.stdin, message),
   });
@@ -55,7 +71,10 @@ async function main() {
   child.on('close', (code, signal) => {
     bridge.close();
     client.close();
-    process.exit(failed ? 1 : signal ? 128 + (signals[signal] || 1) : code ?? 1);
+    process.stdin.destroy();
+    // Let stdout drain: an upstream server may exit immediately after writing
+    // a response larger than the pipe buffer while the host is still reading.
+    process.exitCode = failed ? 1 : signal ? 128 + (signals[signal] || 1) : code ?? 1;
   });
 }
 
@@ -63,4 +82,4 @@ if (require.main === module) main().catch((error) => {
   console.error(`manifest-agent (Codex): ${error.message}`);
   process.exitCode = 1;
 });
-module.exports = { main };
+module.exports = { main, packagedAssets };

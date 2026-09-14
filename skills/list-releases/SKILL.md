@@ -29,8 +29,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart
-Claude Code so the SessionStart hook runs, then stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
 This skill does not read `update-config.cjs --status` — `app_releases`
 is a pure provider call that doesn't need chain-data context.

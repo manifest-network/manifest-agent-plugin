@@ -3,8 +3,9 @@
 Manifest Agent provides the same 14 workflows and pinned MCP 0.22.0 runtime
 for Codex and Claude Code. Codex uses a separate native package with explicit
 skill and MCP discovery, independent bootstrap, and native form confirmation.
-The initial compatibility release still requires the terminal/desktop and
+Publishing a Codex release archive requires the Codex terminal/desktop and
 live testnet evidence listed in the repository's `docs/host-acceptance.md`.
+Pending Codex evidence does not block Claude-only releases.
 Codex CLI 0.153.4's app-server has passed the local fixture matrix; that result
 does not establish support for every Codex surface or version.
 
@@ -73,8 +74,10 @@ Onboarding and configuration skills disable implicit invocation through
 | Drafts, saved manifests and journals | Under the Claude data root | Under the Codex data root |
 | Shared implementation | Repository scripts and workflow sources | Generated copy of the same scripts and workflows |
 
-Paths supplied through `MANIFEST_CODEX_DATA` or `XDG_DATA_HOME` must be
-absolute. Set the override in the environment that launches Codex, before
+`MANIFEST_CODEX_DATA` must be absolute. An unset, empty or relative
+`XDG_DATA_HOME` falls back to `$HOME/.local/share`, following the
+[XDG base-directory specification](https://specifications.freedesktop.org/basedir/latest/).
+Set the override in the environment that launches Codex, before
 starting its MCP servers. Codex ignores ambient `CLAUDE_PLUGIN_DATA` and
 `MANIFEST_PLUGIN_DATA`; starting it from a Claude shell cannot select that
 shell's wallet by accident.
@@ -101,18 +104,21 @@ directory. Each server calls the same locked `setup-runtime.cjs` installer.
 Upgrades and repairs preserve config, keys, drafts, saved manifests and
 journals. Do not delete the data directory to repair an installation.
 
-For manual setup or repair, resolve the installed package root (the directory
-containing `.codex-plugin/`) and run in the same shell:
+For manual setup or repair, enter the installed `init-agent` skill directory
+and source its helper in the same Bash shell:
 
 ```bash
-# Set this to your installed package path.
-MANIFEST_PLUGIN_ROOT=/absolute/path/to/manifest-agent
-eval "$(node "$MANIFEST_PLUGIN_ROOT/scripts/host-env.cjs" codex --shell)"
+cd /absolute/path/to/manifest-agent/skills/init-agent
+source ./env.sh || exit
 node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs"
 ```
 
-Skills load these exports in each shell call because Codex does not use
-Claude's environment file. The helper prints only paths and host/session
+Each generated skill includes `env.sh`. Skills set the shell's working
+directory to the installed skill path supplied by Codex and source that
+helper in every call. It resolves the package root from its own location,
+so no pre-existing `MANIFEST_PLUGIN_ROOT` is needed, including after relocation.
+If sourcing fails, the command stops and reports the error; restarting Codex
+does not supply these exports. The helper uses only paths and host/session
 metadata; it does not read wallet configuration. Journal session IDs come
 from `CODEX_THREAD_ID` when supplied by the host, otherwise remain null.
 
@@ -124,6 +130,9 @@ any reviewed mutation. Direct mutations, including provider restarts, wait
 for an accepted native form. The three mutating orchestrators use upstream
 plan, mainnet and recovery forms. Missing form support, malformed responses,
 decline, cancel or a confirmation timeout cannot authorize a direct write.
+The agent server supplies the shared runtime policy once through its MCP
+initialization instructions; other servers retain their upstream instructions.
+Every skill also links the packaged policy and requires reading it before MCP.
 
 Headless clients may advertise elicitation but automatically decline it.
 Read-only tools remain usable; interactive mutations require a host that
@@ -135,11 +144,16 @@ Server startup allows 180 seconds; tool calls allow 1,800 seconds. Native
 direct confirmation waits up to 600 seconds. Upstream elicitation defaults
 to 600 seconds and accepts `MANIFEST_AGENT_ELICIT_TIMEOUT_MS`. A longer
 per-prompt setting does not extend the outer tool timeout. For slow initial
-downloads, run manual setup first, then reconnect. Setup waiters retain the
-shared installer's existing 60-second lock acquisition limit.
+downloads, run manual setup first, then reconnect. Codex setup waiters use
+the packaged startup timeout minus ten seconds (170 seconds by default),
+leaving time to launch after the installer releases its lock. Manual setup
+and Claude retain the shared installer's 60-second lock acquisition limit.
 
 The adapter forwards upstream progress, log messages, cancellation and typed
-results. Display of progress and late cancellation logs depends on the host
+results and drains buffered responses before exiting. Client cancellation of
+a pending direct confirmation withdraws its form without replying to the
+cancelled call; a confirmation timeout still returns a result to the live call.
+Display of progress and late cancellation logs depends on the host
 surface; the acceptance matrix records what has actually been observed.
 Transport loss or timeout is not evidence that an operation never ran.
 

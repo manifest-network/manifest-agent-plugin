@@ -24,11 +24,11 @@ function createBridge({ serverName, mutations, sendClient, sendServer, instructi
     isError: true, content: [{ type: 'text', text: JSON.stringify({ error: true, code, message,
       details: { phase: 'before_execution', broadcast: false } }) }],
   } });
-  const cancel = (entry, message = 'Operation cancelled before execution; no mutation was sent.', withdraw = false) => {
+  const cancel = (entry, message = 'Operation cancelled before execution; no mutation was sent.', withdraw = false, respond = true) => {
     clearTimer(entry.timer);
     confirmations.delete(entry.id);
     if (withdraw) sendClient({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: entry.id, reason: message } });
-    errors(entry.call, 'OPERATION_CANCELLED', message);
+    if (respond) errors(entry.call, 'OPERATION_CANCELLED', message);
   };
 
   function fromClient(message) {
@@ -59,7 +59,7 @@ function createBridge({ serverName, mutations, sendClient, sendServer, instructi
       && /^manifest-(confirm|upstream)-/.test(message.id)) return;
     if (message.method === 'notifications/cancelled') {
       for (const entry of confirmations.values()) {
-        if (entry.call.id === message.params?.requestId) { cancel(entry, undefined, true); return; }
+        if (entry.call.id === message.params?.requestId) { cancel(entry, undefined, true, false); return; }
       }
     }
     if (message.method === 'tools/call' && mutations.includes(message.params?.name)) {

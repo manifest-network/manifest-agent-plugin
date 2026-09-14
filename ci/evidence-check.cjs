@@ -106,7 +106,7 @@ function validateObservations(record) {
   }
 }
 
-function readHistoricalSources(root, commit) {
+function readHistoricalSources(root, commit, files = SOURCE_FILES) {
   // Squashed PR source commits need not exist in a shallow checkout, or even
   // in main's full ancestry. No network fetch is hidden inside this check.
   const options = { encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 };
@@ -114,7 +114,7 @@ function readHistoricalSources(root, commit) {
   if (probe.error) throw new Error(`Cannot inspect historical source: ${probe.error.message}`);
   if (probe.status !== 0) return null;
   if (probe.stdout.trim() !== 'commit') throw new Error('Historical head must identify a commit.');
-  return Object.fromEntries(SOURCE_FILES.map((file) => {
+  return Object.fromEntries(files.map((file) => {
     const source = spawnSync('git', ['-C', root, 'show', `${commit}:${file}`], {
       ...options, encoding: null,
     });

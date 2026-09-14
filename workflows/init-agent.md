@@ -29,7 +29,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart {{environment_recovery}}, then stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; {{environment_recovery}}.
 
 Ensure the locked runtime is installed before running helpers that need it:
 

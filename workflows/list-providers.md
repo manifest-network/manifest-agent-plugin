@@ -25,8 +25,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart
-{{environment_recovery}}, then stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; {{environment_recovery}}.
 
 This skill does not read `update-config.cjs --status` — `get_providers`
 is a pure chain query that doesn't need agent state.

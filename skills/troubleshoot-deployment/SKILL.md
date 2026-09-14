@@ -32,8 +32,7 @@ Step numbers are scaffolding for skill authors only.
 
 ## Step 0 — Verify environment
 
-Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart
-Claude Code so the SessionStart hook runs, then stop. Run
+Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart Claude Code so the SessionStart hook runs, then stop. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; if it
 fails, tell the user to run `/manifest-agent:init-agent` first and stop.
 Capture `activeChain` and `address` for the journal record (only used
@@ -132,7 +131,7 @@ numeric fee estimate. Claude Code renders the elicitation request
 and returns the user's answer; do not reprint its message, forward the
 answer yourself, or add another prose confirmation. The earlier Close /
 Keep choice selects the cleanup action. Internal SDK operations do not
-trigger additional host host tool events.
+trigger additional PreToolUse events.
 
 Check for an error envelope before capturing successful `CLOSE_RESULT`
 (`{ leaseUuid, finalState }`). Report the exact terminal state;

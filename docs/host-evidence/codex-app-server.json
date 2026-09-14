@@ -182,5 +182,7 @@
     "No model turn or terminal/desktop UI was exercised.",
     "Progress and post-broadcast cancellation are asserted separately by transport and pinned-runtime tests; this direct app-server call does not characterize UI rendering."
   ],
-  "cleanup": "Isolated Codex home, marketplace and fixture data removed in finally; no live resources created."
+  "cleanup": "Isolated Codex home, marketplace and fixture data removed in finally; no live resources created.",
+  "source_status": "historical",
+  "head": "8d05aad43949caf042f58cc037062a43ec3b0146"
 }

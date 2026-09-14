@@ -22,8 +22,10 @@ function resolveHost(host, { env = process.env, pluginRoot = resolve(__dirname, 
     if (!data) throw new Error('Claude plugin data is missing. Restart Claude Code so SessionStart runs.');
     session = env.MANIFEST_SESSION_ID || '';
   } else if (host === 'codex') {
-    data = env.MANIFEST_CODEX_DATA || join(env.XDG_DATA_HOME
-      ? absolute(env.XDG_DATA_HOME, 'XDG_DATA_HOME') : join(home, '.local', 'share'), 'manifest-agent', 'codex');
+    const xdg = env.XDG_DATA_HOME;
+    const base = typeof xdg === 'string' && isAbsolute(xdg) && !xdg.includes('\0')
+      ? xdg : join(home, '.local', 'share');
+    data = env.MANIFEST_CODEX_DATA || join(base, 'manifest-agent', 'codex');
     session = env.CODEX_THREAD_ID || '';
   } else throw new Error('Host must be claude or codex.');
   const dataDir = absolute(data, `${host} data directory`);

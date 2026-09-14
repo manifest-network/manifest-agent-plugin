@@ -26,8 +26,7 @@ Step numbers are scaffolding for skill authors only.
 
 ## Step 0 — Verify environment
 
-Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart
-{{environment_recovery}}, then stop. Run
+Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, {{environment_recovery}}. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; if it
 fails, tell the user to run `{{invoke:init-agent}}` first and stop.
 Capture `activeChain` and `address` from the JSON for the journal record.
@@ -119,7 +118,7 @@ elicitation for the domain action. The pinned tool's action recap does
 not guarantee a numeric fee estimate. {{host}} renders
 the request and returns the user's answer; do not reprint the message,
 forward the answer yourself, or ask for a duplicate prose confirmation.
-The internal SDK write does not produce a separate host host tool event.
+The internal SDK write does not produce a separate {{tool_event}} event.
 The orchestrated tool verifies the on-chain result and reports mismatches.
 
 Read `structuredContent` or parse the JSON text fallback; check for

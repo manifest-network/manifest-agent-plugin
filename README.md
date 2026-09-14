@@ -4,8 +4,9 @@ A plugin for [Claude Code](https://claude.ai/code) and Codex that sets up [Manif
 
 The native Codex package is built from the same workflows and runtime. See
 [Codex installation and usage](docs/codex.md) and the
-[host acceptance matrix](docs/host-acceptance.md). The initial compatibility
-release remains gated on interactive UI and live testnet evidence. Examples
+[host acceptance matrix](docs/host-acceptance.md). The Codex release archive
+remains gated on interactive UI and live testnet evidence;
+pending Codex acceptance does not block Claude-only releases. Examples
 below use Claude Code's `/manifest-agent:<skill>` invocation; Codex uses
 `$manifest-agent:<skill>`.
 

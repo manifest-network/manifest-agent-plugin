@@ -11,6 +11,9 @@ test('workflow contract check fails on missing tools and a tool advertised by th
   const root = fs.mkdtempSync(join(tmpdir(), 'manifest-workflow-contract-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(join(root, 'workflows'));
+  fs.mkdirSync(join(root, 'workflows/fragments'));
+  fs.mkdirSync(join(root, 'workflows/directory.md'));
+  fs.writeFileSync(join(root, 'workflows/.DS_Store'), '{{tool:fred/ignored}}');
   fs.writeFileSync(join(root, 'workflows/probe.md'), 'Call {{tool:fred/app_status}}, then {{tool:agent/deploy_app_orchestrated}}.');
   const inventory = [{ serverName: 'manifest-fred', tools: [{ name: 'app_status' }] },
     { serverName: 'manifest-agent', tools: [{ name: 'deploy_app_orchestrated' }] }];

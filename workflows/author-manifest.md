@@ -38,7 +38,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, tell the user to restart {{environment_recovery}}, then stop.
+If empty, {{environment_recovery}}.
 
 Run:
 ```bash

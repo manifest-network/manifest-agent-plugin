@@ -34,8 +34,14 @@ test('missing or ambiguous host paths fail with a useful diagnostic', () => {
   for (const value of ['relative', '/nul\0path', 4]) {
     assert.throws(() => resolveHost('codex', { env: { MANIFEST_CODEX_DATA: value } }), /absolute path/);
   }
-  assert.throws(() => resolveHost('codex', { env: { XDG_DATA_HOME: 'relative' } }), /XDG_DATA_HOME/);
   assert.throws(() => resolveHost('codex', { pluginRoot: 'relative' }), /Plugin root/);
+});
+
+test('invalid XDG values fall back to the home data directory', () => {
+  for (const XDG_DATA_HOME of ['relative', '', '/nul\0path', 4]) {
+    assert.equal(resolveHost('codex', { env: { XDG_DATA_HOME }, home: '/fixture/home' }).dataDir,
+      '/fixture/home/.local/share/manifest-agent/codex');
+  }
 });
 
 test('shell exports round-trip spaces, quotes, newlines, substitutions and backticks as inert data', () => {

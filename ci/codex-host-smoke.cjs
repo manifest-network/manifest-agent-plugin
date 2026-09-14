@@ -11,7 +11,7 @@ const { tmpdir } = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const assert = require('node:assert/strict');
-const { buildCodex } = require('./build-packages.cjs');
+const { buildCodex, workflowFiles } = require('./build-packages.cjs');
 const { prepareFixture, LEASE } = require('../tests/fixtures/native-host-fixture.cjs');
 const { peer } = require('../tests/fixtures/json-rpc-peer.cjs');
 const ROOT = resolve(__dirname, '..');
@@ -21,7 +21,7 @@ function sourceHashes(root = ROOT) {
     'hosts/codex/manifest-agent/.mcp.json', 'hosts/codex/manifest-agent/.codex-plugin/plugin.json',
     ...fs.readdirSync(join(root, 'scripts')).filter((name) => name.endsWith('.cjs')).map((name) => `scripts/${name}`),
     'scripts/session-start.sh', 'scripts/pre-tool-use.sh', 'hooks/hooks.json', 'package.json', 'package-lock.json', 'docs/codex.md',
-    ...fs.readdirSync(join(root, 'workflows')).map((name) => `workflows/${name}`), 'hosts/codex/restart-confirmation.md', 'hosts/claude/restart-confirmation.md'];
+    ...workflowFiles(root).map((name) => `workflows/${name}`), 'hosts/codex/env.sh', 'hosts/codex/restart-confirmation.md', 'hosts/claude/restart-confirmation.md'];
   return Object.fromEntries(files.sort().map((name) => [name, createHash('sha256').update(fs.readFileSync(join(root, name))).digest('hex')]));
 }
 
@@ -102,7 +102,7 @@ async function runHost({ codex = 'codex' } = {}) {
     command(['plugin', 'add', 'manifest-agent@manifest', '--json']);
     assert.deepEqual(fs.readFileSync(join(dataDir, 'config.json')), before);
     cases.push({ name: 'reinstall-preserves-config', passed: true, mutationMarkers: 0 });
-    return { schemaVersion: 1, evidenceKind: 'codex-app-server-local-fixture', observedAt: new Date().toISOString(), hostVersion,
+    return { schemaVersion: 1, source_status: 'current', evidenceKind: 'codex-app-server-local-fixture', observedAt: new Date().toISOString(), hostVersion,
       nodeVersion: process.version, pluginVersion: require('../package.json').version, upstreamPin: require('../package.json').dependencies['@manifest-network/manifest-mcp-node'],
       sourceHashes: sourceHashes(), skills: [...new Set(names)].sort(), servers: servers.map((server) => server.name).sort(), prompts, cases,
       limitations: ['The MCP runtime is a marker-only fixture; no signer, provider or chain call ran.', 'No model turn or terminal/desktop UI was exercised.', 'Progress and post-broadcast cancellation are asserted separately by transport and pinned-runtime tests; this direct app-server call does not characterize UI rendering.'],

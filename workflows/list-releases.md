@@ -27,8 +27,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart
-{{environment_recovery}}, then stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; {{environment_recovery}}.
 
 This skill does not read `update-config.cjs --status` — `app_releases`
 is a pure provider call that doesn't need chain-data context.

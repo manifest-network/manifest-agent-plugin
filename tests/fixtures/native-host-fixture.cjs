@@ -80,14 +80,21 @@ function serve(server) {
     }
     if (call.id === undefined) return;
     record({ kind: 'request', method: call.method, tool: call.params?.name });
-    if (call.method === 'initialize') result(call.id, { protocolVersion: call.params.protocolVersion, capabilities: { tools: {}, logging: {} }, serverInfo: { name: `fixture-${server}`, version: '1.0.0' } });
+    if (call.method === 'initialize') result(call.id, { protocolVersion: call.params.protocolVersion, instructions: `Upstream fixture ${server} instructions.`, capabilities: { tools: {}, logging: {} }, serverInfo: { name: `fixture-${server}`, version: '1.0.0' } });
     else if (call.method === 'tools/list') result(call.id, { tools: TOOLS[server].map((name) => ({ name, description: 'Harmless local host acceptance fixture.',
       inputSchema: { type: 'object', properties: { fixture_scenario: { type: 'string' } } },
       annotations: { readOnlyHint: READS.has(name), destructiveHint: !READS.has(name), openWorldHint: false, idempotentHint: READS.has(name) },
     })) });
     else if (call.method === 'tools/call') {
       if (!TOOLS[server].includes(call.params.name)) throw new Error('Unknown fixture tool');
-      if (READS.has(call.params.name)) done(call, { status: 'read_only', lease_uuid: LEASE });
+      if (READS.has(call.params.name) && call.params.arguments?.fixture_scenario === 'final_large_frame') {
+        process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: call.id, result: {
+          content: [{ type: 'text', text: 'x'.repeat(2 * 1024 * 1024) }],
+        } }) + '\n', () => {
+          record({ kind: 'final_frame_written' });
+          process.stdin.destroy();
+        });
+      } else if (READS.has(call.params.name)) done(call, { status: 'read_only', lease_uuid: LEASE });
       else if (server === 'agent') { progress(call, 'plan_ready'); elicit(call, 'plan'); }
       else mutate(call);
     } else if (call.method === 'resources/list') result(call.id, { resources: [] });

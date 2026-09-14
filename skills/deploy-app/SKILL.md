@@ -24,8 +24,7 @@ Step numbers are scaffolding only.
 
 ## Step 0 — Verify environment
 
-Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart
-Claude Code so the SessionStart hook runs, then stop. Run
+Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart Claude Code so the SessionStart hook runs, then stop. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; on
 failure tell the user to run `/manifest-agent:init-agent` and stop.
 Capture `activeChain`, `address`, and `chainId` from the JSON output —
@@ -106,8 +105,7 @@ Claude Code renders these requests and returns the user's answers; do
 not reprint their messages, forward answers yourself, or add a separate
 prose confirmation. Acknowledge only progress the host actually exposes.
 
-The server's internal SDK operations do not produce additional host
-host tool events. Creation, optional domain assignment, and provider
+The server's internal SDK operations do not produce additional PreToolUse events. Creation, optional domain assignment, and provider
 upload run sequentially and can partially succeed. Use the returned
 result or error to describe what completed; do not call the workflow
 atomic or infer success from a single completed transaction.

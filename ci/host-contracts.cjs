@@ -11,7 +11,7 @@ const { join, resolve } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { tmpdir } = require('node:os');
 const { spawnSync } = require('node:child_process');
-const { buildCodex } = require('./build-packages.cjs');
+const { buildCodex, workflowFiles } = require('./build-packages.cjs');
 const { probeLaunchers } = require('./launcher-transport.cjs');
 const { NETWORK_GUARD } = require('./mcp-tool-policy.cjs');
 const ROOT = resolve(__dirname, '..');
@@ -20,7 +20,7 @@ const LEASE = '11111111-1111-4111-8111-111111111111';
 function checkWorkflowTools(inventory, root = ROOT) {
   const names = new Set(inventory.flatMap(({ serverName, tools }) => tools.map((tool) => `${serverName.slice(9)}/${tool.name}`)));
   let checked = 0;
-  for (const file of fs.readdirSync(join(root, 'workflows'))) {
+  for (const file of workflowFiles(root)) {
     const source = fs.readFileSync(join(root, 'workflows', file), 'utf8');
     for (const [, name] of source.matchAll(/\{\{tool:([^}]+)\}\}/g)) {
       assert.ok(names.has(name), `${file} references unavailable pinned tool ${name}`);

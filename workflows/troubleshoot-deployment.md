@@ -30,8 +30,7 @@ Step numbers are scaffolding for skill authors only.
 
 ## Step 0 — Verify environment
 
-Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart
-{{environment_recovery}}, then stop. Run
+Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, {{environment_recovery}}. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; if it
 fails, tell the user to run `{{invoke:init-agent}}` first and stop.
 Capture `activeChain` and `address` for the journal record (only used
@@ -130,7 +129,7 @@ numeric fee estimate. {{host}} renders the elicitation request
 and returns the user's answer; do not reprint its message, forward the
 answer yourself, or add another prose confirmation. The earlier Close /
 Keep choice selects the cleanup action. Internal SDK operations do not
-trigger additional host host tool events.
+trigger additional {{tool_event}} events.
 
 Check for an error envelope before capturing successful `CLOSE_RESULT`
 (`{ leaseUuid, finalState }`). Report the exact terminal state;

@@ -22,8 +22,7 @@ Step numbers are scaffolding only.
 
 ## Step 0 — Verify environment
 
-Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart
-{{environment_recovery}}, then stop. Run
+Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, {{environment_recovery}}. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; on
 failure tell the user to run `{{invoke:init-agent}}` and stop.
 Capture `activeChain`, `address`, and `chainId` from the JSON output —
@@ -104,8 +103,7 @@ plan with itemized fees, any mainnet warning, and recovery choices.
 not reprint their messages, forward answers yourself, or add a separate
 prose confirmation. Acknowledge only progress the host actually exposes.
 
-The server's internal SDK operations do not produce additional host
-host tool events. Creation, optional domain assignment, and provider
+The server's internal SDK operations do not produce additional {{tool_event}} events. Creation, optional domain assignment, and provider
 upload run sequentially and can partially succeed. Use the returned
 result or error to describe what completed; do not call the workflow
 atomic or infer success from a single completed transaction.

@@ -11,16 +11,17 @@ const ROOT = resolve(__dirname, '..');
 const SERVERS = ['chain', 'lease', 'fred', 'cosmwasm', 'agent'];
 const CODEX_SETUP = `## Codex environment
 
-Resolve MANIFEST_PLUGIN_ROOT as ../.. relative to the directory containing
-this SKILL.md, using its path supplied by Codex. In **each** shell call, set
-that shell-quoted path and load the adapter's exports before running commands:
+In **each** exec_command call, use Bash and set workdir to the directory
+containing this SKILL.md, using its installed path supplied by Codex. Start
+the shell command by sourcing the helper beside this file:
 
 \`\`\`bash
-# Set MANIFEST_PLUGIN_ROOT to the installed package root in this same call.
-eval "$(node "$MANIFEST_PLUGIN_ROOT/scripts/host-env.cjs" codex --shell)"
+source ./env.sh || exit
 \`\`\`
 
-The helper resolves the data directory and NODE_PATH without a lifecycle hook.
+The helper resolves MANIFEST_PLUGIN_ROOT, the data directory and NODE_PATH
+without a lifecycle hook or pre-existing environment variables. If sourcing
+fails, report the error and stop that command; do not continue with stale paths.
 Use its returned paths; do not read config.json to discover the wallet.
 SKILL_INPUT means the text or path supplied with this skill invocation; it is
 not an environment variable. For choices, use request_user_input when available;
@@ -34,9 +35,14 @@ tool from another plugin or bypass the native confirmation.
 
 `;
 
+function workflowFiles(root = ROOT) {
+  return fs.readdirSync(join(root, 'workflows'), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.md')).map((entry) => entry.name).sort();
+}
+
 function renderSkill(source, host, { root = ROOT, name } = {}) {
   if (!['claude', 'codex'].includes(host)) throw new Error(`Unknown host: ${host}`);
-  const knownSkills = new Set(fs.readdirSync(join(root, 'workflows')).filter((file) => file.endsWith('.md')).map((file) => file.slice(0, -3)));
+  const knownSkills = new Set(workflowFiles(root).map((file) => file.slice(0, -3)));
   const values = {
     host: host === 'claude' ? 'Claude Code' : 'Codex',
     ask: host === 'claude' ? 'AskUserQuestion' : 'request_user_input',
@@ -45,7 +51,10 @@ function renderSkill(source, host, { root = ROOT, name } = {}) {
     write_tool: host === 'claude' ? 'Write' : 'apply_patch',
     shell_tool: host === 'claude' ? 'Bash' : 'exec_command',
     tool_prefix: host === 'claude' ? 'mcp__plugin_manifest-agent_manifest-*' : 'mcp__manifest-*',
-    environment_recovery: host === 'claude' ? 'Claude Code so the SessionStart hook runs' : 'Codex and load host-env.cjs exports as described above',
+    environment_recovery: host === 'claude'
+      ? 'tell the user to restart Claude Code so the SessionStart hook runs, then stop'
+      : 'source ./env.sh from this skill\'s installed directory as described above; if it fails, report the error and stop (reinstall the plugin if the helper is missing)',
+    tool_event: host === 'claude' ? 'PreToolUse' : 'host tool',
     outer_permission: host === 'claude'
       ? 'Claude Code evaluates the PreToolUse hook before this outer invocation starts. A denied call does not reach the MCP server.'
       : 'Codex applies its configured tool approval policy to the outer invocation. The adapter refuses mutations without native MCP form elicitation; the orchestrator owns the action and recovery prompts.',
@@ -139,20 +148,25 @@ native confirmation fails.
   result = result.replace(/mcp__plugin_manifest-agent_manifest-/g, 'mcp__manifest-');
   result = result.replace(/Claude Code/g, 'Codex').replace(/PreToolUse hooks?/g, 'host tool approvals').replace(/PreToolUse/g, 'host tool approval');
   result = result.replace(/textual confirmation/g, 'native confirmation').replace(/textual-confirm/g, 'native-confirm');
-  result = result.replace('wait for the user to confirm before calling `cosmos_tx`.',
+  const replaceRequired = (before, after, expected = 1) => {
+    const count = result.split(before).length - 1;
+    if (count !== expected) throw new Error(`Runtime policy wording changed (${count}/${expected} matches for ${JSON.stringify(before)}); review the Codex adapter.`);
+    result = result.replaceAll(before, after);
+  };
+  replaceRequired('wait for the user to confirm before calling `cosmos_tx`.',
     'invoke `cosmos_tx` to request native form confirmation.');
-  result = result.replaceAll('then wait for confirmation.', 'then invoke the tool for native form confirmation.');
-  result = result.replace('The\n  host tool approvals still requests host permission; describe the action and\n  wait for native confirmation,',
+  replaceRequired('then wait for confirmation.', 'then invoke the tool for native form confirmation.', 2);
+  replaceRequired('The\n  host tool approvals still requests host permission; describe the action and\n  wait for native confirmation,',
     'Describe the action, then invoke the tool\n  to request the adapter\'s native form confirmation,');
-  result = result.replace('then get explicit\n  confirmation before invoking it. host tool approval also requests host permission.',
+  replaceRequired('then get explicit\n  confirmation before invoking it. host tool approval also requests host permission.',
     'then invoke it to request\n  native form confirmation from the Codex adapter.');
-  result = result.replace('direct invocation skips all of that and\n  surfaces only the raw host tool approval permission prompt with no\n  preceding fee or action summary, which violates the runtime policy\n  above.',
+  replaceRequired('direct invocation skips all of that and\n  surfaces only the raw host tool approval permission prompt with no\n  preceding fee or action summary, which violates the runtime policy\n  above.',
     'direct invocation requires a separate action/fee recap before\n  invoking the tool for the adapter\'s native form confirmation.');
   return 'Consumers: all Codex skills and the Codex MCP adapter. Variables in scope:\nMANIFEST_PLUGIN_ROOT and MANIFEST_PLUGIN_DATA from host-env.cjs.\n\n' + result.trimEnd() + '\n';
 }
 
 function writeClaudeSkills({ root = ROOT, check = false } = {}) {
-  const files = fs.readdirSync(join(root, 'workflows')).filter((file) => file.endsWith('.md')).sort();
+  const files = workflowFiles(root);
   const failures = [];
   for (const file of files) {
     const name = file.slice(0, -3);
@@ -196,11 +210,12 @@ function buildCodex({ root = ROOT, out = join(root, 'dist', 'codex') } = {}) {
   fs.writeFileSync(join(plugin, 'mcp-policy.json'), JSON.stringify(mutationPolicy(root), null, 2) + '\n');
   fs.mkdirSync(join(plugin, 'references'), { recursive: true });
   fs.writeFileSync(join(plugin, 'references/runtime-policy.md'), codexPolicy(root));
-  for (const file of fs.readdirSync(join(root, 'workflows')).filter((file) => file.endsWith('.md')).sort()) {
+  for (const file of workflowFiles(root)) {
     const name = file.slice(0, -3);
     fs.mkdirSync(join(plugin, 'skills', name), { recursive: true });
     const source = fs.readFileSync(join(root, 'workflows', file), 'utf8');
     fs.writeFileSync(join(plugin, 'skills', name, 'SKILL.md'), renderSkill(source, 'codex', { root, name }));
+    fs.copyFileSync(join(root, 'hosts/codex/env.sh'), join(plugin, 'skills', name, 'env.sh'));
     if (/^disable-model-invocation: true$/m.test(source)) {
       fs.mkdirSync(join(plugin, 'skills', name, 'agents'), { recursive: true });
       const display = name.split('-').map((part) => part[0].toUpperCase() + part.slice(1)).join(' ');
@@ -229,4 +244,4 @@ function main(argv = process.argv.slice(2)) {
 if (require.main === module) {
   try { main(); } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
-module.exports = { renderSkill, mutationPolicy, codexPolicy, writeClaudeSkills, buildCodex };
+module.exports = { renderSkill, mutationPolicy, codexPolicy, writeClaudeSkills, buildCodex, workflowFiles };
