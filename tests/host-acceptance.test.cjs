@@ -69,6 +69,7 @@ test('compatibility release stays blocked on the explicitly pending interactive/
   pending.pluginVersion = require('../package.json').version;
   pending.upstreamVersion = require('../package.json').dependencies['@manifest-network/manifest-mcp-node'];
   pending.hosts.claude.interactive = { status: 'pending' };
+  pending.hosts.codex.interactive = { status: 'pending' };
   assert.throws(() => validateRelease(pending), /evidence is pending/);
   assert.equal(codexReleaseEligible(pending), false, 'Pending Codex evidence skips its archive without blocking the Claude release');
 });
@@ -90,6 +91,25 @@ test('release validation requires source-bound coverage, repository evidence fil
     };
   }
   assert.doesNotThrow(() => validateRelease(record, { root, hashes }));
+  const currentInstall = structuredClone(record);
+  for (const host of ['claude', 'codex']) {
+    const row = currentInstall.hosts[host].interactive;
+    row.legacyUpgradeExemption = 'no-existing-users';
+    row.cases = row.cases.filter((name) => name !== 'upgrade').concat('reinstall', 'runtime-repair');
+  }
+  assert.doesNotThrow(() => validateRelease(currentInstall, { root, hashes }));
+  for (const alter of [
+    (r) => { delete r.hosts.codex.interactive.legacyUpgradeExemption; },
+    (r) => { r.hosts.codex.interactive.legacyUpgradeExemption = 'skip'; },
+    (r) => { r.hosts.codex.testnet.legacyUpgradeExemption = 'no-existing-users'; },
+    (r) => { r.hosts.codex.interactive.cases = COVERAGE.interactive; },
+    (r) => { r.hosts.codex.interactive.cases = r.hosts.codex.interactive.cases.filter((name) => name !== 'reinstall'); },
+    (r) => { r.hosts.codex.interactive.cases = r.hosts.codex.interactive.cases.filter((name) => name !== 'runtime-repair'); },
+  ]) {
+    const changed = structuredClone(currentInstall);
+    alter(changed);
+    assert.throws(() => validateRelease(changed, { root, hashes }));
+  }
   const codexOnly = structuredClone(record);
   codexOnly.hosts.claude = { interactive: { status: 'pending' }, testnet: { status: 'pending' } };
   assert.equal(codexReleaseEligible(codexOnly, { root, hashes }), true);

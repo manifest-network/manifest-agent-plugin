@@ -74,9 +74,9 @@ outer prompt proves that the plugin's hook still requests permission.
 
 Terminal results use a scripted summary of the actual returned tool output;
 they do not validate model reasoning or the full deployment workflow.
-Published-version upgrades and preservation of real saved records remain
-separate acceptance work. A stopped tool can lose its late result or warning
-in the host UI; inspect the captured cancellation screen as well as the
+Reinstall and saved-record preservation have their own
+[current-install evidence](current-install-acceptance.md). A stopped tool can
+lose its late result or warning in the host UI; inspect the captured cancellation screen as well as the
 fixture event log before claiming that a partial deployment was visible.
 
 The recorded [Claude terminal run](host-evidence/claude-terminal.json) and
@@ -99,16 +99,16 @@ verification. A partial `--case` report cannot pass full-matrix validation.
 Neither host retained the fixture lease ID on its final interruption screen.
 These observations leave post-broadcast outcomes uncertain from the terminal
 alone. Preserve identifiers and inspect existing records before retrying an
-interrupted deployment. Terminal fixture coverage does not close the full
-interactive release row: published-version upgrade/record preservation and
-the live workflow still need their own evidence.
+interrupted deployment. The interactive release rows combine these terminal
+observations with the current-install evidence. The live workflow is recorded
+separately in [live-testnet-acceptance.md](live-testnet-acceptance.md).
 
 ## Matrix
 
 | Scenario | Local CI | Real Claude host | Real Codex host | Live testnet |
 | --- | --- | --- | --- | --- |
 | Clean discovery, 14 skills, 5 servers | Generated package and launcher checks | Terminal skill menu and 5 servers | Terminal skill menu and 5 servers; full inventory in app-server fixture | Fresh isolated runtime and host startup |
-| Runtime repair/upgrade preserves records | Setup tests and concurrent host-process test | Existing hook/bootstrap tests | Reinstall preserves fixture config | Upgrade not exercised |
+| Runtime repair/reinstall preserves records | Setup tests and concurrent host-process test | Native reinstall with `--keep-data`; automatic repair; seven files and wallet verified | Native remove/add; automatic repair; seven files and wallet verified | Legacy upgrade excluded; current-install checks offline |
 | Author/validate and shared tool names | Existing draft/spec tests; pinned inventory | Real preview of operator-authored spec | Real preview of operator-authored spec | Passed with local model driver |
 | Decline before mutation | All 12 reviewed mutations gated; zero markers | Terminal direct + orchestrated denial, zero markers | Terminal direct + orchestrated denial, zero markers | Fixture only |
 | Complete/active deployment | Native transport and pinned callback cases | Native forms; active live app; HTTPS 200 | Native forms; active live app; HTTPS 200 | Passed |
@@ -141,14 +141,16 @@ to rewrite the historical report. When archiving a current report, set
 `source_status` to `historical` and record its full source commit in `head`;
 never refresh hashes without running the harness.
 
-## Remaining release evidence
+## Release evidence
 
 Run the following in each intended interactive host surface with exact host,
 Node, plugin and upstream versions recorded. Keep transcripts free of wallet
 passwords, mnemonics, private keys and application secret values.
 
-1. Fresh install and upgrade an existing data directory. Record discovery,
-   initial setup diagnostics, selected chain and wallet address, and record
+1. Fresh install and upgrade an existing data directory. When the repository
+   owner confirms there are no legacy users, record that exemption and verify
+   current-version native reinstall and automatic runtime repair instead.
+   Record discovery, initial setup diagnostics, selected chain and wallet address, and record
    preservation. Run Claude and Codex concurrently using their isolated roots.
 2. With harmless fixtures, visibly decline permission/elicitation before a
    mutation and prove zero markers. Observe progress, success, cancellation,
@@ -169,8 +171,16 @@ Record completed UI/live runs in repository evidence files and reference them
 from [host-acceptance-release.json](host-acceptance-release.json). Both testnet
 rows now reference the completed live lifecycle run. Their cleanup declaration
 covers temporary resources and local account data; the separately recorded
-unused testnet billing credit was accepted by the user. Interactive rows remain
-pending for published-version upgrade and saved-record preservation.
+unused testnet billing credit was accepted by the user. Both interactive rows
+are also complete for the CLI scope: current-version reinstall and runtime
+repair preserved config, encrypted wallets, drafts, schema 2/3 saved manifests
+and historical journals. The owner excluded legacy-version migration because
+there are no existing users of the old plugin. Each interactive row declares
+`legacyUpgradeExemption: "no-existing-users"`; validation then requires
+`reinstall` and `runtime-repair` coverage in place of `upgrade`. Records without
+that explicit exemption still require upgrade evidence. No GUI or
+version-to-version migration is claimed.
+
 Tagged releases create the existing GitHub release first. A separate Codex
 artifact job uses `--codex-release-status`: pending
 Codex rows or evidence for another version skip the archive successfully.

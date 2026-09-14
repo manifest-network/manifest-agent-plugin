@@ -78,7 +78,15 @@ function validateRelease(record, { root = ROOT, hashes = sourceHashes(root), hos
     assert.equal(row?.status, 'complete', `${host} ${kind} evidence is pending; see docs/host-acceptance.md`);
     assert.ok(row.hostVersion && Number.isFinite(Date.parse(row.recordedAt)), `${host}/${kind} version/date missing`);
     assert.deepEqual(row.sourceHashes, hashes, `${host}/${kind} source evidence differs`);
-    assert.deepEqual([...row.cases].sort(), [...COVERAGE[kind]].sort(), `${host}/${kind} coverage incomplete`);
+    const coverage = [...COVERAGE[kind]];
+    if (row.legacyUpgradeExemption !== undefined) {
+      assert.equal(kind, 'interactive', 'Legacy upgrade exemption applies only to interactive evidence');
+      assert.equal(row.legacyUpgradeExemption, 'no-existing-users', 'Unrecognized legacy upgrade exemption');
+      // The release record explicitly declares that no legacy users need a
+      // migration. Require current-install preservation and repair instead.
+      coverage.splice(coverage.indexOf('upgrade'), 1, 'reinstall', 'runtime-repair');
+    }
+    assert.deepEqual([...row.cases].sort(), coverage.sort(), `${host}/${kind} coverage incomplete`);
     assert.equal(typeof row.evidencePath, 'string', 'Evidence must reference a repository file');
     const path = resolve(root, row.evidencePath);
     const rel = relative(root, path);
