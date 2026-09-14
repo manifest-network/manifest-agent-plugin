@@ -3,11 +3,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { randomUUID } = require('node:crypto');
 const { join, dirname } = require('node:path');
 const { tmpdir } = require('node:os');
 const { validateHostReport, validateRelease, codexReleaseCandidate, codexReleaseEligible, COVERAGE } = require('../ci/host-acceptance.cjs');
 const { sourceHashes } = require('../ci/codex-host-smoke.cjs');
-const { readHistoricalSources, sha256 } = require('../ci/evidence-check.cjs');
+const { sha256 } = require('../ci/evidence-check.cjs');
 const { hashes: terminalHashes } = require('../ci/terminal-host-smoke.cjs');
 const { workflowFiles } = require('../ci/build-packages.cjs');
 
@@ -67,11 +68,11 @@ test('fresh reports must cover the current checkout including package versions a
 });
 
 test('compatibility release stays blocked on the explicitly pending interactive/live evidence', () => {
-  const pending = structuredClone(require('../docs/host-acceptance-release.json'));
-  pending.pluginVersion = require('../package.json').version;
-  pending.upstreamVersion = require('../package.json').dependencies['@manifest-network/manifest-mcp-node'];
-  pending.hosts.claude.interactive = { status: 'pending' };
-  pending.hosts.codex.interactive = { status: 'pending' };
+  const pending = { schemaVersion: 1, pluginVersion: require('../package.json').version,
+    upstreamVersion: require('../package.json').dependencies['@manifest-network/manifest-mcp-node'],
+    hosts: Object.fromEntries(['claude', 'codex'].map((host) => [host, {
+      interactive: { status: 'pending' }, testnet: { status: 'pending' },
+    }])) };
   assert.throws(() => validateRelease(pending), /evidence is pending/);
   assert.equal(codexReleaseCandidate(pending), false, 'Pending archives need no history fetch');
   assert.equal(codexReleaseEligible(pending), false, 'Pending Codex evidence skips its archive without blocking the Claude release');
@@ -81,28 +82,55 @@ test('release validation binds primary and terminal evidence, provenance, preser
   const root = fs.mkdtempSync(join(tmpdir(), 'manifest-release-evidence-unit-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const repo = join(__dirname, '..'), hashes = sourceHashes();
-  const options = { root, hashes, historicalSources: (_root, head, files) => readHistoricalSources(repo, head, files) };
-  const record = structuredClone(require('../docs/host-acceptance-release.json'));
   const write = (file, bytes) => { fs.mkdirSync(dirname(join(root, file)), { recursive: true }); fs.writeFileSync(join(root, file), bytes); };
-  for (const file of Object.keys(terminalHashes())) write(file, fs.readFileSync(join(repo, file)));
-  for (const row of Object.values(record.hosts)) for (const kind of ['interactive', 'testnet']) {
-    write(row[kind].evidencePath, fs.readFileSync(join(repo, row[kind].evidencePath)));
-  }
-  const preservationPath = record.hosts.claude.interactive.evidencePath;
-  const preservation = JSON.parse(fs.readFileSync(join(root, preservationPath)));
+  const sources = Object.fromEntries(Object.keys(terminalHashes()).map((file) => [file, fs.readFileSync(join(repo, file))]));
+  for (const [file, bytes] of Object.entries(sources)) write(file, bytes);
+  const head = '1'.repeat(40);
+  const options = { root, hashes, historicalSources: (_root, commit, scope) => {
+    if (commit !== head) return null;
+    const files = typeof scope === 'function' ? scope(Object.keys(sources).map((path) => ({ path, mode: '100644', type: 'blob' }))) : scope;
+    return Object.fromEntries(files.map((file) => [file, sources[file]]));
+  } };
+  // Reuse observation shapes, but invent a self-contained release declaration
+  // and source bindings for this temporary unit fixture. These are never
+  // acceptance evidence. The real release record may be pending or stale;
+  // release.yml validates its Codex rows before attaching the native archive.
+  const pkg = require('../package.json');
+  const record = { schemaVersion: 1, pluginVersion: pkg.version,
+    upstreamVersion: pkg.dependencies['@manifest-network/manifest-mcp-node'], hosts: {} };
+  const preservationPath = 'docs/host-evidence/current-install-preservation.json';
+  const livePath = 'docs/host-evidence/live-testnet.json';
+  const preservation = JSON.parse(fs.readFileSync(join(repo, preservationPath)));
+  const liveFixture = JSON.parse(fs.readFileSync(join(repo, livePath)));
+  for (const report of [preservation, liveFixture]) Object.assign(report, {
+    head, source_status: 'historical', sourceHashes: hashes,
+    pluginVersion: record.pluginVersion, upstreamVersion: record.upstreamVersion,
+  });
   const cleanup = { processesStopped: true, apiClosed: true, temporaryRootRemoved: true };
   for (const host of ['claude', 'codex']) {
-    const file = record.hosts[host].interactive.terminalEvidencePath;
+    const file = `docs/host-evidence/${host}-terminal-reviewed.json`;
     const terminal = JSON.parse(fs.readFileSync(join(repo, file)));
-    // Synthetic cleanup observations are used only in this temporary unit
-    // fixture. Actual v1 archives retain their unverified cleanup claim.
-    terminal.schemaVersion = 2; terminal.cleanup = cleanup;
+    Object.assign(terminal, { schemaVersion: 2, source_status: 'historical', head, sourceHashes: terminalHashes(root),
+      pluginVersion: record.pluginVersion, upstreamPin: record.upstreamVersion, cleanup });
     for (const c of terminal.cases) c.cleanup = cleanup;
+    for (const stage of Object.values(preservation.hosts[host].records)) stage.runtimeVersion = record.upstreamVersion;
+    record.hosts[host] = {
+      interactive: { status: 'complete', hostVersion: terminal.hostVersion, recordedAt: preservation.recordedAt,
+        sourceCommit: head, sourceHashes: hashes, evidencePath: preservationPath, terminalEvidencePath: file,
+        legacyUpgradeExemption: 'no-existing-users',
+        cases: ['install', 'reinstall', 'runtime-repair', 'discovery', 'decline-zero-mutations', 'success', 'cancel', 'paid-partial', 'progress'] },
+      testnet: { status: 'complete', hostVersion: liveFixture.hosts[host].hostVersion, recordedAt: liveFixture.recordedAt,
+        sourceCommit: head, sourceHashes: hashes, evidencePath: livePath,
+        chainId: liveFixture.chain.chainId, walletAddress: liveFixture.chain.walletAddress, leases: [liveFixture.hosts[host].leaseUuid],
+        cases: liveFixture.hosts[host].checks.map((c) => c.name), cleanup: { verified: true, residue: 'none' } },
+    };
     const bytes = JSON.stringify(terminal);
     write(file, bytes);
+    preservation.terminalCoverage[host].sourceCommit = head;
     preservation.terminalCoverage[host].evidenceSha256 = sha256(bytes);
   }
   write(preservationPath, JSON.stringify(preservation));
+  write(livePath, JSON.stringify(liveFixture));
   assert.doesNotThrow(() => validateRelease(record, options));
   assert.equal(codexReleaseCandidate(record, options), true);
   assert.equal(codexReleaseEligible(record, options), true);
@@ -157,7 +185,6 @@ test('release validation binds primary and terminal evidence, provenance, preser
     assert.throws(() => validateRelease(record, options));
   }
   write(preservationPath, JSON.stringify(preservation));
-  const livePath = record.hosts.codex.testnet.evidencePath;
   const live = JSON.parse(fs.readFileSync(join(root, livePath)));
   for (const alter of [
     (r) => { r.hosts.codex.leaseUuid = 'unrelated'; },
@@ -170,8 +197,19 @@ test('release validation binds primary and terminal evidence, provenance, preser
   }
   write(livePath, JSON.stringify(live));
   const file = record.hosts.codex.interactive.terminalEvidencePath;
-  const terminal = JSON.parse(fs.readFileSync(join(root, file)));
+  const terminalBytes = fs.readFileSync(join(root, file));
+  const terminal = JSON.parse(terminalBytes);
   terminal.cases[0].modelReceivedToolResult = false;
   write(file, JSON.stringify(terminal));
   assert.throws(() => validateRelease(record, options), /Model result receipt/);
+  write(file, terminalBytes);
+
+  // Source changes still invalidate release eligibility, even though ordinary
+  // unit tests no longer require the real release record to be current.
+  write(`scripts/${randomUUID()}.cjs`, '');
+  const changedWorkspace = { ...options, hashes: sourceHashes(root) };
+  assert.throws(() => codexReleaseEligible(record, changedWorkspace), /codex\/interactive source evidence differs/);
+  const pending = structuredClone(record);
+  for (const row of Object.values(pending.hosts)) for (const kind of ['interactive', 'testnet']) row[kind].status = 'pending';
+  assert.equal(codexReleaseEligible(pending, changedWorkspace), false);
 });

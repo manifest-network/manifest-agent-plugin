@@ -178,6 +178,27 @@ in the archive metadata.
 
 ## Release evidence
 
+Release evidence binds to the source being shipped. Changing any hashed file,
+or adding/removing a `scripts/*.cjs` or `workflows/*.md` file, makes the current
+release rows stale even though archived reports remain valid for their recorded
+commits. In that source-change PR, set each affected `interactive` and `testnet`
+row in [host-acceptance-release.json](host-acceptance-release.json) to
+`"status": "pending"`. The four current rows share the same core source scope,
+so a change in that scope affects all four. Preserve the historical reports;
+do not rewrite their hashes to make them appear current.
+
+Before declaring those rows complete for publication, rerun the affected
+acceptance matrix against the intended source, including the funded live-testnet
+run for testnet rows, and update the release references with the new evidence.
+Ordinary `npm test` runs use a synthetic release fixture to test the validator;
+they do not require the active release record to be complete or current.
+Pending Codex rows skip its artifact; stale completed rows fail validation.
+Before tagging, check the actual record with the same command as the release job:
+
+```bash
+node ci/host-acceptance.cjs --codex-release-status --fetch-history
+```
+
 Run the following in each intended interactive host surface with exact host,
 Node, plugin and upstream versions recorded. Keep transcripts free of wallet
 passwords, mnemonics, private keys and application secret values.
