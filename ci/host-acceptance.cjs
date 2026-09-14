@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const { resolve, join, relative, isAbsolute } = require('node:path');
 const { sourceHashes } = require('./codex-host-smoke.cjs');
 const { validateReport: validateTerminalReport, hashes: terminalHashes } = require('./terminal-host-smoke.cjs');
-const { readHistoricalSources, verifyProvenance, sha256 } = require('./evidence-check.cjs');
+const { readHistoricalSources, verifyProvenance, fetchEvidenceHistory, sha256 } = require('./evidence-check.cjs');
 const ROOT = resolve(__dirname, '..');
 const CASES = [
   ['direct-decline', 0, 'OPERATION_CANCELLED'], ['orchestrated-decline', 0, 'OPERATION_CANCELLED'],
@@ -192,21 +192,29 @@ function validateRelease(record, { root = ROOT, hashes = sourceHashes(root), hos
   }
 }
 
-function codexReleaseEligible(record, { root = ROOT, hashes, historicalSources } = {}) {
+function codexReleaseCandidate(record, { root = ROOT } = {}) {
   const pkg = JSON.parse(fs.readFileSync(join(root, 'package.json')));
   assert.equal(record.schemaVersion, 1);
   for (const kind of ['interactive', 'testnet']) {
     assert.ok(['pending', 'complete'].includes(record.hosts?.codex?.[kind]?.status), `Invalid codex/${kind} evidence status`);
   }
-  if (record.pluginVersion !== pkg.version || record.upstreamVersion !== pkg.dependencies['@manifest-network/manifest-mcp-node']
-    || !Object.keys(COVERAGE).every((kind) => record.hosts.codex[kind].status === 'complete')) return false;
+  return record.pluginVersion === pkg.version && record.upstreamVersion === pkg.dependencies['@manifest-network/manifest-mcp-node']
+    && Object.keys(COVERAGE).every((kind) => record.hosts.codex[kind].status === 'complete');
+}
+
+function codexReleaseEligible(record, { root = ROOT, hashes, historicalSources } = {}) {
+  if (!codexReleaseCandidate(record, { root })) return false;
   validateRelease(record, { root, hashes, historicalSources, hosts: ['codex'] });
   return true;
 }
 
 function main(argv = process.argv.slice(2)) {
-  if (argv.length === 1 && argv[0] === '--codex-release-status') {
-    const eligible = codexReleaseEligible(JSON.parse(fs.readFileSync(join(ROOT, 'docs/host-acceptance-release.json'))));
+  if (argv[0] === '--codex-release-status' && (argv.length === 1 || (argv.length === 2 && argv[1] === '--fetch-history'))) {
+    const record = JSON.parse(fs.readFileSync(join(ROOT, 'docs/host-acceptance-release.json')));
+    // Ineligible archives still skip successfully, without fetching unrelated
+    // historical evidence. Only this explicit CLI flag permits network access.
+    if (argv.includes('--fetch-history') && codexReleaseCandidate(record)) fetchEvidenceHistory(ROOT);
+    const eligible = codexReleaseEligible(record);
     if (!eligible) console.error('Codex archive skipped: interactive/testnet evidence is pending or belongs to another version.');
     console.log(`eligible=${eligible}`);
     return;
@@ -219,7 +227,7 @@ function main(argv = process.argv.slice(2)) {
     else if (argv[i] === '--require-current') options.requireCurrent = true;
     else if (argv[i] === '--require-history') options.requireHistory = true;
     else if (argv[i] === '--release') { release = true; options.requireCurrent = true; }
-    else throw new Error('Usage: node ci/host-acceptance.cjs [--report <file>] [--require-current|--require-history] [--release] or --codex-release-status');
+    else throw new Error('Usage: node ci/host-acceptance.cjs [--report <file>] [--require-current|--require-history] [--release] or --codex-release-status [--fetch-history]');
   }
   const result = validateHostReport(JSON.parse(fs.readFileSync(reportPath)), options);
   if (release) validateRelease(JSON.parse(fs.readFileSync(join(ROOT, 'docs/host-acceptance-release.json'))));
@@ -228,4 +236,4 @@ function main(argv = process.argv.slice(2)) {
     : `${result.verification} hashes verified`}${release ? '; both hosts have declared interactive/testnet coverage' : ''}`);
 }
 if (require.main === module) { try { main(); } catch (error) { console.error(error.message); process.exitCode = 1; } }
-module.exports = { validateHostReport, validateRelease, codexReleaseEligible, validatePreservation, COVERAGE };
+module.exports = { validateHostReport, validateRelease, codexReleaseCandidate, codexReleaseEligible, validatePreservation, COVERAGE };

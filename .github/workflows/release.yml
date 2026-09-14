@@ -61,12 +61,9 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Fetch recorded evidence source commits
-        run: node ci/evidence-check.cjs --fetch-history --require-history
-
       - name: Check whether Codex publication evidence is complete
         id: acceptance
-        run: node ci/host-acceptance.cjs --codex-release-status >> "$GITHUB_OUTPUT"
+        run: node ci/host-acceptance.cjs --codex-release-status --fetch-history >> "$GITHUB_OUTPUT"
 
       - name: Install the characterized Codex host
         if: steps.acceptance.outputs.eligible == 'true'

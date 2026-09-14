@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { join, dirname } = require('node:path');
 const { tmpdir } = require('node:os');
-const { validateHostReport, validateRelease, codexReleaseEligible, COVERAGE } = require('../ci/host-acceptance.cjs');
+const { validateHostReport, validateRelease, codexReleaseCandidate, codexReleaseEligible, COVERAGE } = require('../ci/host-acceptance.cjs');
 const { sourceHashes } = require('../ci/codex-host-smoke.cjs');
 const { readHistoricalSources, sha256 } = require('../ci/evidence-check.cjs');
 const { hashes: terminalHashes } = require('../ci/terminal-host-smoke.cjs');
@@ -73,6 +73,7 @@ test('compatibility release stays blocked on the explicitly pending interactive/
   pending.hosts.claude.interactive = { status: 'pending' };
   pending.hosts.codex.interactive = { status: 'pending' };
   assert.throws(() => validateRelease(pending), /evidence is pending/);
+  assert.equal(codexReleaseCandidate(pending), false, 'Pending archives need no history fetch');
   assert.equal(codexReleaseEligible(pending), false, 'Pending Codex evidence skips its archive without blocking the Claude release');
 });
 
@@ -103,12 +104,14 @@ test('release validation binds primary and terminal evidence, provenance, preser
   }
   write(preservationPath, JSON.stringify(preservation));
   assert.doesNotThrow(() => validateRelease(record, options));
+  assert.equal(codexReleaseCandidate(record, options), true);
   assert.equal(codexReleaseEligible(record, options), true);
   const codexOnly = structuredClone(record);
   codexOnly.hosts.claude = { interactive: { status: 'pending' }, testnet: { status: 'pending' } };
   assert.equal(codexReleaseEligible(codexOnly, options), true);
   assert.throws(() => validateRelease(codexOnly, options), /claude interactive evidence is pending/);
   assert.equal(codexReleaseEligible({ ...record, pluginVersion: 'old' }, options), false);
+  assert.equal(codexReleaseCandidate({ ...record, pluginVersion: 'old' }, options), false);
   for (const alter of [
     (r) => { r.pluginVersion = 'other'; },
     (r) => { r.hosts.codex.interactive.sourceHashes = {}; },

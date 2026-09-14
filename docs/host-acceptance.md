@@ -153,6 +153,9 @@ the archives. This fetches missing recorded commits by their full validated
 SHA, including commits outside main's ancestry after squash merging. The
 validators themselves never fetch or silently weaken strict checks. Git
 objects are read in one binary-safe batch per report.
+The release job uses `--codex-release-status --fetch-history`: pending or
+different-version archives skip before fetching; complete current records
+must pass strict validation after any missing source commits are fetched.
 
 The `codex-host` CI job generates a fresh report and validates it with
 `--report codex-host-report.json --require-current` before uploading it. Current
