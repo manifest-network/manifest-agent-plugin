@@ -48,11 +48,13 @@ network discovery, GUI coverage, model reasoning, or live deployments. The
 separate [live-testnet evidence](live-testnet-acceptance.md) covers the provider
 lifecycle and actual saved deployment records.
 
-The earlier [Claude](host-evidence/claude-terminal.json) and
-[Codex](host-evidence/codex-terminal.json) terminal fixtures retain their
-original commit, hashes and observations. All 61 core source hashes match this
-run, so their approval, progress, cancellation and paid-partial observations
-remain applicable. Their documented limits remain: Codex did not display MCP
+The original terminal fixtures retain their commit, hashes and observations.
+The [reviewed Claude](host-evidence/claude-terminal-reviewed.json) and
+[reviewed Codex](host-evidence/codex-terminal-reviewed.json) runs at `ba19d43`
+repeat all nine cases with verified process cleanup. The preservation report's
+terminal links now bind those transcripts by digest and commit, retaining the
+superseded links as metadata. No preservation measurements changed. All 61
+core runtime source hashes still match. The documented limits remain: Codex did not display MCP
 phase messages or forward cancellation within two seconds; Claude discarded
 the late cancellation warning; neither final interruption screen retained the
 lease identifier. This acceptance does not claim those host behaviors changed.

@@ -1577,9 +1577,9 @@
   },
   "terminalCoverage": {
     "claude": {
-      "evidencePath": "docs/host-evidence/claude-terminal.json",
-      "evidenceSha256": "612f033edd764b59902a951e4269dd86673ef17d6f932e994e75fd58f1a1302d",
-      "sourceCommit": "84b9767c16053b8d05fcf111cb6b41279a7f8d74",
+      "evidencePath": "docs/host-evidence/claude-terminal-reviewed.json",
+      "evidenceSha256": "6f99aece38ae9d329c809cc1caaaa7b2cc4d46e3dac2312016f2efe8a2d9f916",
+      "sourceCommit": "ba19d43a5e23aafb37b6331372e4d4fa50bf7753",
       "coreSourceHashesUnchanged": true,
       "coreSourceFileCount": 61,
       "cases": [
@@ -1593,12 +1593,17 @@
         "paid-partial-recovery-decline",
         "cancel-after-broadcast"
       ],
-      "scope": "Prior terminal observations retain their original commit and limitations; all core source bytes match this run."
+      "scope": "Review follow-up terminal run with verified cleanup; original preservation observations unchanged. All 61 core runtime source hashes match.",
+      "supersedes": {
+        "evidencePath": "docs/host-evidence/claude-terminal.json",
+        "evidenceSha256": "612f033edd764b59902a951e4269dd86673ef17d6f932e994e75fd58f1a1302d",
+        "sourceCommit": "84b9767c16053b8d05fcf111cb6b41279a7f8d74"
+      }
     },
     "codex": {
-      "evidencePath": "docs/host-evidence/codex-terminal.json",
-      "evidenceSha256": "f6a70a7ffef934d4ef030b7db15e1d0f994743560b667eca63d4efabf9aa886d",
-      "sourceCommit": "84b9767c16053b8d05fcf111cb6b41279a7f8d74",
+      "evidencePath": "docs/host-evidence/codex-terminal-reviewed.json",
+      "evidenceSha256": "b8bf4ef72d4e1f478efdef81ac22fc8740fb0cad18fde47690585470c0111215",
+      "sourceCommit": "ba19d43a5e23aafb37b6331372e4d4fa50bf7753",
       "coreSourceHashesUnchanged": true,
       "coreSourceFileCount": 61,
       "cases": [
@@ -1612,7 +1617,12 @@
         "paid-partial-recovery-decline",
         "cancel-after-broadcast"
       ],
-      "scope": "Prior terminal observations retain their original commit and limitations; all core source bytes match this run."
+      "scope": "Review follow-up terminal run with verified cleanup; original preservation observations unchanged. All 61 core runtime source hashes match.",
+      "supersedes": {
+        "evidencePath": "docs/host-evidence/codex-terminal.json",
+        "evidenceSha256": "f6a70a7ffef934d4ef030b7db15e1d0f994743560b667eca63d4efabf9aa886d",
+        "sourceCommit": "84b9767c16053b8d05fcf111cb6b41279a7f8d74"
+      }
     }
   },
   "limitations": [
@@ -1668,6 +1678,7 @@
   },
   "head": "6d5a841107ec752a3967ba3461932efe6abdb3b6",
   "metadataCorrections": [
-    "Historical sourceCommit normalized to head; operator Node executable path replaced with <node>. Recorded observations and source hashes unchanged."
+    "Historical sourceCommit normalized to head; operator Node executable path replaced with <node>. Recorded observations and source hashes unchanged.",
+    "Terminal links updated to fresh reviewed harness runs with verified process cleanup; superseded transcript links retained. No preservation measurements or source hashes changed."
   ]
 }

@@ -85,7 +85,7 @@
         ],
         "legacyUpgradeExemption": "no-existing-users",
         "evidencePath": "docs/host-evidence/current-install-preservation.json",
-        "terminalEvidencePath": "docs/host-evidence/claude-terminal.json",
+        "terminalEvidencePath": "docs/host-evidence/claude-terminal-reviewed.json",
         "scope": "Current-version reinstall and automatic runtime repair replace legacy-version upgrade acceptance because the repository owner confirms no existing legacy users.",
         "limitations": [
           "These are actual CLI terminals, production launchers and published MCP packages driven by scripted local model responses; no GUI, hosted model reasoning or usability signoff.",
@@ -95,7 +95,8 @@
           "verified": true,
           "residue": "none",
           "scope": "Temporary unfunded wallets, seeded records, isolated CLI profiles and local model endpoints"
-        }
+        },
+        "terminalRecordedAt": "2026-09-14T18:24:36.685Z"
       },
       "testnet": {
         "status": "complete",
@@ -279,7 +280,7 @@
         ],
         "legacyUpgradeExemption": "no-existing-users",
         "evidencePath": "docs/host-evidence/current-install-preservation.json",
-        "terminalEvidencePath": "docs/host-evidence/codex-terminal.json",
+        "terminalEvidencePath": "docs/host-evidence/codex-terminal-reviewed.json",
         "scope": "Current-version reinstall and automatic runtime repair replace legacy-version upgrade acceptance because the repository owner confirms no existing legacy users.",
         "limitations": [
           "These are actual CLI terminals, production launchers and published MCP packages driven by scripted local model responses; no GUI, hosted model reasoning or usability signoff.",
@@ -289,7 +290,8 @@
           "verified": true,
           "residue": "none",
           "scope": "Temporary unfunded wallets, seeded records, isolated CLI profiles and local model endpoints"
-        }
+        },
+        "terminalRecordedAt": "2026-09-14T18:24:27.322Z"
       },
       "testnet": {
         "status": "complete",

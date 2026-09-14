@@ -90,6 +90,14 @@ cases. The reports are historical snapshots of their full source commit;
 available. Without that commit, validation explicitly reports metadata-only
 verification. A partial `--case` report cannot pass full-matrix validation.
 
+The [reviewed Claude run](host-evidence/claude-terminal-reviewed.json) and
+[reviewed Codex run](host-evidence/codex-terminal-reviewed.json) repeat all nine
+cases with the corrected harness at `ba19d43`. These version 2 reports verify
+process exit and directory removal for every case and now supply the release
+rows' terminal coverage. The original reports remain historical observations;
+their cleanup strings do not prove that their temporary directories stayed
+removed. The new runs reproduced the progress/cancellation observations below.
+
 | Observed behavior | Claude Code 2.1.270 | Codex CLI 0.154.0 |
 | --- | --- | --- |
 | Outer denial | No MCP tool call, zero markers | No MCP tool call, zero markers |
