@@ -6,7 +6,7 @@ const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } = require(
 const { join, dirname } = require('node:path');
 const { tmpdir } = require('node:os');
 const { spawnSync } = require('node:child_process');
-const { SOURCE_FILES, sha256, checkEvidence, readHistoricalSources } = require('../ci/evidence-check.cjs');
+const { SOURCE_FILES, sha256, checkEvidence, readHistoricalSources, verifyProvenance, fetchEvidenceHistory } = require('../ci/evidence-check.cjs');
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'manifest-evidence-'));
@@ -92,7 +92,7 @@ test('missing current source and missing hash coverage fail', (t) => {
   assert.match(f.check().failures.join('\n'), /current\.json:.*ENOENT/);
   delete f.current.files_sha256[SOURCE_FILES[0]];
   f.save('current', f.current);
-  assert.match(f.check().failures.join('\n'), /exactly the five/);
+  assert.match(f.check().failures.join('\n'), /exactly the expected files/);
 });
 
 test('historical source remains valid when current files and new evidence change', (t) => {
@@ -109,7 +109,7 @@ test('a historical hash mismatch fails against the recorded commit', (t) => {
   const f = fixture(t);
   f.historical.files_sha256[SOURCE_FILES[0]] = '0'.repeat(64);
   f.save('historical', f.historical);
-  assert.match(f.check().failures.join('\n'), /Historical hash differs from recorded commit/);
+  assert.match(f.check().failures.join('\n'), /Historical source differs from recorded commit/);
 });
 
 test('unavailable historical objects explicitly report metadata-only; strict mode fails', (t) => {
@@ -118,7 +118,7 @@ test('unavailable historical objects explicitly report metadata-only; strict mod
   const result = f.check({ historicalSources });
   assert.deepEqual(result.failures, []);
   assert.equal(result.records.find((r) => r.status === 'historical').verification, 'metadata-only');
-  assert.match(f.check({ historicalSources, requireHistory: true }).failures.join('\n'), /source commit .* unavailable/);
+  assert.match(f.check({ historicalSources, requireHistory: true }).failures.join('\n'), /source commit unavailable/);
 });
 
 test('historical source inspection errors fail instead of claiming metadata-only validation', (t) => {
@@ -148,7 +148,7 @@ test('historical evidence cannot substitute for a current host record', (t) => {
   assert.match(f.check().failures.join('\n'), /At least one current/);
   delete f.historical.head;
   f.save('historical', f.historical);
-  assert.match(f.check().failures.join('\n'), /full recorded head commit/);
+  assert.match(f.check().failures.join('\n'), /full recorded commit/);
 });
 
 test('matching source hashes cannot substitute for current results or historical observations', (t) => {
@@ -270,7 +270,20 @@ test('real Git history loads exact committed bytes and verifies independently of
   assert.deepEqual(result.records.find((r) => r.status === 'historical').workspaceDrift, [file]);
   f.historical.files_sha256[file] = f.current.files_sha256[file];
   f.save('historical', f.historical);
-  assert.match(checkEvidence(f.root).failures.join('\n'), /Historical hash differs from recorded commit/);
+  assert.match(checkEvidence(f.root).failures.join('\n'), /Historical source differs from recorded commit/);
   assert.equal(readHistoricalSources(f.root, '0'.repeat(40)), null);
   assert.throws(() => readHistoricalSources(f.root, git('rev-parse', `HEAD:${file}`)), /must identify a commit/);
+});
+
+test('history fetch is explicit, deduplicated and limited to recorded commit IDs', (t) => {
+  const f = fixture(t), calls = [];
+  assert.equal(fetchEvidenceHistory(f.root, (bin, args) => {
+    calls.push([bin, ...args]);
+    return { status: args.includes('fetch') ? 0 : 1 };
+  }), 1);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1], ['git', '-C', f.root, 'fetch', '--no-tags', 'origin', 'a'.repeat(40)]);
+  assert.throws(() => fetchEvidenceHistory(f.root, () => ({ status: 1 })), /Cannot fetch recorded/);
+  f.historical.head = '--upload-pack=untrusted'; f.save('historical', f.historical);
+  assert.throws(() => fetchEvidenceHistory(f.root, () => assert.fail('Must reject before git')), /Missing historical head/);
 });

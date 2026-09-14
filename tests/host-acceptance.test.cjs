@@ -3,10 +3,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { join } = require('node:path');
+const { join, dirname } = require('node:path');
 const { tmpdir } = require('node:os');
 const { validateHostReport, validateRelease, codexReleaseEligible, COVERAGE } = require('../ci/host-acceptance.cjs');
 const { sourceHashes } = require('../ci/codex-host-smoke.cjs');
+const { readHistoricalSources, sha256 } = require('../ci/evidence-check.cjs');
+const { hashes: terminalHashes } = require('../ci/terminal-host-smoke.cjs');
 const { workflowFiles } = require('../ci/build-packages.cjs');
 
 const recorded = () => JSON.parse(fs.readFileSync(join(__dirname, '../docs/host-evidence/codex-app-server.json')));
@@ -40,7 +42,7 @@ test('historical native host evidence retains its commit and rejects altered obs
 
 test('historical evidence permits workspace drift without masquerading as a current run', () => {
   const report = recorded();
-  assert.equal(validateHostReport(report, { hashes: { 'unrelated-change': 'different' } }).status, 'historical');
+  assert.equal(validateHostReport(report, { hashes: Object.fromEntries(Object.keys(sourceHashes()).map((p) => [p, '0'.repeat(64)])) }).status, 'historical');
   assert.throws(() => validateHostReport(report, { requireCurrent: true }), /Fresh current/);
   assert.equal(validateHostReport(report, { historicalSources: () => null }).verification, 'metadata-only');
   assert.throws(() => validateHostReport(report, { historicalSources: () => null, requireHistory: true }), /commit unavailable/);
@@ -74,51 +76,39 @@ test('compatibility release stays blocked on the explicitly pending interactive/
   assert.equal(codexReleaseEligible(pending), false, 'Pending Codex evidence skips its archive without blocking the Claude release');
 });
 
-test('release validation requires source-bound coverage, repository evidence files and verified cleanup', (t) => {
+test('release validation binds primary and terminal evidence, provenance, preservation and cleanup', (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'manifest-release-evidence-unit-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const pkg = require('../package.json');
-  fs.writeFileSync(join(root, 'package.json'), JSON.stringify(pkg));
-  fs.writeFileSync(join(root, 'test-only-transcript.md'), 'Unit fixture only. This is not release evidence.');
-  const hashes = { fixture: '123' };
-  const record = { schemaVersion: 1, pluginVersion: pkg.version, upstreamVersion: pkg.dependencies['@manifest-network/manifest-mcp-node'], hosts: {} };
+  const repo = join(__dirname, '..'), hashes = sourceHashes();
+  const options = { root, hashes, historicalSources: (_root, head, files) => readHistoricalSources(repo, head, files) };
+  const record = structuredClone(require('../docs/host-acceptance-release.json'));
+  const write = (file, bytes) => { fs.mkdirSync(dirname(join(root, file)), { recursive: true }); fs.writeFileSync(join(root, file), bytes); };
+  for (const file of Object.keys(terminalHashes())) write(file, fs.readFileSync(join(repo, file)));
+  for (const row of Object.values(record.hosts)) for (const kind of ['interactive', 'testnet']) {
+    write(row[kind].evidencePath, fs.readFileSync(join(repo, row[kind].evidencePath)));
+  }
+  const preservationPath = record.hosts.claude.interactive.evidencePath;
+  const preservation = JSON.parse(fs.readFileSync(join(root, preservationPath)));
+  const cleanup = { processesStopped: true, apiClosed: true, temporaryRootRemoved: true };
   for (const host of ['claude', 'codex']) {
-    record.hosts[host] = {};
-    for (const kind of ['interactive', 'testnet']) record.hosts[host][kind] = {
-      status: 'complete', hostVersion: 'unit-fixture', recordedAt: '2026-09-11T00:00:00Z', sourceHashes: hashes,
-      cases: COVERAGE[kind], evidencePath: 'test-only-transcript.md', chainId: 'fixture', walletAddress: 'public-fixture',
-      leases: ['fixture'], cleanup: { verified: true, residue: 'none' },
-    };
+    const file = record.hosts[host].interactive.terminalEvidencePath;
+    const terminal = JSON.parse(fs.readFileSync(join(repo, file)));
+    // Synthetic cleanup observations are used only in this temporary unit
+    // fixture. Actual v1 archives retain their unverified cleanup claim.
+    terminal.schemaVersion = 2; terminal.cleanup = cleanup;
+    for (const c of terminal.cases) c.cleanup = cleanup;
+    const bytes = JSON.stringify(terminal);
+    write(file, bytes);
+    preservation.terminalCoverage[host].evidenceSha256 = sha256(bytes);
   }
-  assert.doesNotThrow(() => validateRelease(record, { root, hashes }));
-  const currentInstall = structuredClone(record);
-  for (const host of ['claude', 'codex']) {
-    const row = currentInstall.hosts[host].interactive;
-    row.legacyUpgradeExemption = 'no-existing-users';
-    row.cases = row.cases.filter((name) => name !== 'upgrade').concat('reinstall', 'runtime-repair');
-  }
-  assert.doesNotThrow(() => validateRelease(currentInstall, { root, hashes }));
-  for (const alter of [
-    (r) => { delete r.hosts.codex.interactive.legacyUpgradeExemption; },
-    (r) => { r.hosts.codex.interactive.legacyUpgradeExemption = 'skip'; },
-    (r) => { r.hosts.codex.testnet.legacyUpgradeExemption = 'no-existing-users'; },
-    (r) => { r.hosts.codex.interactive.cases = COVERAGE.interactive; },
-    (r) => { r.hosts.codex.interactive.cases = r.hosts.codex.interactive.cases.filter((name) => name !== 'reinstall'); },
-    (r) => { r.hosts.codex.interactive.cases = r.hosts.codex.interactive.cases.filter((name) => name !== 'runtime-repair'); },
-  ]) {
-    const changed = structuredClone(currentInstall);
-    alter(changed);
-    assert.throws(() => validateRelease(changed, { root, hashes }));
-  }
+  write(preservationPath, JSON.stringify(preservation));
+  assert.doesNotThrow(() => validateRelease(record, options));
+  assert.equal(codexReleaseEligible(record, options), true);
   const codexOnly = structuredClone(record);
   codexOnly.hosts.claude = { interactive: { status: 'pending' }, testnet: { status: 'pending' } };
-  assert.equal(codexReleaseEligible(codexOnly, { root, hashes }), true);
-  assert.throws(() => validateRelease(codexOnly, { root, hashes }), /claude interactive evidence is pending/);
-  const staleVersion = { ...codexOnly, pluginVersion: 'old' };
-  assert.equal(codexReleaseEligible(staleVersion, { root, hashes }), false);
-  const malformed = structuredClone(codexOnly);
-  malformed.hosts.codex.testnet.cleanup.residue = 'paid-lease';
-  assert.throws(() => codexReleaseEligible(malformed, { root, hashes }), /cleanup is incomplete/);
+  assert.equal(codexReleaseEligible(codexOnly, options), true);
+  assert.throws(() => validateRelease(codexOnly, options), /claude interactive evidence is pending/);
+  assert.equal(codexReleaseEligible({ ...record, pluginVersion: 'old' }, options), false);
   for (const alter of [
     (r) => { r.pluginVersion = 'other'; },
     (r) => { r.hosts.codex.interactive.sourceHashes = {}; },
@@ -126,9 +116,59 @@ test('release validation requires source-bound coverage, repository evidence fil
     (r) => { r.hosts.codex.testnet.cleanup.residue = 'paid-lease'; },
     (r) => { r.hosts.claude.testnet.leases = []; },
     (r) => { r.hosts.claude.interactive.evidencePath = '../outside.md'; },
+    (r) => { r.hosts.claude.interactive.terminalEvidencePath = '../../missing.json'; },
+    (r) => { r.hosts.codex.interactive.terminalEvidencePath = null; },
+    (r) => { delete r.hosts.codex.interactive.legacyUpgradeExemption; },
+    (r) => { r.hosts.codex.interactive.legacyUpgradeExemption = 'skip'; },
+    (r) => { r.hosts.codex.testnet.legacyUpgradeExemption = 'no-existing-users'; },
+    (r) => { r.hosts.codex.interactive.cases = COVERAGE.interactive; },
+    (r) => { r.hosts.codex.interactive.cases = r.hosts.codex.interactive.cases.filter((c) => c !== 'reinstall'); },
+    (r) => { r.hosts.codex.interactive.cases = r.hosts.codex.interactive.cases.filter((c) => c !== 'runtime-repair'); },
   ]) {
-    const changed = structuredClone(record);
-    alter(changed);
-    assert.throws(() => validateRelease(changed, { root, hashes }));
+    const changed = structuredClone(record); alter(changed);
+    assert.throws(() => validateRelease(changed, options));
   }
+  assert.throws(() => validateRelease(record, { ...options, historicalSources: () => null }), /commit unavailable/);
+  const upgrade = COVERAGE.interactive.indexOf('upgrade');
+  try {
+    COVERAGE.interactive[upgrade] = 'migrate';
+    assert.throws(() => validateRelease(record, options), /requires an upgrade coverage entry/);
+  } finally { COVERAGE.interactive[upgrade] = 'upgrade'; }
+  for (const alter of [
+    (p) => { delete p.head; },
+    (p) => { p.head = '0'.repeat(40); },
+    (p) => { p.evidenceKind = 'text-note'; },
+    (p) => { delete p.sourceHashes['scripts/pre-tool-use.cjs']; },
+    (p) => { p.sourceHashes['scripts/_io.cjs'] = '0'.repeat(64); },
+    (p) => { p.hosts.codex.records.repaired.files['config.json'].sha256 = '0'.repeat(64); },
+    (p) => { p.hosts.codex.records.repaired.offlineKeyDecryptionAndSigning = false; },
+    (p) => { delete p.hosts.codex.records.uninstalled; },
+    (p) => { p.hosts.claude.reinstallCommands[0].command = ['claude', 'plugin', 'uninstall', 'manifest-agent']; },
+    (p) => { p.hosts.codex.phases.repaired.toolOutput = []; },
+    (p) => { p.hosts.codex.runtimeRepair.after.ready = true; },
+    (p) => { p.cleanup.verified = false; },
+    (p) => { p.terminalCoverage.codex.evidenceSha256 = '0'.repeat(64); },
+  ]) {
+    const changed = structuredClone(preservation); alter(changed);
+    write(preservationPath, JSON.stringify(changed));
+    assert.throws(() => validateRelease(record, options));
+  }
+  write(preservationPath, JSON.stringify(preservation));
+  const livePath = record.hosts.codex.testnet.evidencePath;
+  const live = JSON.parse(fs.readFileSync(join(root, livePath)));
+  for (const alter of [
+    (r) => { r.hosts.codex.leaseUuid = 'unrelated'; },
+    (r) => { r.hosts.codex.checks[0].passed = false; },
+    (r) => { r.cleanup.activeLeases = 1; },
+    (r) => { r.chain.walletAddress = 'unrelated'; },
+  ]) {
+    const changed = structuredClone(live); alter(changed); write(livePath, JSON.stringify(changed));
+    assert.throws(() => validateRelease(record, options));
+  }
+  write(livePath, JSON.stringify(live));
+  const file = record.hosts.codex.interactive.terminalEvidencePath;
+  const terminal = JSON.parse(fs.readFileSync(join(root, file)));
+  terminal.cases[0].modelReceivedToolResult = false;
+  write(file, JSON.stringify(terminal));
+  assert.throws(() => validateRelease(record, options), /Model result receipt/);
 });

@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "evidenceKind": "current-install-preservation",
   "source_status": "historical",
-  "sourceCommit": "6d5a841107ec752a3967ba3461932efe6abdb3b6",
   "recordedAt": "2026-09-14T15:47:31.514Z",
   "pluginVersion": "0.4.0",
   "upstreamVersion": "0.22.0",
@@ -772,7 +771,7 @@
         {
           "at": "2026-09-14T15:41:26.750Z",
           "command": [
-            "/home/fmorency/.local/share/nvm/v24.15.0/bin/node",
+            "<node>",
             "/tmp/eng894-upgrade-RR9mF2/verify-records.cjs",
             "claude",
             "uninstalled"
@@ -798,7 +797,7 @@
         {
           "at": "2026-09-14T15:41:30.430Z",
           "command": [
-            "/home/fmorency/.local/share/nvm/v24.15.0/bin/node",
+            "<node>",
             "/tmp/eng894-upgrade-RR9mF2/verify-records.cjs",
             "claude",
             "after-install"
@@ -1508,7 +1507,7 @@
         {
           "at": "2026-09-14T15:41:23.744Z",
           "command": [
-            "/home/fmorency/.local/share/nvm/v24.15.0/bin/node",
+            "<node>",
             "/tmp/eng894-upgrade-RR9mF2/verify-records.cjs",
             "codex",
             "uninstalled"
@@ -1533,7 +1532,7 @@
         {
           "at": "2026-09-14T15:41:24.292Z",
           "command": [
-            "/home/fmorency/.local/share/nvm/v24.15.0/bin/node",
+            "<node>",
             "/tmp/eng894-upgrade-RR9mF2/verify-records.cjs",
             "codex",
             "after-install"
@@ -1666,5 +1665,9 @@
       "files": 8,
       "privateStringsChecked": 8
     }
-  }
+  },
+  "head": "6d5a841107ec752a3967ba3461932efe6abdb3b6",
+  "metadataCorrections": [
+    "Historical sourceCommit normalized to head; operator Node executable path replaced with <node>. Recorded observations and source hashes unchanged."
+  ]
 }

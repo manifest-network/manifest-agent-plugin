@@ -96,5 +96,7 @@ No replacement deployment was submitted.
 
 This run did not induce paid partials or cancellation of live deployments.
 Those boundaries and the terminal visibility limitations remain documented
-in [host-acceptance.md](host-acceptance.md). Published-version upgrade and
-record-preservation acceptance remain pending in the interactive release rows.
+in [host-acceptance.md](host-acceptance.md). Both interactive release rows now
+include completed [current-install preservation](current-install-acceptance.md),
+with native reinstall and runtime repair replacing legacy-version migration
+under the repository owner's explicit no-existing-users exemption.

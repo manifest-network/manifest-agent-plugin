@@ -14,6 +14,8 @@ jobs:
         node: ['22.19.0', '24']
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -71,8 +73,11 @@ jobs:
 
       - name: Verify recorded host evidence provenance
         run: |
-          node ci/evidence-check.cjs
-          node ci/host-acceptance.cjs
+          node ci/evidence-check.cjs --fetch-history --require-history
+          node ci/host-acceptance.cjs --require-history
+          for report in docs/host-evidence/*-terminal*.json; do
+            node ci/terminal-host-smoke.cjs --check "$report" --require-history
+          done
 
       - name: Verify PreToolUse policy completeness (matcher tools named in policy + CLAUDE.md parity)
         # Checks the dependency-free matcher / runtime policy / docs contract.
@@ -149,6 +154,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24'

@@ -12,6 +12,11 @@ compares pinned launchers and callback behavior; `codex-host-smoke.cjs` runs
 the real host against harmless fixtures; `host-acceptance.cjs` binds recorded
 evidence to current sources and gates releases on declared UI/live coverage.
 Their commands and limits are in [host-acceptance.md](host-acceptance.md).
+`evidence-check.cjs` shares strict source-scope and commit verification across
+the evidence validators, reads Git objects in one binary-safe batch, and
+offers explicit `--fetch-history` for archived commits outside main's ancestry.
+`terminal-host-smoke.cjs` runs the Linux/tmux fixtures and verifies terminal
+outcomes, recovery decisions, cancellation observations and process cleanup.
 
 ## CLI entry points
 

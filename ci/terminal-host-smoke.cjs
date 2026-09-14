@@ -5,7 +5,7 @@
 // marker-only MCP runtime. Requires tmux and the explicitly recorded CLIs.
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
-const { join, resolve, isAbsolute } = require('node:path');
+const { join, resolve } = require('node:path');
 const { tmpdir } = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { createServer } = require('node:http');
@@ -13,7 +13,7 @@ const { createHash } = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
 const { buildCodex, workflowFiles } = require('./build-packages.cjs');
 const { sourceHashes } = require('./codex-host-smoke.cjs');
-const { readHistoricalSources, sha256 } = require('./evidence-check.cjs');
+const { readHistoricalSources, verifyProvenance } = require('./evidence-check.cjs');
 const { prepareFixture, TOOLS, LEASE } = require('../tests/fixtures/native-host-fixture.cjs');
 const { claudeEvents, codexEvents, outputs } = require('../tests/fixtures/terminal-model.cjs');
 const ROOT = resolve(__dirname, '..');
@@ -41,65 +41,80 @@ function counts(events) {
     mutationMarkers: events.filter((e) => e.kind === 'mutation').length };
 }
 
+function resultLines(observed) {
+  return observed.snapshots.filter((s) => ['result', 'after-cancel'].includes(s.label))
+    .flatMap((s) => [...s.screen.matchAll(/^\s*(?:[●•]\s+)?Fixture result: ([^\n]*)$/gm)].map((m) => m[1]));
+}
+
+function cancellationObservation(observed) {
+  const finalScreen = observed.snapshots.find((s) => s.label === 'after-cancel').screen;
+  return { observationWindowMs: 2000,
+    mcpCancellationReceived: observed.sequence.some((e) => e.kind === 'cancellation'),
+    warningEmitted: observed.sequence.some((e) => e.kind === 'cancelled_after_broadcast'),
+    warningVisible: finalScreen.includes('deploy_cancelled_after_broadcast'), leaseVisible: finalScreen.includes(LEASE),
+    renderedProgress: ['plan_ready', 'broadcast_complete'].filter((phase) => observed.snapshots.some((s) => s.screen.includes(phase))) };
+}
+
 function validateCase(test, observed) {
   assert.equal(observed.name, test.name);
-  assert.deepEqual({ toolCalls: observed.toolCalls, mutationMarkers: observed.mutationMarkers },
-    { toolCalls: test.calls, mutationMarkers: test.writes }, test.name);
+  const expectedCounts = { toolCalls: test.calls, mutationMarkers: test.writes };
+  assert.deepEqual({ toolCalls: observed.toolCalls, mutationMarkers: observed.mutationMarkers }, expectedCounts, test.name);
+  assert.deepEqual(counts(observed.sequence), expectedCounts, 'Event sequence differs from totals');
+  assert.ok(observed.snapshots.every((s) => typeof s.screen === 'string'), 'Screens must retain rendered text');
   const labels = observed.snapshots.map((snapshot) => snapshot.label);
+  assert.equal(new Set(labels).size, labels.length, 'Duplicate snapshot labels');
   assert.ok(labels.includes('ready'));
   if (test.name === 'discovery-read-only') assert.ok(labels.includes('skills'));
   else assert.ok(labels.includes('outer-permission'));
-  if (test.server === 'agent' && test.outer !== 'deny') assert.ok(labels.includes('native-confirmation'));
-  if (test.args?.fixture_scenario === 'partial') assert.ok(labels.includes('recovery'));
+  if (test.outer === 'deny') assert.ok(!labels.includes('native-confirmation'), 'Outer denial cannot reach native confirmation');
+  else if (test.server === 'agent') assert.ok(labels.includes('native-confirmation'));
+  if (test.args?.fixture_scenario === 'partial') {
+    assert.ok(labels.includes('recovery'));
+    const recovery = observed.sequence.filter((e) => e.kind === 'elicitation_result' && e.phase === 'recovery');
+    assert.equal(recovery.length, 1, 'Missing recovery response');
+    assert.equal(recovery[0].accepted, false, 'Recovery must be declined');
+    assert.ok(['accept', 'decline'].includes(recovery[0].action), 'Unexpected recovery action');
+  }
   if (test.name === 'cancel-after-broadcast') {
     assert.ok(labels.includes('progress-after-broadcast') && labels.includes('after-cancel'));
     assert.match(observed.snapshots.find((s) => s.label === 'after-cancel').screen, /interrupt|cancel/i);
+    assert.deepEqual(observed.cancellationObservation, cancellationObservation(observed), 'Cancellation observations differ from events/screens');
   } else assert.ok(labels.includes('result'));
   for (const snapshot of observed.snapshots) {
     if (snapshot.label === 'outer-permission') assert.deepEqual(snapshot.counts, { toolCalls: 0, mutationMarkers: 0 });
     if (snapshot.label === 'native-confirmation') assert.deepEqual(snapshot.counts,
-      { toolCalls: test.server === 'agent' ? 1 : 0, mutationMarkers: 0 });
-    if (snapshot.label === 'recovery') assert.equal(snapshot.counts.mutationMarkers, 1);
+      { toolCalls: test.server === 'agent' && test.outer !== 'deny' ? 1 : 0, mutationMarkers: 0 });
+    if (snapshot.label === 'recovery') {
+      assert.equal(test.args?.fixture_scenario, 'partial', 'Unexpected recovery snapshot');
+      assert.deepEqual(snapshot.counts, { toolCalls: 1, mutationMarkers: 1 });
+    }
   }
-  assert.ok(observed.snapshots.length > 0);
-  if (test.outcome) assert.ok(observed.snapshots.some((s) => s.label === 'result' && s.screen.includes(test.outcome)), `Missing visible ${test.outcome}`);
-  if (test.outcome === 'partial') {
-    const result = observed.snapshots.find((s) => s.label === 'result').screen;
-    assert.ok(result.includes(LEASE), 'Partial result lost lease identifier');
-    assert.ok(!result.includes('Fixture result: complete'), 'Partial result mislabeled success');
+  const summaries = resultLines(observed);
+  assert.equal(observed.modelReceivedToolResult, summaries.length > 0, 'Model result receipt differs from its rendered summary');
+  assert.ok(summaries.length <= 1, 'Ambiguous model result summary');
+  for (const summary of summaries) assert.match(summary,
+    new RegExp(`^(read_only|complete LEASE_STATE_ACTIVE|OPERATION_CANCELLED|partial|host denied or interrupted tool)(; lease ${LEASE})?\\. Terminal fixture finished\\.$`),
+    'Missing visible Fixture result or malformed model summary');
+  if (test.outcome) {
+    assert.equal(observed.modelReceivedToolResult, true, 'Model never received the tool result');
+    assert.match(summaries[0], new RegExp(`^${test.outcome}(?= |;|\\.|$)`), `Missing visible Fixture result: ${test.outcome}`);
   }
+  if (test.outcome === 'partial') assert.ok(summaries[0].includes(LEASE), 'Partial summary lost lease identifier');
 }
 
-function validateReport(report, { requireCurrent = false, requireHistory = false, historicalSources = readHistoricalSources } = {}) {
-  assert.equal(report.schemaVersion, 1);
+function validateCleanup(cleanup) {
+  assert.deepEqual(cleanup, { processesStopped: true, apiClosed: true, temporaryRootRemoved: true }, 'Terminal cleanup was not verified');
+}
+
+function validateReport(report, { root = ROOT, currentHashes = hashes(root), requireCurrent = false,
+  requireHistory = false, requireCleanup = false, historicalSources = readHistoricalSources } = {}) {
+  assert.ok([1, 2].includes(report.schemaVersion));
   assert.equal(report.evidenceKind, 'interactive-terminal-local-fixture');
   assert.ok(Object.hasOwn(VERSIONS, report.host));
   assert.equal(report.hostVersion, VERSIONS[report.host]);
   assert.ok(Number.isFinite(Date.parse(report.observedAt)));
-  assert.ok(['current', 'historical'].includes(report.source_status));
-  if (requireCurrent) assert.equal(report.source_status, 'current', 'Fresh current terminal evidence required');
-  const files = Object.keys(report.sourceHashes || {});
-  for (const name of ['package.json', '.mcp.json', 'ci/terminal-host-smoke.cjs', 'tests/fixtures/terminal-model.cjs', 'tests/fixtures/native-host-fixture.cjs']) assert.ok(files.includes(name));
-  assert.ok(files.every((file) => /^[a-zA-Z0-9_./-]+$/.test(file) && !isAbsolute(file) && !file.split('/').includes('..')));
-  assert.ok(Object.values(report.sourceHashes).every((hash) => /^[a-f0-9]{64}$/.test(hash)));
-  let verification = 'workspace', pkg;
-  if (report.source_status === 'current') {
-    assert.deepEqual(report.sourceHashes, hashes(), 'Terminal evidence is stale; rerun the terminal harness');
-    pkg = require('../package.json');
-  } else {
-    assert.match(report.head || '', /^[a-f0-9]{40}$/, 'Historical evidence needs its full source commit');
-    const sources = historicalSources(ROOT, report.head, files);
-    if (requireHistory) assert.ok(sources, 'Historical source commit unavailable');
-    verification = sources ? 'commit' : 'metadata-only';
-    if (sources) {
-      for (const file of files) assert.equal(sha256(sources[file]), report.sourceHashes[file], `Historical source differs: ${file}`);
-      pkg = JSON.parse(sources['package.json']);
-    }
-  }
-  if (pkg) {
-    assert.equal(report.pluginVersion, pkg.version);
-    assert.equal(report.upstreamPin, pkg.dependencies['@manifest-network/manifest-mcp-node']);
-  }
+  const { verification } = verifyProvenance(report, { root, files: Object.keys(currentHashes), currentHashes,
+    requireCurrent, requireHistory, historicalSources });
   assert.equal(report.cases.length, CASES.length, 'A single-case diagnostic is not full terminal evidence');
   for (let i = 0; i < CASES.length; i++) {
     validateCase(CASES[i], report.cases[i]);
@@ -107,9 +122,12 @@ function validateReport(report, { requireCurrent = false, requireHistory = false
       assert.ok(report.cases[i].snapshots.some((s) => s.label === 'native-confirmation'), 'Missing direct mutation confirmation');
     }
     assert.deepEqual(report.cases[i].servers, Object.keys(TOOLS).sort());
-    assert.deepEqual(counts(report.cases[i].sequence), { toolCalls: CASES[i].calls, mutationMarkers: CASES[i].writes });
+    if (report.schemaVersion === 2 || requireCleanup) validateCleanup(report.cases[i].cleanup);
   }
-  assert.ok(report.cleanup && report.limitations.length >= 4);
+  if (report.schemaVersion === 2 || requireCleanup) validateCleanup(report.cleanup);
+  else assert.ok(typeof report.cleanup === 'string' && report.cleanup.trim(), 'Missing historical cleanup declaration');
+  assert.ok(Array.isArray(report.limitations) && report.limitations.length >= 4 &&
+    report.limitations.every((s) => typeof s === 'string' && s.trim()), 'Limitations must be a list of nonempty observations');
   return { status: report.source_status, verification };
 }
 
@@ -120,6 +138,89 @@ function hashes(root = ROOT) {
     createHash('sha256').update(fs.readFileSync(join(root, file))).digest('hex')])) };
 }
 
+function modelHandler({ host, test, modelRequests, onError, respond = host === 'claude' ? claudeEvents : codexEvents }) {
+  return async (request, response) => {
+    try {
+      if (request.method === 'HEAD' || request.method === 'GET') { response.end('{}'); return; }
+      let raw = '';
+      for await (const chunk of request) { raw += chunk; assert.ok(raw.length < 4 * 1024 * 1024, 'Oversized fixture request'); }
+      const body = JSON.parse(raw);
+      if (request.url.includes('count_tokens')) { response.setHeader('Content-Type', 'application/json'); response.end('{"input_tokens":100}'); return; }
+      assert.match(request.url, host === 'claude' ? /^\/v1\/messages(?:\?.*)?$/ : /^\/v1\/responses(?:\?.*)?$/);
+      modelRequests.push(body);
+      const payload = respond(body, test);
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      response.end(payload);
+    } catch (error) {
+      onError(error);
+      if (!response.headersSent) { response.writeHead(500); response.end('Fixture error'); }
+      else response.destroy();
+    }
+  };
+}
+
+function completeCase(test, observed, apiError) {
+  if (apiError) throw apiError;
+  validateCase(test, observed);
+}
+
+async function waitForCondition(description, predicate, { screen, checkError = () => {}, timeout = 35000,
+  pollMs = 150, settleMs = 600 } = {}) {
+  const end = Date.now() + timeout;
+  do {
+    checkError();
+    if (await predicate()) { await delay(settleMs); checkError(); return; }
+    await delay(pollMs);
+  } while (Date.now() < end);
+  let diagnostic;
+  try { diagnostic = screen(); }
+  catch (error) { diagnostic = `Terminal unavailable: ${error.message}`; }
+  throw new Error(`Timed out: ${description}\n${diagnostic}`);
+}
+
+function ownedProcesses(temp) {
+  // These CLI acceptance runs use Linux. Only processes carrying this run's
+  // exact temporary HOME qualify, including children orphaned by the host.
+  return fs.readdirSync('/proc').filter((name) => /^\d+$/.test(name)).flatMap((name) => {
+    try {
+      const env = fs.readFileSync(`/proc/${name}/environ`, 'utf8').split('\0');
+      if (!env.includes(`HOME=${join(temp, 'home')}`)) return [];
+      const stat = fs.readFileSync(`/proc/${name}/stat`, 'utf8').split(') ')[1].split(' ');
+      return stat[0] === 'Z' ? [] : [{ pid: Number(name), start: stat[19] }];
+    } catch (error) {
+      if (['ENOENT', 'EACCES', 'EPERM', 'ESRCH'].includes(error.code)) return [];
+      throw error;
+    }
+  });
+}
+
+async function stopOwnedProcesses(temp) {
+  const end = Date.now() + 6000;
+  let remaining;
+  const signalled = new Set();
+  do {
+    remaining = ownedProcesses(temp);
+    if (!remaining.length) return;
+    for (const processInfo of remaining) {
+      try {
+        const stat = fs.readFileSync(`/proc/${processInfo.pid}/stat`, 'utf8').split(') ')[1].split(' ');
+        const signal = Date.now() > end - 2000 ? 'SIGKILL' : 'SIGTERM';
+        const key = `${processInfo.pid}:${processInfo.start}:${signal}`;
+        if (stat[19] === processInfo.start && !signalled.has(key)) { process.kill(processInfo.pid, signal); signalled.add(key); }
+      } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; }
+    }
+    await delay(100);
+  } while (Date.now() < end);
+  assert.deepEqual(ownedProcesses(temp), [], 'Acceptance processes did not exit; temporary data retained for diagnosis');
+}
+
+async function removeTemporaryRun(temp) {
+  await stopOwnedProcesses(temp);
+  fs.rmSync(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  await delay(200);
+  assert.ok(!fs.existsSync(temp), 'Temporary acceptance tree was recreated after cleanup');
+}
+
 async function runCase(host, test, onProgress) {
   const temp = fs.mkdtempSync(join(tmpdir(), `manifest-terminal-${host}-`));
   const socket = join(temp, 'tmux.sock');
@@ -127,22 +228,16 @@ async function runCase(host, test, onProgress) {
   const config = join(temp, 'config');
   const dataDir = host === 'claude' ? join(config, 'plugins/data/manifest-agent-inline') : join(temp, 'data');
   const snapshots = [], keys = [], modelRequests = [];
-  let api, launched = false, apiError;
+  let api, launched = false, apiError, observed;
   const tmux = (...args) => command('tmux', ['-S', socket, ...args]);
   const events = () => fs.existsSync(join(dataDir, 'fixture-events.jsonl'))
     ? fs.readFileSync(join(dataDir, 'fixture-events.jsonl'), 'utf8').split('\n').filter(Boolean).map(JSON.parse) : [];
   const screen = (history = false) => tmux('capture-pane', '-p', ...(history ? ['-S', '-150'] : []));
   const snapshot = (label) => snapshots.push({ label, counts: counts(events()),
     screen: screen(true).replaceAll(temp, '<fixture>').split('\n').map((line) => line.trimEnd()).filter((line, i, all) => line || all[i - 1]).join('\n').trim() });
-  const waitFor = async (description, predicate, timeout = 35000) => {
-    const end = Date.now() + timeout;
-    do {
-      if (apiError) throw apiError;
-      if (await predicate()) { await delay(600); return; }
-      await delay(150);
-    } while (Date.now() < end);
-    throw new Error(`Timed out: ${description}\n${screen()}`);
-  };
+  const waitFor = (description, predicate, timeout) => waitForCondition(description, predicate, {
+    screen, timeout, checkError: () => { if (apiError) throw apiError; },
+  });
   const press = async (...inputs) => {
     keys.push(inputs.join(' '));
     tmux('send-keys', ...inputs);
@@ -160,19 +255,7 @@ async function runCase(host, test, onProgress) {
       }
     }
     await prepareFixture({ pluginRoot, dataDir });
-    api = createServer(async (request, response) => {
-      try {
-        if (request.method === 'HEAD' || request.method === 'GET') { response.end('{}'); return; }
-        let raw = '';
-        for await (const chunk of request) { raw += chunk; assert.ok(raw.length < 4 * 1024 * 1024, 'Oversized fixture request'); }
-        const body = JSON.parse(raw);
-        if (request.url.includes('count_tokens')) { response.setHeader('Content-Type', 'application/json'); response.end('{"input_tokens":100}'); return; }
-        assert.match(request.url, host === 'claude' ? /^\/v1\/messages(?:\?.*)?$/ : /^\/v1\/responses(?:\?.*)?$/);
-        modelRequests.push(body);
-        response.writeHead(200, { 'Content-Type': 'text/event-stream' });
-        response.end((host === 'claude' ? claudeEvents : codexEvents)(body, test));
-      } catch (error) { apiError = error; response.writeHead(500); response.end('Fixture error'); }
-    });
+    api = createServer(modelHandler({ host, test, modelRequests, onError: (error) => { apiError = error; } }));
     await new Promise((ready) => api.listen(0, '127.0.0.1', ready));
     const baseUrl = `http://127.0.0.1:${api.address().port}`;
     const env = { PATH: process.env.PATH, HOME: join(temp, 'home'), TERM: 'xterm-256color', LANG: 'C.UTF-8',
@@ -259,21 +342,14 @@ async function runCase(host, test, onProgress) {
         ((test.outer === 'deny' || (host === 'claude' && test.name === 'direct-decline')) && /interrupted|rejected|rejection|declined/i.test(screen())));
       snapshot('result');
     }
-    const observed = { name: test.name, ...counts(events()), keys, snapshots,
+    observed = { name: test.name, ...counts(events()), keys, snapshots,
       sequence: events().filter((e) => !['started'].includes(e.kind) && (e.kind !== 'request' || e.method === 'tools/call')),
       modelReceivedToolResult: modelRequests.some((body) => outputs(body, host).length > 0),
       servers: [...new Set(events().filter((e) => e.method === 'tools/list').map((e) => e.server))].sort() };
     if (test.name === 'cancel-after-broadcast') {
-      const finalScreen = snapshots.find((s) => s.label === 'after-cancel').screen;
-      observed.cancellationObservation = { observationWindowMs: 2000,
-        mcpCancellationReceived: events().some((e) => e.kind === 'cancellation'),
-        warningEmitted: events().some((e) => e.kind === 'cancelled_after_broadcast'),
-        warningVisible: finalScreen.includes('deploy_cancelled_after_broadcast'), leaseVisible: finalScreen.includes(LEASE),
-        renderedProgress: ['plan_ready', 'broadcast_complete'].filter((phase) => snapshots.some((s) => s.screen.includes(phase))) };
+      observed.cancellationObservation = cancellationObservation(observed);
     }
-    validateCase(test, observed);
-    onProgress?.(`${host}: ${test.name} passed (${observed.mutationMarkers} markers)`);
-    return observed;
+    completeCase(test, observed, apiError);
   } catch (error) {
     error.message = `${host}/${test.name}: ${error.message}`;
     throw error;
@@ -286,12 +362,18 @@ async function runCase(host, test, onProgress) {
       try { tmux('kill-server'); } catch { /* Already exited. */ }
     }
     if (api) { api.closeAllConnections(); await new Promise((done) => api.close(done)); }
-    fs.rmSync(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await removeTemporaryRun(temp);
+    if (observed) observed.cleanup = { processesStopped: true, apiClosed: true, temporaryRootRemoved: true };
+    if (apiError) throw apiError;
   }
+  onProgress?.(`${host}: ${test.name} passed (${observed.mutationMarkers} markers)`);
+  return observed;
 }
 
 async function runSuite({ host, only, onProgress = console.log } = {}) {
   assert.ok(Object.hasOwn(VERSIONS, host), 'Use --host claude or --host codex');
+  assert.equal(process.platform, 'linux', 'Terminal cleanup verification requires Linux /proc');
+  if (only !== undefined) assert.ok(CASES.some((test) => test.name === only), 'Unknown case');
   const hostVersion = command(host, ['--version']);
   assert.equal(hostVersion, VERSIONS[host], 'Host UI version changed; review the driver before updating its version pin');
   const tmuxVersion = command('tmux', ['-V']);
@@ -302,30 +384,51 @@ async function runSuite({ host, only, onProgress = console.log } = {}) {
   for (const test of selected) cases.push(await runCase(host, test, onProgress));
   assert.deepEqual(hashes(), source, 'Sources changed during acceptance run');
   const pkg = require('../package.json');
-  return { schemaVersion: 1, evidenceKind: 'interactive-terminal-local-fixture', source_status: 'current',
+  return { schemaVersion: 2, evidenceKind: 'interactive-terminal-local-fixture', source_status: 'current',
     observedAt: new Date().toISOString(), head: command('git', ['rev-parse', 'HEAD']), sourceHashes: source,
     host, hostVersion, nodeVersion: process.version, tmuxVersion, pluginVersion: pkg.version,
     upstreamPin: pkg.dependencies['@manifest-network/manifest-mcp-node'], runtime: 'marker-only 0.0.0-fixture',
     installation: host === 'claude' ? 'temporary --plugin-dir, production SessionStart hook' : 'temporary local marketplace, codex plugin add',
-    cases, cleanup: 'Owned tmux servers and loopback API stopped; all temporary homes, plugins, data and dummy credentials removed.',
+    cases, cleanup: { processesStopped: true, apiClosed: true, temporaryRootRemoved: true },
     limitations: ['Scripted terminal input and local model responses; no model reasoning or human usability signoff.',
       'Production launchers and hooks, fake MCP runtime. No live chain/provider, real wallet, funds or GUI.',
       'Fresh local installs only; published-version upgrades and preservation of real saved records require separate acceptance.',
       'Progress and late cancellation visibility are observations in the captured screens, not assumed from emitted notifications.'] };
 }
 
-if (require.main === module) {
-  const args = process.argv.slice(2);
-  const value = (flag) => args[args.indexOf(flag) + 1];
-  if (args.includes('--check')) {
-    try { console.log(JSON.stringify(validateReport(JSON.parse(fs.readFileSync(resolve(value('--check')))), {
-      requireCurrent: args.includes('--require-current'), requireHistory: args.includes('--require-history'),
-    }))); } catch (error) { console.error(error.message); process.exitCode = 1; }
-  } else if (!args.includes('--host') || !args.includes('--out')) {
-    console.error('Usage: node ci/terminal-host-smoke.cjs --host claude|codex --out report.json [--case name]\n       node ci/terminal-host-smoke.cjs --check report.json [--require-current|--require-history]'); process.exitCode = 1;
-  } else runSuite({ host: value('--host'), only: args.includes('--case') ? value('--case') : undefined })
-    .then((report) => { fs.writeFileSync(resolve(value('--out')), JSON.stringify(report, null, 2) + '\n'); })
-    .catch((error) => { console.error(error.stack); process.exitCode = 1; });
+function parseArgs(args) {
+  const options = {};
+  for (let i = 0; i < args.length; i++) {
+    const flag = args[i];
+    assert.ok(['--host', '--out', '--case', '--check', '--require-current', '--require-history'].includes(flag), `Unknown option: ${flag}`);
+    assert.ok(!Object.hasOwn(options, flag), `Duplicate option: ${flag}`);
+    if (flag.startsWith('--require-')) options[flag] = true;
+    else {
+      const value = args[++i];
+      assert.ok(value && !value.startsWith('--'), `Missing value for ${flag}`);
+      options[flag] = value;
+    }
+  }
+  if (options['--check']) {
+    assert.ok(!options['--host'] && !options['--out'] && !options['--case'], 'Check mode cannot run cases');
+    assert.ok(!(options['--require-current'] && options['--require-history']), 'Choose current or historical validation');
+    return { check: resolve(options['--check']), requireCurrent: Boolean(options['--require-current']), requireHistory: Boolean(options['--require-history']) };
+  }
+  assert.ok(Object.hasOwn(VERSIONS, options['--host']) && options['--out'], 'Use --host claude|codex --out report.json [--case name]');
+  assert.ok(!options['--require-current'] && !options['--require-history'], 'Validation flags require --check');
+  if (options['--case'] !== undefined) assert.ok(CASES.some((c) => c.name === options['--case']), 'Unknown case');
+  return { host: options['--host'], only: options['--case'], out: resolve(options['--out']) };
 }
 
-module.exports = { CASES, VERSIONS, counts, validateCase, validateReport, hashes, runSuite };
+async function main(args = process.argv.slice(2)) {
+  const options = parseArgs(args);
+  if (options.check) console.log(JSON.stringify(validateReport(JSON.parse(fs.readFileSync(options.check)), options)));
+  else {
+    const report = await runSuite(options);
+    fs.writeFileSync(options.out, JSON.stringify(report, null, 2) + '\n');
+  }
+}
+if (require.main === module) main().catch((error) => { console.error(error.message); process.exitCode = 1; });
+
+module.exports = { CASES, VERSIONS, counts, validateCase, validateReport, hashes, runSuite, parseArgs,
+  modelHandler, completeCase, waitForCondition, ownedProcesses, removeTemporaryRun };

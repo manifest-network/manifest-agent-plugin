@@ -54,11 +54,13 @@ test('marker evidence distinguishes reaching the MCP handler from mutation', () 
   assert.deepEqual(counts([{ kind: 'request', method: 'initialize' }, { kind: 'request', method: 'tools/call' },
     { kind: 'elicitation' }, { kind: 'progress' }]), { toolCalls: 1, mutationMarkers: 0 });
   const spec = CASES.find((test) => test.name === 'paid-partial-recovery-decline');
-  const record = { name: spec.name, toolCalls: 1, mutationMarkers: 1, snapshots: [
-    { label: 'outer-permission', counts: { toolCalls: 0, mutationMarkers: 0 } },
-    { label: 'native-confirmation', counts: { toolCalls: 1, mutationMarkers: 0 } },
-    { label: 'recovery', counts: { toolCalls: 1, mutationMarkers: 1 } },
-    { label: 'result', screen: `Fixture result: partial; lease ${LEASE}.` },
+  const record = { name: spec.name, toolCalls: 1, mutationMarkers: 1, modelReceivedToolResult: true,
+    sequence: [{ kind: 'request', method: 'tools/call' }, { kind: 'mutation' },
+      { kind: 'elicitation_result', phase: 'recovery', action: 'decline', accepted: false }], snapshots: [
+    { label: 'outer-permission', screen: 'Permission', counts: { toolCalls: 0, mutationMarkers: 0 } },
+    { label: 'native-confirmation', screen: 'Confirm', counts: { toolCalls: 1, mutationMarkers: 0 } },
+    { label: 'recovery', screen: 'Recovery', counts: { toolCalls: 1, mutationMarkers: 1 } },
+    { label: 'result', screen: `Fixture result: partial; lease ${LEASE}. Terminal fixture finished.` },
     { label: 'ready', screen: 'Synthetic fixture' },
   ] };
   assert.doesNotThrow(() => validateCase(spec, record));
@@ -88,22 +90,14 @@ test('terminal provenance covers both host packages, all generated skills and th
 // Synthetic records exercise validation; they are never written as evidence.
 function unitReport() {
   const pkg = require('../package.json');
-  return { schemaVersion: 1, evidenceKind: 'interactive-terminal-local-fixture', host: 'claude', hostVersion: VERSIONS.claude,
-    observedAt: '2026-09-14T00:00:00Z', source_status: 'current', sourceHashes: hashes(), pluginVersion: pkg.version,
-    upstreamPin: pkg.dependencies['@manifest-network/manifest-mcp-node'], cleanup: 'unit fixture', limitations: ['a', 'b', 'c', 'd'],
-    cases: CASES.map((spec) => ({ name: spec.name, toolCalls: spec.calls, mutationMarkers: spec.writes,
-      servers: ['agent', 'chain', 'cosmwasm', 'fred', 'lease'],
-      sequence: [...Array.from({ length: spec.calls }, () => ({ kind: 'request', method: 'tools/call' })),
-        ...Array.from({ length: spec.writes }, () => ({ kind: 'mutation' }))],
-      snapshots: [
-        { label: 'ready' }, { label: 'skills' },
-        { label: 'outer-permission', counts: { toolCalls: 0, mutationMarkers: 0 } },
-        { label: 'native-confirmation', counts: { toolCalls: spec.server === 'agent' ? 1 : 0, mutationMarkers: 0 } },
-        { label: 'recovery', counts: { toolCalls: 1, mutationMarkers: 1 } },
-        { label: 'progress-after-broadcast' }, { label: 'after-cancel', screen: 'Interrupted' },
-        { label: 'result', screen: `Fixture result: ${spec.outcome}; lease ${LEASE}` },
-      ],
-    })) };
+  const report = JSON.parse(fs.readFileSync(join(__dirname, '../docs/host-evidence/claude-terminal.json')));
+  // Reuse realistic UI/event shapes, but this synthetic current record is
+  // only an in-memory validator fixture, never an acceptance result.
+  const cleanup = { processesStopped: true, apiClosed: true, temporaryRootRemoved: true };
+  return { ...report, schemaVersion: 2, source_status: 'current', sourceHashes: hashes(), pluginVersion: pkg.version,
+    upstreamPin: pkg.dependencies['@manifest-network/manifest-mcp-node'], cleanup,
+    cases: report.cases.map((c) => ({ ...c, cleanup })) };
+
 }
 
 test('full terminal evidence rejects missing cases, unsafe counts, stale hashes and absent UI boundaries', () => {
@@ -139,6 +133,60 @@ test('historical terminal evidence verifies its recorded commit and is never fre
 for (const host of ['claude', 'codex']) test(`archived ${host} terminal evidence preserves the complete observed matrix`, () => {
   const report = JSON.parse(fs.readFileSync(join(__dirname, '../docs/host-evidence', `${host}-terminal.json`)));
   assert.equal(report.host, host);
-  assert.equal(validateReport(report).status, 'historical');
+  assert.deepEqual(validateReport(report, { requireHistory: true }), { status: 'historical', verification: 'commit' });
   assert.throws(() => validateReport(report, { requireCurrent: true }), /Fresh current/);
+});
+
+test('historical reports cannot drop their provenance scope or use unreachable history in strict checks', () => {
+  const report = unitReport();
+  report.source_status = 'historical'; report.head = '1'.repeat(40);
+  const sources = Object.fromEntries(Object.keys(report.sourceHashes).map((file) => [file, fs.readFileSync(join(__dirname, '..', file))]));
+  const narrowed = structuredClone(report);
+  narrowed.sourceHashes = Object.fromEntries(Object.entries(narrowed.sourceHashes).slice(0, 5));
+  assert.throws(() => validateReport(narrowed, { requireHistory: true, historicalSources: () => sources }), /exactly the expected files/);
+  report.sourceHashes = Object.fromEntries(Object.keys(report.sourceHashes).map((file) => [file, '0'.repeat(64)]));
+  report.pluginVersion = '99.99.99';
+  assert.throws(() => validateReport(report, { requireHistory: true, historicalSources: () => null }), /commit unavailable/);
+  assert.throws(() => validateReport(report, { requireHistory: true, historicalSources: () => sources }), /Historical source differs/);
+});
+
+for (const host of ['claude', 'codex']) test(`${host} outcomes come from the model summary, not echoed raw tool output`, () => {
+  const report = JSON.parse(fs.readFileSync(join(__dirname, `../docs/host-evidence/${host}-terminal.json`)));
+  for (const spec of CASES.filter((c) => c.outcome)) {
+    const observed = structuredClone(report.cases.find((c) => c.name === spec.name));
+    const result = observed.snapshots.find((s) => s.label === 'result');
+    result.screen = result.screen.replace(/Fixture result: [^\n]+/g, 'Fixture result: failed.') + `\nRaw MCP output: ${spec.outcome} ${LEASE}`;
+    assert.throws(() => validateCase(spec, observed), /Missing visible Fixture result/);
+  }
+  const success = structuredClone(report.cases.find((c) => c.name === 'direct-success'));
+  success.snapshots.find((s) => s.label === 'result').screen = 'Fixture result: incomplete — deployment failed.';
+  assert.throws(() => validateCase(CASES.find((c) => c.name === success.name), success), /Missing visible Fixture result/);
+  const recovery = structuredClone(report.cases.find((c) => c.name === 'paid-partial-recovery-decline'));
+  Object.assign(recovery.sequence.find((e) => e.kind === 'elicitation_result' && e.phase === 'recovery'), { action: 'accept', accepted: true });
+  assert.throws(() => validateCase(CASES.find((c) => c.name === recovery.name), recovery), /Recovery must be declined/);
+  const cancelled = report.cases.find((c) => c.name === 'cancel-after-broadcast');
+  for (const field of Object.keys(cancelled.cancellationObservation)) {
+    const changed = structuredClone(cancelled);
+    const value = changed.cancellationObservation[field];
+    changed.cancellationObservation[field] = Array.isArray(value) ? ['invented'] : typeof value === 'number' ? 1 : !value;
+    assert.throws(() => validateCase(CASES.at(-1), changed), /Cancellation observations differ/);
+  }
+  for (const c of report.cases) {
+    const changed = structuredClone(c); changed.modelReceivedToolResult = !changed.modelReceivedToolResult;
+    assert.throws(() => validateCase(CASES.find((spec) => spec.name === c.name), changed), /Model result receipt/);
+  }
+});
+
+test('outer denial cannot claim an impossible native prompt and v2 cleanup requires measurements', () => {
+  const report = unitReport(), outer = report.cases.find((c) => c.name === 'outer-deny');
+  for (const toolCalls of [0, 1]) {
+    const changed = structuredClone(outer);
+    changed.snapshots.push({ label: 'native-confirmation', screen: 'Impossible', counts: { toolCalls, mutationMarkers: 0 } });
+    assert.throws(() => validateCase(CASES.find((c) => c.name === 'outer-deny'), changed), /Outer denial cannot reach/);
+  }
+  for (const alter of [
+    (r) => { r.limitations = 'abcd'; },
+    (r) => { r.cleanup = 'cleaned'; },
+    (r) => { r.cases[0].cleanup.temporaryRootRemoved = false; },
+  ]) { const changed = structuredClone(report); alter(changed); assert.throws(() => validateReport(changed)); }
 });

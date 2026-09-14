@@ -38,7 +38,7 @@ These fixtures do not test the real provider/chain orchestration itself.
 
 ## Interactive terminal fixtures
 
-With Claude Code **2.1.270**, Codex CLI **0.154.0**, and tmux installed:
+On Linux with Claude Code **2.1.270**, Codex CLI **0.154.0**, and tmux installed:
 
 ```bash
 node ci/terminal-host-smoke.cjs --host claude --out /tmp/claude-terminal.json
@@ -54,7 +54,11 @@ approval answers. The shipped hooks, launchers, policy, skills and generated
 Codex package are exercised with the dependency runtime replaced by a fixture
 whose only mutation is a temporary marker. No chain, provider, funded wallet,
 real API credentials or GUI is involved. Temporary homes, tmux sessions and
-the loopback API are cleaned up after each case. The CLI versions are checked
+the loopback API are cleaned up after each case. Cleanup waits for processes
+carrying the run's exact temporary home to exit before removing the directory,
+then checks that it stays absent. Version 2 reports retain these measurements
+per case; a historical version 1 cleanup string is not verified cleanup.
+The CLI versions are checked
 before execution; review menu and prompt behavior before changing the pins.
 
 Each host covers fresh discovery, outer denial, direct mutation acceptance
@@ -127,11 +131,20 @@ authoring and journal invocation were performed by the acceptance operator.
 Claude evidence and its precise limitations remain in
 [approval-validation.md](approval-validation.md). Codex evidence is recorded
 in [codex-app-server.json](host-evidence/codex-app-server.json). This committed
-run is historical evidence for `8d05aad`; its original observations and hashes
-are preserved. `ci/host-acceptance.cjs` checks historical hashes against the
-full recorded commit when available. Shallow or squashed checkouts explicitly
-report metadata-only validation when that commit is absent; `--require-history`
-requires the old source bytes. Historical records never claim current coverage.
+run is the artifact from [CI run 34865171417](https://github.com/manifest-network/manifest-agent-plugin/actions/runs/34865171417),
+with its checkout log binding the observations to `5c47db6`. Its original
+results and all 61 source hashes are preserved. The shared provenance verifier
+requires the complete source-file scope for each report kind and checks its
+package versions against the recorded commit. Local diagnostic checks can
+explicitly report metadata-only verification when history is absent; CI and
+release checks require the actual commit bytes.
+
+CI uses full Git history and explicitly runs
+`node ci/evidence-check.cjs --fetch-history --require-history` before checking
+the archives. This fetches missing recorded commits by their full validated
+SHA, including commits outside main's ancestry after squash merging. The
+validators themselves never fetch or silently weaken strict checks. Git
+objects are read in one binary-safe batch per report.
 
 The `codex-host` CI job generates a fresh report and validates it with
 `--report codex-host-report.json --require-current` before uploading it. Current
@@ -194,4 +207,11 @@ To check the full compatibility matrix explicitly, run
 `node ci/host-acceptance.cjs --report /tmp/codex-host.json --release` after a
 fresh harness run. This requires both hosts' interactive and testnet rows for
 the current package. A maintainer must review the evidence's contents; the
-gate checks declared coverage and provenance, not the truth of a transcript.
+gate checks source provenance and evidence structure, not the truth of a
+transcript. Interactive rows must bind both the preservation report and the
+terminal report: their paths, digest, host, source commit, core source hashes
+and case coverage must agree. Preservation validation compares the six saved
+file snapshots and verifies the recorded signing, readers, reinstall commands,
+runtime repair and cleanup. Terminal validation checks anchored model summaries,
+recovery responses and cancellation observations against the captured events
+and screens, with verified process cleanup required for release eligibility.

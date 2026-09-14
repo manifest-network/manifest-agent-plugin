@@ -56,10 +56,12 @@ zero mutations; accepted calls and paid-partial recovery retain the expected
 marker counts. Progress and post-broadcast cancellation visibility limitations
 are documented with the captured screens in [the acceptance matrix](host-acceptance.md).
 
-ENG-894 remains open for published-version upgrade and saved-record evidence,
-funded testnet runs and cleanup, and the separate compatibility version/tag
-release. No GUI validation is included in the terminal follow-up. Package
-versions remain 0.4.0.
+Both hosts now have completed [live-testnet and cleanup evidence](live-testnet-acceptance.md)
+and [current-install preservation evidence](current-install-acceptance.md).
+The repository owner excluded legacy-version migration because there are no
+existing users of the old plugin; native reinstall and runtime repair are
+the required replacement checks. The separate compatibility version/tag
+release remains. No GUI validation is included. Package versions remain 0.4.0.
 
 Sources checked during implementation (2026-09-11):
 
