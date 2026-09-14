@@ -20,10 +20,9 @@
  *   object). Throws a descriptive error; caller decides exit handling.
  *
  * - `getDataDir()` — return the plugin's persistent data directory. Reads
- *   $MANIFEST_PLUGIN_DATA, which is exported by the SessionStart hook from
- *   Claude Code's `${CLAUDE_PLUGIN_DATA}` substitution (resolves to
- *   `~/.claude/plugins/data/<id>/`). Throws if unset — scripts must be
- *   launched from a Claude Code session or with the env var set manually.
+ *   $MANIFEST_PLUGIN_DATA, supplied by the host environment adapter (Claude
+ *   SessionStart or Codex host-env.cjs). Throws if unset; domain helpers do
+ *   not guess a host, chain or wallet from ambient host-specific variables.
  *
  * Underscore prefix marks this as a sibling-only helper, not a CLI entry
  * point. Skills MUST NOT invoke it directly via Bash.
@@ -99,8 +98,8 @@ function getDataDir() {
   if (!dir) {
     throw new Error(
       'MANIFEST_PLUGIN_DATA env var is not set. ' +
-      'Restart Claude Code so the SessionStart hook runs, ' +
-      'or set it manually to ~/.claude/plugins/data/<plugin-id>/.'
+      'Load host-env.cjs exports for your host, restart the Claude SessionStart hook, ' +
+      'or set it explicitly to your persistent Manifest data directory.'
     );
   }
   return dir;

@@ -1,0 +1,218 @@
+---
+name: init-agent
+description: >
+  Set up the Manifest agent's chain configuration and keypair. Run this once
+  after installing the plugin (or to re-key); it picks a chain, generates or
+  imports a wallet, and writes config.json. User-invoked only — not for
+  {{host}} to auto-discover.
+allowed-tools: Bash(*)
+disable-model-invocation: true
+---
+
+# Initialize Manifest Agent
+
+You are interactively setting up a Manifest blockchain agent. Follow these steps
+exactly, asking the user questions where indicated.
+
+**For all user choices, use the `{{ask}}` tool.**
+
+**Do not narrate the skill's internal structure in your chat output.**
+Step numbers (e.g. "Step 3", "Step 5") are scaffolding for skill authors
+only. To the user, just describe what you're doing in plain language —
+e.g. "Now I'll generate your wallet keypair", not "Now in Step 5 the key
+generation". Skip phrases like "Now in Step N"; describe the action itself.
+
+## Step 0 — Verify environment
+
+Run:
+```bash
+echo "$MANIFEST_PLUGIN_ROOT"
+```
+
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; {{environment_recovery}}.
+
+Ensure the locked runtime is installed before running helpers that need it:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs"
+```
+
+This is also the repair command for an interrupted install or missing dependencies.
+It preserves configuration, keys, drafts, and saved deployments. If it fails,
+report its diagnostic and stop; fix Node (22.19.0+) or the installation failure
+before continuing. Re-keying is not a dependency repair.
+
+For a repair-only request, run `update-config.cjs --status` after setup. If
+an existing agent is configured, report that dependencies are repaired and
+ask the user to reconnect the MCP servers or restart {{host}}, then stop.
+Do not continue into chain selection or key generation. If config is absent
+or invalid, explain that separately and continue onboarding only when the
+user's request includes initial setup or configuration repair.
+
+## Step 1 — Fetch chain registry data
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
+```
+
+Parse the JSON output. This fetches both mainnet and testnet data from the
+Cosmos chain registry.
+
+## Step 2 — Choose chain
+
+Use {{ask}} to ask which chain to use, with these options:
+
+- **testnet** — manifest-ledger-testnet (recommended for development)
+- **mainnet** — manifest-ledger-mainnet (real assets, use with care)
+
+Store the answer as `CHOSEN_CHAIN` (`testnet` or `mainnet`).
+
+## Step 3 — Choose gas fee token
+
+Look at the `feeTokens` array for the chosen chain from the Step 1 output.
+Each fee token has a `symbol` (human-readable name like "MFX" or "PWR") and
+a `fixedMinGasPrice`.
+
+Use {{ask}} to ask which token to use for gas fees, showing the
+**symbol** and **min gas price** for each. For example:
+
+- **MFX** (min gas price: 1)
+- **PWR** (min gas price: 0.37)
+
+Store the user's choice as `GAS_TOKEN` (the symbol). The script handles the
+denom resolution and gas-price string composition; do NOT compose it inline.
+
+## Step 4 — Check for existing agent
+
+Run:
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status 2>/dev/null
+```
+
+If the command succeeds and the JSON output has a non-null `address` field,
+warn the user:
+
+> An agent key already exists with address `<address>`.
+> Proceeding will generate a new key. The old key's password will be lost
+> (the old keyfile stays on disk but becomes unrecoverable without the password).
+
+Confirm via `{{ask}}` (Yes / No) before continuing. Stop on No.
+
+If the command fails (no config.json yet), that's fine — skip the warning and
+proceed.
+
+**IMPORTANT**: Do NOT read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains
+the key password. Always use `update-config.cjs --status` to read safe fields.
+
+## Step 5 — Generate or import key and write config
+
+Use {{ask}} to ask the user:
+
+- **Generate a new key** — create a fresh keypair
+- **Import an existing mnemonic** — use a key you already have
+
+### If generating a new key:
+
+The key script pipes directly into write-config so the password never enters the
+conversation:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+```
+
+Replace `CHOSEN_CHAIN` with the user's choice from Step 2 and `GAS_TOKEN`
+with the symbol they chose in Step 3 (e.g., `MFX`).
+
+Parse the JSON output from stdout to get `address` and `activeChain`.
+
+### If importing an existing mnemonic:
+
+This branch uses the same file-pipe pattern as the standalone
+`{{invoke:import-key}}` skill (which is the entry point for re-imports
+later — once config.json exists, that skill is the canonical way to swap
+keys). For first-time setup we run the pipe inline because config.json
+doesn't exist yet.
+
+Ask the user to provide the **path to a file** containing their mnemonic.
+They create the file themselves in a separate terminal:
+
+```bash
+cat > /tmp/mnemonic.txt    # paste mnemonic, Enter, Ctrl+D
+chmod 600 /tmp/mnemonic.txt
+```
+
+**Do NOT use `echo`** (shell history). **Do NOT ask the user to paste the
+mnemonic in the conversation. Do NOT `{{read_tool}}` the mnemonic file.** The
+mnemonic must never enter {{host}}'s context.
+
+Wait for the user to provide the path. Then run (substitute `MNEMONIC_FILE`,
+`CHOSEN_CHAIN` from Step 2, `GAS_TOKEN` from Step 3):
+
+```bash
+cat MNEMONIC_FILE | node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+```
+
+Parse the JSON output to get `address` and `activeChain`. Suggest the
+user `rm` their mnemonic file after.
+
+## Step 6 — Report results
+
+Tell the user:
+1. Their agent address
+2. The keyfile location
+3. Which chain is active
+4. The gas fee token in use
+5. That MCP servers need to be restarted to use the new config — they can do
+   this by running `/mcp` and reconnecting, or by restarting {{host}}
+
+## Step 7 — Offer testnet funding
+
+If the user chose testnet, suggest requesting faucet funds to the new address
+using the `{{tool:chain/request_faucet}}` tool if it is available.
+
+## Step 8 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key matching the writer's secret denylist
+— `_journal.SECRET_KEY_DENYLIST` (mnemonic, password, private_key,
+secret_key, api_key, auth_token, bearer_token — case-insensitive,
+optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
+the writer is fail-closed and will exit 1 rather than append such
+records. This is the defense in depth for this skill — mnemonics flow
+only through stdin pipes between scripts and never enter the journal.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "init-agent",
+  "active_chain": "<chosen chain — testnet or mainnet>",
+  "signer_address": "<address parsed from write-config output>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
+  "plan_summary": "init-agent (<generate|import>) on <chosen chain>, gas_token=<GAS_TOKEN>",
+  "tool_calls": [],
+  "outcome": "success",
+  "final_state": {
+    "address": "<address>",
+    "active_chain": "<chosen chain>",
+    "gas_token": "<GAS_TOKEN>"
+  },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If the user declined the existing-key warning in Step 4 or cancelled at
+any choice prompt, set `outcome` to `"cancelled"`. Do NOT mention the
+journal write in your reply to the user.
+
+## Security notes
+
+- The key password NEVER appears in this conversation. It flows directly from
+  the key script to write-config via pipe.
+- Never display the mnemonic or password in conversation output.
+- The keyfile is encrypted; the password is stored only in config.json (0600).
+- Never log or display the mnemonic. Only the address and keyfile path are safe
+  to show.

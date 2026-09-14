@@ -1,4 +1,5 @@
 ---
+name: balance
 description: >
   Show wallet balances, billing credit balance, burn rate, and runway
   hours for a Manifest tenant. Read-only. Defaults to the agent's own
@@ -6,6 +7,8 @@ description: >
   tenant.
 allowed-tools: Bash(*), Read
 ---
+
+<!-- Generated from workflows/balance.md by ci/build-packages.cjs. -->
 
 # Balance
 
@@ -24,8 +27,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart
-Claude Code so the SessionStart hook runs, then stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
 Run:
 ```bash

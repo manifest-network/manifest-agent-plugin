@@ -1,0 +1,121 @@
+---
+name: switch-chain
+description: >
+  Switch the Manifest agent's active chain between testnet and mainnet.
+  Re-fetches the Cosmos chain registry data and updates config.json.
+  Use when the user requests this operation.
+allowed-tools: Bash(*)
+disable-model-invocation: true
+---
+
+# Switch Active Chain
+
+You are switching the Manifest agent's active chain between testnet and mainnet.
+
+**For all user choices in this skill, use the `{{ask}}` tool.**
+
+**Do not narrate the skill's internal structure in your chat output.**
+Step numbers are scaffolding for skill authors only. To the user, just
+describe what you're doing in plain language — e.g. "Switching to mainnet
+now", not "Now in Step 2 the broadcast confirmation".
+
+## Step 0 — Verify environment
+
+Run:
+```bash
+echo "$MANIFEST_PLUGIN_ROOT"
+```
+
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; {{environment_recovery}}.
+
+Run:
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
+```
+
+If it fails, tell the user to run `{{invoke:init-agent}}` first and stop. Otherwise parse the JSON to get `activeChain` and `address`. Show the user their current active chain and agent address.
+
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains the key password. Always use `update-config.cjs --status` to read safe fields.
+
+## Step 1 — Choose new chain
+
+Use `{{ask}}` (do NOT prompt with free-form prose — the binary
+choice should be a click, not a typed answer):
+
+- **testnet** (`manifest-ledger-testnet`)
+- **mainnet** (`manifest-ledger-mainnet`)
+
+Store the answer as `CHOSEN_CHAIN`. If `CHOSEN_CHAIN === activeChain`,
+tell the user "Already on `<chain>` — nothing to change" and stop.
+
+## Step 2 — Confirm mainnet switch (if applicable)
+
+If `CHOSEN_CHAIN === "mainnet"`, ask via `{{ask}}` BEFORE running
+the registry fetch (warn before any side effect, even harmless ones):
+
+> You are about to switch to mainnet. Transactions will use real funds.
+> Continue?
+
+Options: **Yes** / **No**. Stop on No.
+
+## Step 3 — Re-fetch registry data
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
+```
+
+This refreshes both chains' data from the Cosmos chain registry.
+
+## Step 4 — Update config
+
+Run:
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain CHOSEN_CHAIN --refresh-chains
+```
+
+Replace `CHOSEN_CHAIN` with `testnet` or `mainnet`.
+
+Parse the JSON output to confirm the chain was switched.
+
+## Step 5 — Report
+
+Tell the user:
+1. Active chain is now `<new chain>`
+2. Chain ID, RPC URL, REST URL, and explorer URL (from the JSON output)
+3. MCP servers need to be restarted to connect to the new chain
+4. Their agent address remains the same (same key works on both chains, but
+   balances differ)
+
+## Step 6 — Record this run in the journal
+
+Append one record to the operation journal at
+`$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. The writer auto-fills
+`timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` —
+omit them. Do NOT include any key matching the writer's secret denylist
+— `_journal.SECRET_KEY_DENYLIST` (mnemonic, password, private_key,
+secret_key, api_key, auth_token, bearer_token — case-insensitive,
+optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
+the writer is fail-closed and will exit 1 rather than append such
+records.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+{
+  "skill": "switch-chain",
+  "active_chain": "<new active chain — testnet or mainnet>",
+  "signer_address": "<address from Step 0>",
+  "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
+  "plan_summary": "<old chain> -> <new chain>",
+  "tool_calls": [],
+  "outcome": "success",
+  "final_state": { "active_chain": "<new chain>", "chain_id": "<chain ID from update-config output>" },
+  "errors": [],
+  "recovery_actions": []
+}
+JOURNAL_EOF
+```
+
+If the user cancelled (Step 1 "already on chain" early-out, or Step 2
+mainnet decline), set `outcome` to `"cancelled"` and adjust
+`final_state`. Do NOT mention the journal write in your reply to the
+user — it's an internal audit trail.

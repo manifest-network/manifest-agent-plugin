@@ -37,8 +37,10 @@ jobs:
           TAG="${GITHUB_REF_NAME#v}"
           PKG=$(node -p "require('./package.json').version")
           PLUGIN=$(node -p "require('./.claude-plugin/plugin.json').version")
-          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$PLUGIN" ]; then
-            echo "Version mismatch: tag=$TAG package.json=$PKG plugin.json=$PLUGIN" >&2
+          CODEX=$(node -p "require('./hosts/codex/manifest-agent/.codex-plugin/plugin.json').version")
+          LOCK=$(node -p "require('./package-lock.json').packages[''].version")
+          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$PLUGIN" ] || [ "$TAG" != "$CODEX" ] || [ "$TAG" != "$LOCK" ]; then
+            echo "Version mismatch: tag=$TAG package=$PKG Claude=$PLUGIN Codex=$CODEX lock=$LOCK" >&2
             exit 1
           fi
           echo "All versions match: $TAG"
@@ -47,3 +49,38 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+
+  codex-artifact:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Check whether Codex publication evidence is complete
+        id: acceptance
+        run: node ci/host-acceptance.cjs --codex-release-status >> "$GITHUB_OUTPUT"
+
+      - name: Install the characterized Codex host
+        if: steps.acceptance.outputs.eligible == 'true'
+        run: npm install --global @openai/codex@0.153.4
+
+      - name: Verify fresh Codex host evidence for the archive
+        if: steps.acceptance.outputs.eligible == 'true'
+        run: |
+          node ci/codex-host-smoke.cjs --out codex-host-report.json
+          node ci/host-acceptance.cjs --report codex-host-report.json --require-current
+
+      - name: Build the native Codex release archive
+        if: steps.acceptance.outputs.eligible == 'true'
+        run: |
+          npm run build:codex
+          tar -czf "manifest-agent-codex-${GITHUB_REF_NAME}.tar.gz" -C dist codex
+
+      - name: Attach the accepted Codex archive
+        if: steps.acceptance.outputs.eligible == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: manifest-agent-codex-*.tar.gz

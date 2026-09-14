@@ -4,10 +4,12 @@ description: >
   Set up the Manifest agent's chain configuration and keypair. Run this once
   after installing the plugin (or to re-key); it picks a chain, generates or
   imports a wallet, and writes config.json. User-invoked only — not for
-  Claude to auto-discover.
+  Claude Code to auto-discover.
 allowed-tools: Bash(*)
 disable-model-invocation: true
 ---
+
+<!-- Generated from workflows/init-agent.md by ci/build-packages.cjs. -->
 
 # Initialize Manifest Agent
 
@@ -143,7 +145,7 @@ chmod 600 /tmp/mnemonic.txt
 
 **Do NOT use `echo`** (shell history). **Do NOT ask the user to paste the
 mnemonic in the conversation. Do NOT `Read` the mnemonic file.** The
-mnemonic must never enter Claude's context.
+mnemonic must never enter Claude Code's context.
 
 Wait for the user to provide the path. Then run (substitute `MNEMONIC_FILE`,
 `CHOSEN_CHAIN` from Step 2, `GAS_TOKEN` from Step 3):

@@ -1,0 +1,134 @@
+{
+  "mcpServers": {
+    "manifest-chain": {
+      "command": "node",
+      "args": [
+        "./scripts/codex-server.cjs",
+        "chain"
+      ],
+      "cwd": "./",
+      "startup_timeout_sec": 180,
+      "tool_timeout_sec": 1800,
+      "default_tools_approval_mode": "writes",
+      "env_vars": [
+        "MANIFEST_CODEX_DATA",
+        "XDG_DATA_HOME",
+        "CODEX_THREAD_ID",
+        "COSMOS_MAX_GAS",
+        "MANIFEST_AGENT_ELICIT_TIMEOUT_MS",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy"
+      ]
+    },
+    "manifest-lease": {
+      "command": "node",
+      "args": [
+        "./scripts/codex-server.cjs",
+        "lease"
+      ],
+      "cwd": "./",
+      "startup_timeout_sec": 180,
+      "tool_timeout_sec": 1800,
+      "default_tools_approval_mode": "writes",
+      "env_vars": [
+        "MANIFEST_CODEX_DATA",
+        "XDG_DATA_HOME",
+        "CODEX_THREAD_ID",
+        "COSMOS_MAX_GAS",
+        "MANIFEST_AGENT_ELICIT_TIMEOUT_MS",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy"
+      ]
+    },
+    "manifest-fred": {
+      "command": "node",
+      "args": [
+        "./scripts/codex-server.cjs",
+        "fred"
+      ],
+      "cwd": "./",
+      "startup_timeout_sec": 180,
+      "tool_timeout_sec": 1800,
+      "default_tools_approval_mode": "writes",
+      "env_vars": [
+        "MANIFEST_CODEX_DATA",
+        "XDG_DATA_HOME",
+        "CODEX_THREAD_ID",
+        "COSMOS_MAX_GAS",
+        "MANIFEST_AGENT_ELICIT_TIMEOUT_MS",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy"
+      ]
+    },
+    "manifest-cosmwasm": {
+      "command": "node",
+      "args": [
+        "./scripts/codex-server.cjs",
+        "cosmwasm"
+      ],
+      "cwd": "./",
+      "startup_timeout_sec": 180,
+      "tool_timeout_sec": 1800,
+      "default_tools_approval_mode": "writes",
+      "env_vars": [
+        "MANIFEST_CODEX_DATA",
+        "XDG_DATA_HOME",
+        "CODEX_THREAD_ID",
+        "COSMOS_MAX_GAS",
+        "MANIFEST_AGENT_ELICIT_TIMEOUT_MS",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy"
+      ]
+    },
+    "manifest-agent": {
+      "command": "node",
+      "args": [
+        "./scripts/codex-server.cjs",
+        "agent"
+      ],
+      "cwd": "./",
+      "startup_timeout_sec": 180,
+      "tool_timeout_sec": 1800,
+      "default_tools_approval_mode": "writes",
+      "env_vars": [
+        "MANIFEST_CODEX_DATA",
+        "XDG_DATA_HOME",
+        "CODEX_THREAD_ID",
+        "COSMOS_MAX_GAS",
+        "MANIFEST_AGENT_ELICIT_TIMEOUT_MS",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy"
+      ]
+    }
+  }
+}

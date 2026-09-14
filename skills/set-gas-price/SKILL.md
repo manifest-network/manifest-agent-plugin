@@ -1,11 +1,14 @@
 ---
+name: set-gas-price
 description: >
   Change the default gas fee token, price, and/or gas multiplier used by
   the Manifest MCP servers. Shows available fee tokens from the chain
-  registry. User-invoked only — not for Claude to auto-discover.
+  registry. Use when the user requests this operation.
 allowed-tools: Bash(*)
 disable-model-invocation: true
 ---
+
+<!-- Generated from workflows/set-gas-price.md by ci/build-packages.cjs. -->
 
 # Set Gas Price
 

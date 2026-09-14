@@ -9,6 +9,8 @@ description: >
 allowed-tools: Bash(*), Read, Write
 ---
 
+<!-- Generated from workflows/author-manifest.md by ci/build-packages.cjs. -->
+
 # Author Container Deployment Spec
 
 You are interactively building a Fred container deployment spec. The output is
@@ -71,7 +73,7 @@ Use this picker for compute and, with the restrictions in 4a, storage:
   `provider_uuid`, `provider_url`, and `<price> <unit>`. `price` is a string,
   or "unavailable" when null; do not assume a nested amount/denom price or
   provider display-name field. Never merge entries by name.
-- Every `AskUserQuestion` has `multiSelect: false` and 2–4 options. With
+- Use a single selection with 2–4 options for each question. With
   no usable compute entries, report the unavailable/incomplete catalog and
   stop without a picker. With no usable storage entries, offer **Refresh
   catalog** / **No disk**; refresh restarts storage selection and **No disk**
@@ -211,7 +213,7 @@ present in both are taken from the file.
 **Sensitive env values — what this protects, what it doesn't:**
 - The chat input box stays clean — the user does not paste secrets.
 - The script merges values directly into the spec file, but Step 7 reads
-  that file back and previews it: the values then enter Claude's context
+  that file back and previews it: the values then enter Claude Code's context
   and preview tool arguments during authoring.
 - Values also appear in the orchestrated deployment tool arguments when
   `/manifest-agent:deploy-app` later loads the saved spec. Eliminating

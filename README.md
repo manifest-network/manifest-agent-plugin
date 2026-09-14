@@ -1,6 +1,14 @@
 # manifest-agent
 
-A [Claude Code](https://claude.ai/code) plugin that sets up [Manifest](https://manifestai.org/) blockchain MCP tooling for an autonomous agent.
+A plugin for [Claude Code](https://claude.ai/code) and Codex that sets up [Manifest](https://manifestai.org/) blockchain MCP tooling for an autonomous agent.
+
+The native Codex package is built from the same workflows and runtime. See
+[Codex installation and usage](docs/codex.md) and the
+[host acceptance matrix](docs/host-acceptance.md). The Codex release archive
+remains gated on interactive UI and live testnet evidence;
+pending Codex acceptance does not block Claude-only releases. Examples
+below use Claude Code's `/manifest-agent:<skill>` invocation; Codex uses
+`$manifest-agent:<skill>`.
 
 It handles keypair generation and import, chain configuration (testnet/mainnet), live chain registry data from the [Cosmos chain registry](https://github.com/cosmos/chain-registry), and configuring five MCP servers (all bundled in [@manifest-network/manifest-mcp-node](https://www.npmjs.com/package/@manifest-network/manifest-mcp-node)) so the agent can interact with the configured chain. Deployment orchestration (plan + confirm + broadcast + recovery + persistence) lives in [`@manifest-network/manifest-agent-core`](https://www.npmjs.com/package/@manifest-network/manifest-agent-core) and is surfaced through the `manifest-agent` MCP server's `*_orchestrated` tools via MCP elicitation.
 
@@ -25,10 +33,25 @@ It handles keypair generation and import, chain configuration (testnet/mainnet),
 
 ## Prerequisites
 
-- [Claude Code](https://claude.ai/code) CLI, desktop app, or IDE extension
+- [Claude Code](https://claude.ai/code), or Codex with native plugin discovery and MCP form elicitation (see the host matrix for tested surfaces)
 - Stable Node.js >= 22.19.0 (Node 24 is also tested)
 
 ## Installation
+
+### Codex
+
+```bash
+npm run build:codex
+codex plugin marketplace add ./dist/codex
+codex plugin add manifest-agent@manifest
+```
+
+Run these from this repository, then open a new thread and invoke
+`$manifest-agent:init-agent`. Codex defaults to a separate persistent data
+directory and never imports Claude's wallet or chain selection automatically.
+See [the Codex guide](docs/codex.md) for overrides, upgrades and recovery.
+
+The following installation and quick-start instructions are for Claude Code.
 
 ### From a marketplace
 

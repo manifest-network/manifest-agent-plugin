@@ -214,16 +214,13 @@ permission bypasses as a substitute for the user's confirmation.
 POLICY
 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-  # printf %q quotes the value so paths containing spaces or shell
-  # metacharacters round-trip correctly when CLAUDE_ENV_FILE is sourced.
-  printf 'export MANIFEST_PLUGIN_ROOT=%q\n' "${CLAUDE_PLUGIN_ROOT}" >> "$CLAUDE_ENV_FILE"
-  printf 'export MANIFEST_PLUGIN_DATA=%q\n' "${CLAUDE_PLUGIN_DATA}" >> "$CLAUDE_ENV_FILE"
-  # NODE_PATH is purely additive (Node consults it as a fallback after the
-  # node_modules walk-up), so exporting it session-wide is safe — the only
-  # `node` invocations in this plugin's bash scope are the plugin's own
-  # scripts, which need exactly this resolution path. Hoisting kills the
-  # 9-site duplication that was previously prefixed onto each invocation.
-  printf 'export NODE_PATH=%q\n' "${CLAUDE_PLUGIN_DATA}/node_modules" >> "$CLAUDE_ENV_FILE"
+  # Both hosts resolve root/data/NODE_PATH through the same dependency-free
+  # adapter. Claude supplies its persistent path; existing data stays in place.
+  if ! command -v node >/dev/null 2>&1; then
+    printf 'manifest-agent: Node 22.19.0+ is required. Install Node and restart Claude Code.\n' >&2
+    exit 1
+  fi
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/host-env.cjs" claude --shell >> "$CLAUDE_ENV_FILE"
 
   # Extract session_id from the captured hook payload. Use jq when
   # available, otherwise fall back to a tolerant grep+sed. Empty

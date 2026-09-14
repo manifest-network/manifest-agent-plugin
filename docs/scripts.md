@@ -6,7 +6,16 @@ Every file under `scripts/`. Underscore-prefixed files are sibling-only modules 
 
 Use `rg -n '<script>.cjs' skills/ scripts/` if you need to locate callers — the call graph drifts and isn't worth restating in prose.
 
+Packaging/host validation lives under `ci/`: `build-packages.cjs` renders the
+shared workflows and produces the native artifact; `host-contracts.cjs`
+compares pinned launchers and callback behavior; `codex-host-smoke.cjs` runs
+the real host against harmless fixtures; `host-acceptance.cjs` binds recorded
+evidence to current sources and gates releases on declared UI/live coverage.
+Their commands and limits are in [host-acceptance.md](host-acceptance.md).
+
 ## CLI entry points
+
+- **`host-env.cjs`** — Dependency-free `host-env.cjs <claude|codex> [--shell]`. Resolves explicit host paths and emits JSON or shell-quoted exports; never reads config or keys. Claude SessionStart and every Codex skill shell call consume it. Codex ignores ambient Claude data and clears stale session metadata when no thread ID is supplied.
 
 - **`check-storage-selection.cjs`** — Required flag: `--spec-file <path>` reads the saved draft directly. Stdin is a fresh `browse_catalog` JSON payload serialized to a file with the host Write tool; only paths enter shell commands. Verifies the recorded storage identity/name and unique active match on the compute provider, deriving that provider from `skuUuid` if needed. Emits only the checked identity; failures exit 1 without raw input excerpts. Leaves the draft unchanged and never emits its env values. Names/selectors follow upstream trimming and case-sensitive identity matching. This observes identity, not SKU category or price: MCP 0.22.0 still resolves storage by name and omits it from planning/fee simulation.
 - **`decode-lease-state.cjs`** — Wraps `_lease-state.cjs` for `restart-app` state checks before and after restarting. Required flag: `--state <numeric-or-LEASE_STATE_* value>`. Emits the decoded name or `UNKNOWN`; `--json` emits `{name, terminal}`. Expired leases return `LEASE_STATE_EXPIRED` with `terminal: true`.
@@ -34,6 +43,9 @@ A non-underscore renderer composed by another renderer rather than directly by s
 
 ## Internal helpers (`_<topic>.cjs`)
 
+- **`_host.cjs`** — Host path/environment adapter shared by SessionStart, `host-env.cjs` and the native launcher. Validates absolute paths and quotes shell exports without evaluating path text. Codex defaults to isolated XDG data; Claude keeps its host data directory.
+- **`_mcp-bridge.cjs`** — Native Codex JSON-RPC boundary. Gates the generated reviewed mutation inventory on form capability, holds direct writes until native acceptance, and forwards upstream orchestrated requests/results/progress. Remaps server request IDs and cancellations together; expired/retired confirmations cannot execute. Does not sign, orchestrate, roll back, or reinterpret partial outcomes.
+
 - **`_runtime.cjs`** — Shared stable-Node version guard, package/lock fingerprint, installed-runtime completion validation, process-owner checks and bounded startup wait, used by setup and the launcher. Not a CLI.
 
 - **`_gas-price.cjs`** — Composes a Cosmos gas-price string (`<amount><denom>`) by symbol lookup in chain registry data. Exports `composeGasPrice`. Used by `update-config.cjs` and `write-config.cjs`.
@@ -45,6 +57,8 @@ A non-underscore renderer composed by another renderer rather than directly by s
 - **`_uuid.cjs`** — Strict UUID v4 regex (8-4-4-4-12 lowercase hex). Exports `UUID_RE`, `UUID_PATTERN`, `isUuid`.
 
 ## Hook and runtime setup scripts
+
+- **`codex-server.cjs`** — `codex-server.cjs <chain|lease|fred|cosmwasm|agent>` resolves Codex data, awaits the shared locked setup, reads packaged mutation policy/runtime instructions, and bridges stdio to `start-server.cjs`. Forwards shutdown signals and treats malformed/interrupted transport as an unknown outcome for in-flight calls. Used by the separate native `.mcp.json` with a relative plugin working directory.
 
 - **`setup-runtime.cjs`** — Dependency-free setup/repair entry point: `node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs"`. Reads `MANIFEST_PLUGIN_DATA` (`CLAUDE_PLUGIN_DATA` fallback), requires Node 22.19.0+, copies the tracked package and lock into the data directory, and installs with `npm ci --omit=dev --ignore-scripts`. Verifies installed versions/files and writes `.runtime-install.json` only on success; `.runtime-setup.lock` serializes installers and retains ownership while an installer worker survives a killed setup parent. Linux process start times distinguish reused PIDs; unavailable/legacy identities fall back conservatively to liveness. An observed active owner triggers a notice naming the lock path; stale-owner recovery stays quiet. Every unsuccessful attempt yields and shares the 60-second deadline, including missing-owner observations and stale-lock races. An expired waiter leaves unreclaimed locks untouched; no live lock is evicted just because of its age. Completion is tied to platform/architecture, package/lock, file sizes and executable MCP entry points. The JavaScript-only locked runtime is shared across supported stable Node majors; legacy same-platform Node-specific records remain usable. Dependency snapshots and completion validation reject regular `.node` files pending explicit Node-specific support. Preserves user data. Handled npm failures remove empty `.last-install.log` files and point to the log only when it contains output; missing npm produces an explicit install instruction; logs and completion files use mode 0600.
 - **`session-start.sh`** — SessionStart hook. (1) Captures the hook payload from stdin so step (3) can extract `session_id`. (2) Emits the runtime transaction policy heredoc on stdout (canonical source of the runtime-facing policy; CLAUDE.md is dev-only). Post-ENG-130 the policy points at the orchestrated `mcp__plugin_manifest-agent_manifest-agent__*_orchestrated` tools as the canonical confirmation surface (elicitation, not textual recap). (3) Exports `MANIFEST_PLUGIN_ROOT`, `MANIFEST_PLUGIN_DATA`, `NODE_PATH` via `CLAUDE_ENV_FILE`, and `MANIFEST_SESSION_ID` when the hook payload's `session_id` field is parseable (jq if available, grep+sed fallback otherwise; absent → field omitted, journal records carry `session_id: null`). (4) Invokes `setup-runtime.cjs` (hook timeout: 90 seconds) for the same validated, locked install/repair path as onboarding. An unsupported Node or failed installation produces a hook failure with an actionable diagnostic.

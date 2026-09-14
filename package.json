@@ -2,11 +2,14 @@
   "name": "manifest-agent-plugin",
   "version": "0.4.0",
   "private": true,
-  "description": "Dependencies for the manifest-agent Claude Code plugin",
+  "description": "Shared runtime dependencies for the Manifest Agent Claude Code and Codex plugins",
   "engines": {
     "node": ">=22.19.0"
   },
   "scripts": {
+    "build:skills": "node ci/build-packages.cjs --write-skills",
+    "build:codex": "node ci/build-packages.cjs",
+    "test:packages": "node ci/build-packages.cjs --check",
     "setup:runtime": "node scripts/setup-runtime.cjs",
     "test": "node --test tests/*.test.cjs",
     "test:docs": "node ci/docs-ci.cjs docs/testing.md",

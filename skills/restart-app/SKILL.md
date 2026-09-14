@@ -10,6 +10,8 @@ description: >
 allowed-tools: Bash(*), Read
 ---
 
+<!-- Generated from workflows/restart-app.md by ci/build-packages.cjs. -->
+
 # Restart App
 
 You are restarting a running Manifest app via its provider. The lease
@@ -36,8 +38,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart
-Claude Code so the SessionStart hook runs, then stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
 Run:
 ```bash
@@ -136,11 +137,7 @@ Stop on No.
 ## Step 5 — Call the provider
 
 Call `mcp__plugin_manifest-agent_manifest-fred__restart_app({ lease_uuid: LEASE_UUID })`.
-The PreToolUse hook requests host permission before execution (the
-matcher in `hooks/hooks.json` gates `restart_app` even though it's
-not a Cosmos broadcast, because it's still a state-changing
-operation). Step 4 supplies the action recap for this direct tool;
-the hook cannot verify that prose or the user's response.
+The PreToolUse hook requests host permission before execution. Step 4 supplies the action recap; the hook cannot verify that prose or the user's response.
 
 `restart_app` returns JSON text `{ lease_uuid, status }`; it does not
 wait for the app to become ready. Check for `isError: true` / `error:

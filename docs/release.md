@@ -1,6 +1,6 @@
 # Releasing
 
-The release process is tag-driven. Pushing any `v*.*.*` tag triggers `.github/workflows/release.yml`; the workflow refuses tags whose commit isn't reachable from `origin/main`, verifies version consistency, and then creates a GitHub Release with auto-generated notes.
+The release process is tag-driven. Pushing any `v*.*.*` tag triggers `.github/workflows/release.yml`; the workflow checks reachability from `origin/main` and version consistency, then creates a GitHub Release with generated notes. A separate job attaches the native Codex archive only when its acceptance evidence is complete. Pending Codex evidence does not block Claude-only releases.
 
 ## Versioning
 
@@ -10,21 +10,22 @@ The plugin uses [Semantic Versioning](https://semver.org/):
 - **Minor** (`0.4.0` → `0.5.0`) — new skills, new flags, new MCP tool gating, behavior additions that don't break existing flows.
 - **Major** (`0.4.0` → `1.0.0`) — anything that breaks an existing skill argument, removes a script, changes a wrapper-file `schema_version`'s read contract, or otherwise requires existing users to take action.
 
-The version string lives in two manifests that MUST match:
+The version string lives in three manifests that MUST match, together with the lockfile root version:
 
 - `package.json` (`version` field)
 - `.claude-plugin/plugin.json` (`version` field)
+- `hosts/codex/manifest-agent/.codex-plugin/plugin.json` (`version` field)
 
 CI fails fast if they drift (`Verify version consistency across manifests` step in `.github/workflows/ci.yml`).
 
 ## Cutting a release
 
 ```bash
-# 1. Update both manifests in a chore commit. Pick the new version once.
+# 1. Update all manifests in a chore commit. Pick the new version once.
 NEW_VERSION="0.5.0"
 node -e "
   const fs = require('fs');
-  for (const p of ['package.json', '.claude-plugin/plugin.json']) {
+  for (const p of ['package.json', '.claude-plugin/plugin.json', 'hosts/codex/manifest-agent/.codex-plugin/plugin.json']) {
     const j = JSON.parse(fs.readFileSync(p, 'utf8'));
     j.version = '$NEW_VERSION';
     fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
@@ -32,7 +33,9 @@ node -e "
 "
 # Refresh root package metadata in the tracked lock, preserving resolutions.
 npm install --package-lock-only --ignore-scripts
-git add package.json package-lock.json .claude-plugin/plugin.json
+# Codex host fixtures run in CI; the committed historical report stays intact.
+# For a Codex archive, also record this version's UI/live evidence (see below).
+git add package.json package-lock.json .claude-plugin/plugin.json hosts/codex/manifest-agent/.codex-plugin/plugin.json
 git commit -m "chore: bump plugin version to $NEW_VERSION"
 
 # 2. Push the commit and let CI run. Don't tag yet — if CI fails, you'd need
@@ -47,8 +50,10 @@ git push origin "v$NEW_VERSION"
 The release workflow then:
 
 1. Verifies the tag is reachable from `origin/main` (refuses to release tags pointing off-branch).
-2. Verifies the tag string (minus the `v` prefix) matches both manifest versions.
-3. Creates a GitHub Release with `generate_release_notes: true` (auto-generates notes from PR titles and labels since the previous tag).
+2. Verifies the tag string (minus the `v` prefix) matches all manifest versions and the lockfile root.
+3. Creates a GitHub Release with `generate_release_notes: true`. Claude continues to install the repository plugin.
+4. In a dependent job, runs `ci/host-acceptance.cjs --codex-release-status`. Pending Codex interactive/testnet rows or evidence for another version skip the archive successfully. Complete rows must pass source, coverage and cleanup validation; malformed evidence fails this artifact job without removing the existing release.
+5. If eligible, runs Codex fixtures and validates their fresh report, then builds and attaches `manifest-agent-codex-v<VERSION>.tar.gz` with its native marketplace, skills, scripts and locked dependency definition. Dependencies and user data are not included.
 
 ## When to release
 
@@ -60,11 +65,34 @@ There's no fixed cadence. Cut a release when:
 
 ## Pre-release checklist
 
-- [ ] Both version manifests and the lockfile root version updated in one commit.
+- [ ] All three version manifests and the lockfile root version updated in one commit.
 - [ ] CI is green on `main` at the commit you're about to tag.
 - [ ] `manifest-mcp-node` version in `package.json` is the one you intend to ship (CLAUDE.md "Custom domains" mentions a minimum version — confirm it's still accurate after the bump).
 - [ ] No undocumented breaking changes — check `git log` since the previous tag for any commit that renamed a script, removed a flag, or changed a skill argument shape.
 - [ ] The installed MCP inventory check (`ci/mcp-tool-policy.cjs`) and policy-completeness check pass for the pinned package; record the host-validation status separately (see [`approval-validation.md`](approval-validation.md)).
+- [ ] Native build, `ci/host-contracts.cjs`, and the fresh Codex host report pass in CI. Keep the committed historical report's hashes and source commit intact; source/version changes do not require a local Codex run.
+- [ ] For a Codex archive, complete the Codex interactive and testnet rows in [`host-acceptance.md`](host-acceptance.md), record reviewed transcripts, and update `host-acceptance-release.json` for the new version and exact source hashes. `node ci/host-acceptance.cjs --codex-release-status` reports `eligible=true` and all testnet resources are cleaned up. The full both-host matrix remains required before claiming full compatibility.
+
+## Native Codex compatibility release (ENG-894)
+
+The feature keeps plugin version 0.4.0 pending the separate release chore.
+Both hosts consume one workflow source and the same locked MCP 0.22.0 runtime.
+Codex installs a separate native artifact, performs its own bootstrap, and
+uses independent data by default. No Claude wallet, chain selection or local
+record is migrated. Configuration/wallet changes in shared data directories
+are unsupported; isolated concurrent processes are tested.
+
+Codex's adapter requires form elicitation for reviewed mutations, confirms
+direct writes and retains upstream orchestrated confirmation, progress and
+recovery. Missing/declined confirmation cannot authorize a direct write.
+Cancelled or timed-out operations after broadcast can remain paid partial or
+unknown; users must inspect existing state before retrying. Headless hosts
+that cannot present native prompts support the read-only workflow subset.
+
+Current evidence includes the real Codex 0.153.4 app-server with harmless
+fixtures, both pinned launchers and published callback contracts. Interactive
+UI and live testnet coverage remain explicit prerequisites for publishing
+the Codex archive; Claude-only releases can proceed independently.
 
 ## Hotfixes
 

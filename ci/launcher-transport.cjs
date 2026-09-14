@@ -14,7 +14,8 @@ const { COMPLETION_FILE } = require('../scripts/_runtime.cjs');
 const PUBLIC_TEST_MNEMONIC = `${'abandon '.repeat(11)}about`;
 const PUBLIC_TEST_PASSWORD = 'manifest-launcher-public-fixture';
 
-async function probeLaunchers({ dataDir, root = resolve(__dirname, '..'), timeoutMs = 20000 }) {
+async function probeLaunchers({ dataDir, root = resolve(__dirname, '..'), timeoutMs = 20000, host = 'claude', includeFaucet = false }) {
+  if (!['claude', 'codex'].includes(host)) throw new Error('Unknown launcher host');
   const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
   const packageName = '@manifest-network/manifest-mcp-node';
   const expectedVersion = readJson(join(root, 'package.json')).dependencies[packageName];
@@ -42,6 +43,7 @@ async function probeLaunchers({ dataDir, root = resolve(__dirname, '..'), timeou
       activeChain: 'mainnet', gasPrice: '0.025umfx',
       chains: { mainnet: {
         chainId: 'manifest-launcher-test', rpcUrl: 'http://127.0.0.1:1',
+        ...(includeFaucet ? { faucetUrl: 'http://127.0.0.1:1' } : {}),
         // CosmWasm requires a converter even for tools/list. This valid
         // placeholder is never queried because the probe denies networking.
         converterAddress: 'manifest1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqjpzgn4',
@@ -61,7 +63,7 @@ async function probeLaunchers({ dataDir, root = resolve(__dirname, '..'), timeou
     for (const serverName of servers) {
       const match = /^manifest-([a-z0-9-]+)$/.exec(serverName);
       if (!match) throw new Error(`Unrecognized server name: ${serverName}`);
-      const wrapper = join(root, 'scripts', 'start-server.cjs');
+      const wrapper = join(root, 'scripts', host === 'codex' ? 'codex-server.cjs' : 'start-server.cjs');
       const runnerPath = join(cwd, `launch-${match[1]}.cjs`);
       // listTools intentionally passes a minimal environment. This runner
       // configures only fixture paths and harmless stale values, then invokes
@@ -69,11 +71,15 @@ async function probeLaunchers({ dataDir, root = resolve(__dirname, '..'), timeou
       writeFileSync(runnerPath, [
         "'use strict';",
         `process.env.MANIFEST_PLUGIN_DATA = ${JSON.stringify(cwd)};`,
+        `process.env.MANIFEST_CODEX_DATA = ${JSON.stringify(cwd)};`,
+        `process.env.MANIFEST_PLUGIN_HOST = ${JSON.stringify(host)};`,
         `process.env.NODE_OPTIONS = ${JSON.stringify(`--require ${JSON.stringify(guardPath)}`)};`,
         "process.env.DOTENV_CONFIG_QUIET = 'false';",
         "process.env.COSMOS_MNEMONIC = 'invalid inherited mnemonic';",
         `process.argv = [process.execPath, ${JSON.stringify(wrapper)}, ${JSON.stringify(match[1])}];`,
-        `require(${JSON.stringify(wrapper)});`,
+        host === 'codex'
+          ? `require(${JSON.stringify(wrapper)}).main().catch(error => { console.error(error); process.exitCode = 1; });`
+          : `require(${JSON.stringify(wrapper)});`,
       ].join('\n'), { mode: 0o600 });
       let tools;
       try {
@@ -81,7 +87,7 @@ async function probeLaunchers({ dataDir, root = resolve(__dirname, '..'), timeou
       } catch (error) {
         throw new Error(`${serverName} launcher: ${error.message}`);
       }
-      if (serverName === 'manifest-chain' && tools.some((tool) => tool.name === 'request_faucet')) {
+      if (!includeFaucet && serverName === 'manifest-chain' && tools.some((tool) => tool.name === 'request_faucet')) {
         throw new Error('manifest-chain launcher inherited an unconfigured faucet');
       }
       inventory.push({ serverName, tools });

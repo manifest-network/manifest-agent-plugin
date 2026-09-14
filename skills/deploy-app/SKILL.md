@@ -9,6 +9,8 @@ description: >
 allowed-tools: Bash(*), Read, Write
 ---
 
+<!-- Generated from workflows/deploy-app.md by ci/build-packages.cjs. -->
+
 # Deploy App
 
 `mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated` (in the `manifest-agent`
@@ -22,8 +24,7 @@ Step numbers are scaffolding only.
 
 ## Step 0 — Verify environment
 
-Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart
-Claude Code so the SessionStart hook runs, then stop. Run
+Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart Claude Code so the SessionStart hook runs, then stop. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; on
 failure tell the user to run `/manifest-agent:init-agent` and stop.
 Capture `activeChain`, `address`, and `chainId` from the JSON output —
@@ -95,16 +96,16 @@ describe the displayed plan or estimate as covering storage costs.
 
 Call `mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated({ spec: SPEC })`.
 
-Claude Code evaluates the PreToolUse hook for this outer invocation before
-starting the tool. If permission is denied, the tool does not run. Once
+Claude Code evaluates the PreToolUse hook before this outer invocation starts. A denied call does not reach the MCP server.
+
+Once
 execution starts, the server requests native MCP elicitation for the
 plan with itemized fees, any mainnet warning, and recovery choices.
 Claude Code renders these requests and returns the user's answers; do
 not reprint their messages, forward answers yourself, or add a separate
 prose confirmation. Acknowledge only progress the host actually exposes.
 
-The server's internal SDK operations do not produce additional host
-PreToolUse events. Creation, optional domain assignment, and provider
+The server's internal SDK operations do not produce additional PreToolUse events. Creation, optional domain assignment, and provider
 upload run sequentially and can partially succeed. Use the returned
 result or error to describe what completed; do not call the workflow
 atomic or infer success from a single completed transaction.

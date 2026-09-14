@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "pluginVersion": "0.4.0",
+  "upstreamVersion": "0.22.0",
+  "hosts": {
+    "claude": {
+      "interactive": { "status": "pending" },
+      "testnet": { "status": "pending" }
+    },
+    "codex": {
+      "interactive": { "status": "pending" },
+      "testnet": { "status": "pending" }
+    }
+  }
+}

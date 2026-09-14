@@ -1,11 +1,14 @@
 ---
+name: switch-chain
 description: >
   Switch the Manifest agent's active chain between testnet and mainnet.
   Re-fetches the Cosmos chain registry data and updates config.json.
-  User-invoked only — not for Claude to auto-discover.
+  Use when the user requests this operation.
 allowed-tools: Bash(*)
 disable-model-invocation: true
 ---
+
+<!-- Generated from workflows/switch-chain.md by ci/build-packages.cjs. -->
 
 # Switch Active Chain
 

@@ -12,14 +12,25 @@ for f in scripts/*.cjs; do node --check "$f"; done
 for f in scripts/*.sh;  do bash -n "$f"; done
 
 # Tests
+npm run build:codex
 npm test
 
 # Version consistency (CI fails if these drift)
 node -p "require('./package.json').version"
 node -p "require('./.claude-plugin/plugin.json').version"
+node -p "require('./hosts/codex/manifest-agent/.codex-plugin/plugin.json').version"
 ```
 
 If you change the published MCP tool surface, review its mutation classification, update `hooks/hooks.json` and the runtime policy where required, and keep the "Tools gated by the PreToolUse hook" list in `CLAUDE.md` consistent. `ci/mcp-tool-policy.cjs` checks the actual installed package inventory; the workflow no longer carries a separate expected tool list. Include argument-specific read-only exceptions, such as domain lookup, in hook tests. See [`docs/approval-validation.md`](docs/approval-validation.md) for the distinction between hook tests and actual host validation.
+
+Edit domain instructions in `workflows/<name>.md`, then run
+`npm run build:skills`. Commit those sources and the generated Claude
+`skills/<name>/SKILL.md` files together. `ci/build-packages.cjs` resolves
+host vocabulary and builds the separate, ignored `dist/codex` distribution.
+Do not maintain a second copy of domain rules in `hosts/`. Codex form gating
+uses the same reviewed mutation inventory as Claude's hooks. See
+[`docs/host-acceptance.md`](docs/host-acceptance.md) for both-host checks and
+the evidence required before a compatibility release.
 
 ## Branch names
 

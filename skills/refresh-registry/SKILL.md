@@ -1,11 +1,14 @@
 ---
+name: refresh-registry
 description: >
   Re-fetch chain registry data (RPC endpoints, gas prices, chain
   parameters) from the Cosmos chain registry. User-invoked only — not
-  for Claude to auto-discover.
+  for Claude Code to auto-discover.
 allowed-tools: Bash(*)
 disable-model-invocation: true
 ---
+
+<!-- Generated from workflows/refresh-registry.md by ci/build-packages.cjs. -->
 
 # Refresh Chain Registry
 

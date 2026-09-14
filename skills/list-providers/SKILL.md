@@ -1,4 +1,5 @@
 ---
+name: list-providers
 description: >
   List registered providers on the active Manifest chain. Read-only.
   Defaults to active providers only; pass `--all` as the argument to
@@ -6,6 +7,8 @@ description: >
   provider-aware deploy flows.
 allowed-tools: Bash(*), Read
 ---
+
+<!-- Generated from workflows/list-providers.md by ci/build-packages.cjs. -->
 
 # List Providers
 
@@ -24,8 +27,7 @@ Run:
 echo "$MANIFEST_PLUGIN_ROOT"
 ```
 
-If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart
-Claude Code so the SessionStart hook runs, then stop.
+If empty, `$MANIFEST_PLUGIN_ROOT` is not set; tell the user to restart Claude Code so the SessionStart hook runs, then stop.
 
 This skill does not read `update-config.cjs --status` — `get_providers`
 is a pure chain query that doesn't need agent state.
