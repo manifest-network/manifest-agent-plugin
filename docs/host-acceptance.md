@@ -58,6 +58,10 @@ the loopback API are cleaned up after each case. Cleanup waits for processes
 carrying the run's exact temporary home to exit before removing the directory,
 then checks that it stays absent. Version 2 reports retain these measurements
 per case; a historical version 1 cleanup string is not verified cleanup.
+Every cleanup step is attempted even when the case or another cleanup step
+fails. The original case error retains its host/scenario context; additional
+cleanup or late model errors are attached as its cause and printed by the CLI.
+Process identity parsing handles spaces and parentheses in Linux process names.
 The CLI versions are checked
 before execution; review menu and prompt behavior before changing the pins.
 
@@ -140,19 +144,23 @@ Claude evidence and its precise limitations remain in
 [approval-validation.md](approval-validation.md). Codex evidence is recorded
 in [codex-app-server.json](host-evidence/codex-app-server.json). This committed
 run is the artifact from [CI run 34865171417](https://github.com/manifest-network/manifest-agent-plugin/actions/runs/34865171417),
-with its checkout log binding the observations to `5c47db6`. Its original
-results and all 61 source hashes are preserved. The shared provenance verifier
-requires the complete source-file scope for each report kind and checks its
-package versions against the recorded commit. Local diagnostic checks can
-explicitly report metadata-only verification when history is absent; CI and
-release checks require the actual commit bytes.
+with its checkout log recording temporary PR merge commit `5c47db6`. The
+archive's `head` uses durable branch commit `d3ffb46`: both commits have the
+identical Git tree, recorded in `archiveSource`. Its original results and all
+61 source hashes are preserved. The shared provenance verifier derives the
+complete source-file scope from the recorded commit's tree, including the
+script/workflow globs and generated terminal skills, and checks its package
+versions against that commit. Adding or removing files in today's workspace
+does not change historical scope. Local diagnostic checks explicitly report
+metadata-only verification when history is absent; historical bytes and dynamic
+scope remain unverified in that mode. CI and release checks require both.
 
 CI uses full Git history and explicitly runs
 `node ci/evidence-check.cjs --fetch-history --require-history` before checking
 the archives. This fetches missing recorded commits by their full validated
 SHA, including commits outside main's ancestry after squash merging. The
 validators themselves never fetch or silently weaken strict checks. Git
-objects are read in one binary-safe batch per report.
+source blobs are read in one binary-safe batch after any historical tree lookup.
 The release job uses `--codex-release-status --fetch-history`: pending or
 different-version archives skip before fetching; complete current records
 must pass strict validation after any missing source commits are fetched.
@@ -163,7 +171,10 @@ reports must match every source hash, package version and workflow in the
 checkout. Routine changes and version bumps do not require a local Codex run
 to rewrite the historical report. When archiving a current report, set
 `source_status` to `historical` and record its full source commit in `head`;
-never refresh hashes without running the harness.
+never refresh hashes without running the harness. Avoid temporary PR merge
+commits as archive references. A durable commit with the identical Git tree
+may be used while retaining the actual tested checkout and tree equivalence
+in the archive metadata.
 
 ## Release evidence
 

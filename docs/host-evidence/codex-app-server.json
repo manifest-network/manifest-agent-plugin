@@ -188,8 +188,10 @@
   "archiveSource": {
     "workflowRun": "https://github.com/manifest-network/manifest-agent-plugin/actions/runs/34865171417",
     "artifact": "codex-host-report",
-    "note": "Fresh CI observation; archived without changing results or source hashes.",
-    "checkoutEvidence": "CI job 104047079421 checkout log: git log -1 --format=%H returned 5c47db678e2d17d65a9892c88bc1c965fa9232d3"
+    "note": "Fresh CI observation; archived without changing results or source hashes. The durable branch commit in head has the identical Git tree to the tested temporary PR merge commit.",
+    "checkoutEvidence": "CI job 104047079421 checkout log: git log -1 --format=%H returned 5c47db678e2d17d65a9892c88bc1c965fa9232d3",
+    "checkoutCommit": "5c47db678e2d17d65a9892c88bc1c965fa9232d3",
+    "equivalentTree": "4ac935b4233ea752c4da271e076ddaa72ba14afc"
   },
-  "head": "5c47db678e2d17d65a9892c88bc1c965fa9232d3"
+  "head": "d3ffb465f7441bd12dbc6466cd4e412afbbf903a"
 }

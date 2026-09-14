@@ -137,9 +137,11 @@ test('missing declarations, invalid hashes and duplicate source names fail metad
   f.save('historical', f.historical);
   assert.match(f.check().failures.join('\n'), /lowercase SHA-256/);
   f.historical.files_sha256[SOURCE_FILES[0]] = sha256(f.sources[SOURCE_FILES[0]]);
-  f.historical.sourceFiles.push(SOURCE_FILES[0]);
-  f.save('historical', f.historical);
-  assert.match(f.check().failures.join('\n'), /without omissions or duplicates/);
+  for (const invalid of [null, {}, 'sourceFiles', [], SOURCE_FILES.slice(1), [...SOURCE_FILES, SOURCE_FILES[0]]]) {
+    f.historical.sourceFiles = invalid;
+    f.save('historical', f.historical);
+    assert.match(f.check().failures.join('\n'), /sourceFiles must/);
+  }
 });
 
 test('historical evidence cannot substitute for a current host record', (t) => {

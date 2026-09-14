@@ -108,9 +108,24 @@ function validateObservations(record) {
 }
 
 function readHistoricalSources(root, commit, files = SOURCE_FILES) {
-  // One binary-safe batch, with no implicit network fetch. Commit objects may
+  // Source blobs use one binary-safe batch, with no implicit network fetch. Commits may
   // need an explicit fetch after the source PR was squash-merged.
   assert.match(commit, /^[a-f0-9]{40}$/);
+  if (typeof files === 'function') {
+    // Resolve globbed scope from this commit, independently of both the
+    // report's hash keys and files added or removed in today's workspace.
+    if (!readHistoricalSources(root, commit, [])) return null;
+    const tree = spawnSync('git', ['-C', root, 'ls-tree', '-r', '-z', '--full-tree', commit], {
+      encoding: 'utf8', timeout: 10000, maxBuffer: 16 * 1024 * 1024,
+    });
+    if (tree.error || tree.status !== 0) throw new Error('Cannot inspect historical source tree with git ls-tree.');
+    files = files(tree.stdout.split('\0').filter(Boolean).map((entry) => {
+      const tab = entry.indexOf('\t');
+      assert.ok(tab > 0, 'Invalid git tree entry');
+      const [mode, type] = entry.slice(0, tab).split(' ');
+      return { path: entry.slice(tab + 1), mode, type };
+    }));
+  }
   assert.ok(files.every(safeSourcePath), 'Invalid historical source path');
   const result = spawnSync('git', ['-C', root, 'cat-file', '--batch'], {
     input: [commit, ...files.map((file) => `${commit}:${file}`)].join('\n') + '\n',
@@ -146,25 +161,49 @@ function readHistoricalSources(root, commit, files = SOURCE_FILES) {
 const safeSourcePath = (file) => typeof file === 'string' && /^[a-zA-Z0-9_./-]+$/.test(file)
   && !isAbsolute(file) && !file.split('/').includes('..');
 
+function hostSourceFiles(tree, { terminal = false } = {}) {
+  // The schema 1 app-server / schema 1-2 terminal inventory rules match the
+  // original emitters. A parity test protects this contract as emitters evolve.
+  const workflows = tree.filter((e) => ['100644', '100755'].includes(e.mode) && /^workflows\/[^/]+\.md$/.test(e.path))
+    .map((e) => e.path);
+  const files = ['ci/build-packages.cjs', 'ci/codex-host-smoke.cjs', 'tests/fixtures/native-host-fixture.cjs', 'tests/fixtures/json-rpc-peer.cjs',
+    'hosts/codex/manifest-agent/.mcp.json', 'hosts/codex/manifest-agent/.codex-plugin/plugin.json',
+    ...tree.filter((e) => /^scripts\/[^/]+\.cjs$/.test(e.path)).map((e) => e.path),
+    'scripts/session-start.sh', 'scripts/pre-tool-use.sh', 'hooks/hooks.json', 'package.json', 'package-lock.json', 'docs/codex.md',
+    ...workflows, 'hosts/codex/env.sh', 'hosts/codex/restart-confirmation.md', 'hosts/claude/restart-confirmation.md'];
+  if (terminal) files.push('ci/terminal-host-smoke.cjs', 'tests/fixtures/terminal-model.cjs', '.mcp.json', '.claude-plugin/plugin.json',
+    ...workflows.map((file) => `skills/${file.slice(10, -3)}/SKILL.md`));
+  return files.sort();
+}
+
 function verifyProvenance(record, { root, files, currentHashes, requireCurrent = false,
-  requireHistory = false, historicalSources = readHistoricalSources, upstreamField = 'upstreamPin' }) {
+  requireHistory = false, historicalScope, historicalSources = readHistoricalSources, upstreamField = 'upstreamPin' }) {
   assert.ok(record && ['current', 'historical'].includes(record.source_status), 'source_status must explicitly be current or historical.');
   if (requireCurrent) assert.equal(record.source_status, 'current', 'Fresh current evidence is required');
   const hashes = record.sourceHashes;
   assert.ok(hashes && typeof hashes === 'object' && !Array.isArray(hashes), 'Missing source hashes');
   assert.ok(Object.keys(hashes).every(safeSourcePath), 'Invalid source path');
-  assert.deepEqual(Object.keys(hashes).sort(), [...files].sort(), 'Source hashes must cover exactly the expected files');
   assert.ok(Object.values(hashes).every((hash) => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash)), 'Source hashes must be lowercase SHA-256');
+  if (record.sourceFiles !== undefined) {
+    assert.ok(Array.isArray(record.sourceFiles), 'sourceFiles must be an array');
+    assert.deepEqual([...record.sourceFiles].sort(), Object.keys(hashes).sort(), 'sourceFiles must agree with source hashes without omissions or duplicates');
+  }
+  const checkScope = () => assert.deepEqual(Object.keys(hashes).sort(), [...files].sort(), 'Source hashes must cover exactly the expected files');
   let sources, verification;
   if (record.source_status === 'current') {
+    checkScope();
     const expected = currentHashes || Object.fromEntries(files.map((file) => [file, sha256(readFileSync(join(root, file)))]));
     for (const file of files) assert.equal(hashes[file], expected[file], `Current evidence is stale for ${file}`);
     verification = 'workspace';
   } else {
     assert.match(record.head || '', /^[a-f0-9]{40}$/, 'Historical evidence needs its full recorded commit in head');
-    sources = historicalSources(root, record.head, files);
+    sources = historicalSources(root, record.head, historicalScope || files);
     if (requireHistory) assert.ok(sources, `Historical source commit unavailable: ${record.head}; fetch it before strict validation`);
     verification = sources ? 'commit' : 'metadata-only';
+    if (historicalScope) files = sources ? Object.keys(sources) : [];
+    // Without history a dynamic inventory cannot be verified. Such reports
+    // remain explicitly metadata-only and cannot satisfy CI/release checks.
+    if (sources || !historicalScope) checkScope();
     if (sources) for (const file of files) assert.equal(sha256(sources[file]), hashes[file], `Historical source differs from recorded commit ${record.head}: ${file}`);
   }
   let pkg;
@@ -198,14 +237,6 @@ function fetchEvidenceHistory(root, run = spawnSync) {
   return heads.size;
 }
 
-function validateMetadata(record) {
-  if (record.sourceFiles !== undefined && (!Array.isArray(record.sourceFiles)
-      || JSON.stringify([...record.sourceFiles].sort()) !== JSON.stringify([...SOURCE_FILES].sort()))) {
-    throw new Error('sourceFiles must agree with files_sha256 without omissions or duplicates.');
-  }
-
-}
-
 function checkEvidence(root, { requireHistory = false, historicalSources = readHistoricalSources } = {}) {
   const records = [];
   const failures = [];
@@ -216,7 +247,6 @@ function checkEvidence(root, { requireHistory = false, historicalSources = readH
   for (const filename of filenames) {
     try {
       const record = JSON.parse(readFileSync(join(root, 'docs/evidence', filename), 'utf8'));
-      validateMetadata(record);
       const result = verifyProvenance({ ...record, sourceHashes: record.files_sha256 }, {
         root, files: SOURCE_FILES, requireHistory, historicalSources,
       });
@@ -259,4 +289,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { SOURCE_FILES, sha256, readHistoricalSources, verifyProvenance, fetchEvidenceHistory, checkEvidence };
+module.exports = { SOURCE_FILES, sha256, readHistoricalSources, hostSourceFiles, verifyProvenance, fetchEvidenceHistory, checkEvidence };

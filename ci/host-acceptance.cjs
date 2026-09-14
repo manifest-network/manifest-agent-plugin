@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const { resolve, join, relative, isAbsolute } = require('node:path');
 const { sourceHashes } = require('./codex-host-smoke.cjs');
 const { validateReport: validateTerminalReport, hashes: terminalHashes } = require('./terminal-host-smoke.cjs');
-const { readHistoricalSources, verifyProvenance, fetchEvidenceHistory, sha256 } = require('./evidence-check.cjs');
+const { readHistoricalSources, hostSourceFiles, verifyProvenance, fetchEvidenceHistory, sha256 } = require('./evidence-check.cjs');
 const ROOT = resolve(__dirname, '..');
 const CASES = [
   ['direct-decline', 0, 'OPERATION_CANCELLED'], ['orchestrated-decline', 0, 'OPERATION_CANCELLED'],
@@ -25,10 +25,10 @@ function validateHostReport(report, { root = ROOT, hashes, requireCurrent = fals
   assert.equal(report.evidenceKind, 'codex-app-server-local-fixture');
   assert.equal(report.hostVersion, 'codex-cli 0.153.4');
   assert.ok(Number.isFinite(Date.parse(report.observedAt)), 'Missing observation date');
-  const expected = hashes || sourceHashes(root);
-  const { verification } = verifyProvenance(report, { root, files: Object.keys(expected), currentHashes: expected,
-    requireCurrent, requireHistory, historicalSources });
-  const skills = Object.keys(expected).filter((file) => /^workflows\/[^/]+\.md$/.test(file))
+  const expected = report.source_status === 'current' ? hashes || sourceHashes(root) : undefined;
+  const { verification } = verifyProvenance(report, { root, files: expected && Object.keys(expected), currentHashes: expected,
+    requireCurrent, requireHistory, historicalSources, historicalScope: hostSourceFiles });
+  const skills = Object.keys(report.sourceHashes).filter((file) => /^workflows\/[^/]+\.md$/.test(file))
     .map((file) => `manifest-agent:${file.slice(10, -3)}`);
   assert.deepEqual(report.servers, ['manifest-agent', 'manifest-chain', 'manifest-cosmwasm', 'manifest-fred', 'manifest-lease']);
   assert.ok(skills.length > 0, 'Missing workflow provenance');
@@ -161,7 +161,7 @@ function validateRelease(record, { root = ROOT, hashes = sourceHashes(root), hos
     assert.deepEqual([...row.cases].sort(), coverage.sort(), `${host}/${kind} coverage incomplete`);
     const { report } = readEvidence(root, row.evidencePath);
     verifyProvenance(report, { root, files: Object.keys(hashes), currentHashes: hashes,
-      historicalSources, requireHistory: true, upstreamField: 'upstreamVersion' });
+      historicalSources, historicalScope: hostSourceFiles, requireHistory: true, upstreamField: 'upstreamVersion' });
     assert.deepEqual(report.sourceHashes, hashes, `${host}/${kind} primary evidence is stale`);
     if (kind === 'interactive') {
       const terminal = readEvidence(root, row.terminalEvidencePath);
@@ -232,7 +232,7 @@ function main(argv = process.argv.slice(2)) {
   const result = validateHostReport(JSON.parse(fs.readFileSync(reportPath)), options);
   if (release) validateRelease(JSON.parse(fs.readFileSync(join(ROOT, 'docs/host-acceptance-release.json'))));
   console.log(`host-acceptance: ${result.status} Codex fixture evidence; ${result.verification === 'metadata-only'
-    ? 'metadata only; source commit unavailable locally, historical bytes NOT verified'
+    ? 'metadata only; source commit unavailable locally, historical bytes and scope NOT verified'
     : `${result.verification} hashes verified`}${release ? '; both hosts have declared interactive/testnet coverage' : ''}`);
 }
 if (require.main === module) { try { main(); } catch (error) { console.error(error.message); process.exitCode = 1; } }

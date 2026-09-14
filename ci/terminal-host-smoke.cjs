@@ -13,7 +13,7 @@ const { createHash } = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
 const { buildCodex, workflowFiles } = require('./build-packages.cjs');
 const { sourceHashes } = require('./codex-host-smoke.cjs');
-const { readHistoricalSources, verifyProvenance } = require('./evidence-check.cjs');
+const { readHistoricalSources, hostSourceFiles, verifyProvenance } = require('./evidence-check.cjs');
 const { prepareFixture, TOOLS, LEASE } = require('../tests/fixtures/native-host-fixture.cjs');
 const { claudeEvents, codexEvents, outputs } = require('../tests/fixtures/terminal-model.cjs');
 const ROOT = resolve(__dirname, '..');
@@ -106,15 +106,16 @@ function validateCleanup(cleanup) {
   assert.deepEqual(cleanup, { processesStopped: true, apiClosed: true, temporaryRootRemoved: true }, 'Terminal cleanup was not verified');
 }
 
-function validateReport(report, { root = ROOT, currentHashes = hashes(root), requireCurrent = false,
+function validateReport(report, { root = ROOT, currentHashes, requireCurrent = false,
   requireHistory = false, requireCleanup = false, historicalSources = readHistoricalSources } = {}) {
   assert.ok([1, 2].includes(report.schemaVersion));
   assert.equal(report.evidenceKind, 'interactive-terminal-local-fixture');
   assert.ok(Object.hasOwn(VERSIONS, report.host));
   assert.equal(report.hostVersion, VERSIONS[report.host]);
   assert.ok(Number.isFinite(Date.parse(report.observedAt)));
-  const { verification } = verifyProvenance(report, { root, files: Object.keys(currentHashes), currentHashes,
-    requireCurrent, requireHistory, historicalSources });
+  const expected = report.source_status === 'current' ? currentHashes || hashes(root) : undefined;
+  const { verification } = verifyProvenance(report, { root, files: expected && Object.keys(expected), currentHashes: expected,
+    requireCurrent, requireHistory, historicalSources, historicalScope: (tree) => hostSourceFiles(tree, { terminal: true }) });
   assert.equal(report.cases.length, CASES.length, 'A single-case diagnostic is not full terminal evidence');
   for (let i = 0; i < CASES.length; i++) {
     validateCase(CASES[i], report.cases[i]);
@@ -164,6 +165,24 @@ function completeCase(test, observed, apiError) {
   validateCase(test, observed);
 }
 
+async function finishCase(primaryError, cleanups, checkError = () => {}) {
+  const errors = primaryError ? [primaryError] : [];
+  // Every cleanup step still runs if an earlier one fails. Check for a late
+  // model error only after the API and its connections have been closed.
+  for (const cleanup of [...cleanups, checkError]) {
+    try { await cleanup(); }
+    catch (error) { if (!errors.includes(error)) errors.push(error); }
+  }
+  if (errors.length) {
+    const [primary, ...secondary] = errors;
+    if (secondary.length) {
+      if (primary.cause) secondary.unshift(primary.cause);
+      primary.cause = secondary.length === 1 ? secondary[0] : new AggregateError(secondary, 'Additional terminal cleanup/API failures');
+    }
+    throw primary;
+  }
+}
+
 async function waitForCondition(description, predicate, { screen, checkError = () => {}, timeout = 35000,
   pollMs = 150, settleMs = 600 } = {}) {
   const end = Date.now() + timeout;
@@ -178,6 +197,14 @@ async function waitForCondition(description, predicate, { screen, checkError = (
   throw new Error(`Timed out: ${description}\n${diagnostic}`);
 }
 
+function processIdentity(stat) {
+  const end = stat.lastIndexOf(')');
+  assert.ok(end > 0, 'Invalid process stat command');
+  const fields = stat.slice(end + 1).trim().split(/\s+/);
+  assert.match(fields[19] || '', /^\d+$/, 'Invalid process start time');
+  return { state: fields[0], start: fields[19] };
+}
+
 function ownedProcesses(temp) {
   // These CLI acceptance runs use Linux. Only processes carrying this run's
   // exact temporary HOME qualify, including children orphaned by the host.
@@ -185,8 +212,8 @@ function ownedProcesses(temp) {
     try {
       const env = fs.readFileSync(`/proc/${name}/environ`, 'utf8').split('\0');
       if (!env.includes(`HOME=${join(temp, 'home')}`)) return [];
-      const stat = fs.readFileSync(`/proc/${name}/stat`, 'utf8').split(') ')[1].split(' ');
-      return stat[0] === 'Z' ? [] : [{ pid: Number(name), start: stat[19] }];
+      const stat = processIdentity(fs.readFileSync(`/proc/${name}/stat`, 'utf8'));
+      return stat.state === 'Z' ? [] : [{ pid: Number(name), start: stat.start }];
     } catch (error) {
       if (['ENOENT', 'EACCES', 'EPERM', 'ESRCH'].includes(error.code)) return [];
       throw error;
@@ -203,10 +230,10 @@ async function stopOwnedProcesses(temp) {
     if (!remaining.length) return;
     for (const processInfo of remaining) {
       try {
-        const stat = fs.readFileSync(`/proc/${processInfo.pid}/stat`, 'utf8').split(') ')[1].split(' ');
+        const stat = processIdentity(fs.readFileSync(`/proc/${processInfo.pid}/stat`, 'utf8'));
         const signal = Date.now() > end - 2000 ? 'SIGKILL' : 'SIGTERM';
         const key = `${processInfo.pid}:${processInfo.start}:${signal}`;
-        if (stat[19] === processInfo.start && !signalled.has(key)) { process.kill(processInfo.pid, signal); signalled.add(key); }
+        if (stat.start === processInfo.start && !signalled.has(key)) { process.kill(processInfo.pid, signal); signalled.add(key); }
       } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error; }
     }
     await delay(100);
@@ -228,7 +255,7 @@ async function runCase(host, test, onProgress) {
   const config = join(temp, 'config');
   const dataDir = host === 'claude' ? join(config, 'plugins/data/manifest-agent-inline') : join(temp, 'data');
   const snapshots = [], keys = [], modelRequests = [];
-  let api, launched = false, apiError, observed;
+  let api, launched = false, apiError, observed, primaryError;
   const tmux = (...args) => command('tmux', ['-S', socket, ...args]);
   const events = () => fs.existsSync(join(dataDir, 'fixture-events.jsonl'))
     ? fs.readFileSync(join(dataDir, 'fixture-events.jsonl'), 'utf8').split('\n').filter(Boolean).map(JSON.parse) : [];
@@ -351,9 +378,9 @@ async function runCase(host, test, onProgress) {
     }
     completeCase(test, observed, apiError);
   } catch (error) {
-    error.message = `${host}/${test.name}: ${error.message}`;
-    throw error;
-  } finally {
+    primaryError = error;
+  }
+  await finishCase(primaryError, [async () => {
     if (launched) {
       try {
         tmux('send-keys', 'C-c'); await delay(250);
@@ -361,11 +388,12 @@ async function runCase(host, test, onProgress) {
       } catch { /* Already exited. */ }
       try { tmux('kill-server'); } catch { /* Already exited. */ }
     }
-    if (api) { api.closeAllConnections(); await new Promise((done) => api.close(done)); }
-    await removeTemporaryRun(temp);
-    if (observed) observed.cleanup = { processesStopped: true, apiClosed: true, temporaryRootRemoved: true };
+  }, async () => {
+    if (api) { api.closeAllConnections(); await new Promise((done, fail) => api.close((error) => error ? fail(error) : done())); }
+  }, () => removeTemporaryRun(temp)], () => {
     if (apiError) throw apiError;
-  }
+  }).catch((error) => { error.message = `${host}/${test.name}: ${error.message}`; throw error; });
+  observed.cleanup = { processesStopped: true, apiClosed: true, temporaryRootRemoved: true };
   onProgress?.(`${host}: ${test.name} passed (${observed.mutationMarkers} markers)`);
   return observed;
 }
@@ -428,7 +456,11 @@ async function main(args = process.argv.slice(2)) {
     fs.writeFileSync(options.out, JSON.stringify(report, null, 2) + '\n');
   }
 }
-if (require.main === module) main().catch((error) => { console.error(error.message); process.exitCode = 1; });
+if (require.main === module) main().catch((error) => {
+  console.error(error.message);
+  if (error.cause) console.error('Additional failure:', error.cause);
+  process.exitCode = 1;
+});
 
 module.exports = { CASES, VERSIONS, counts, validateCase, validateReport, hashes, runSuite, parseArgs,
-  modelHandler, completeCase, waitForCondition, ownedProcesses, removeTemporaryRun };
+  modelHandler, completeCase, finishCase, waitForCondition, processIdentity, ownedProcesses, removeTemporaryRun };
