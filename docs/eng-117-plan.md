@@ -16,7 +16,7 @@ Audited plugin commit `1bf3c1ff4ceed3b8fedee9e60bafe0297bf73486` and upstream
 | Fred preview / SDK catalog API | Builds manifest JSON and its `meta_hash_hex` | Keep manifest hashing distinct from OCI digest resolution |
 | Agent-core internal inspector | Returns `ImageInfo \| null`; follows an index to a child before returning its digest | Public typed resolution of the top-level index/manifest |
 | `AppDeploySpec` / agent MCP schema | Forwards image strings; no image-resolution/opt-out semantics | Shared validated semantics for per-service image choices |
-| Agent-core plan and MCP callbacks | Renders the primary image and delivers native confirmation | Per-service digest/status recap, consistent with the approved/uploaded spec |
+| Agent-core plan and MCP callbacks | Plan renders the primary image; subsequent native intent confirmation lists every full image reference | Automatic resolution and per-service resolution status, consistent with the approved/uploaded spec |
 
 Relevant upstream sources:
 
@@ -37,10 +37,19 @@ passing through a loose MCP schema do not establish supported semantics.
 - Report each saved reference as user-supplied or mutable/unresolved. A preview
   hash identifies manifest JSON; a supplied digest is not a verified registry
   lookup. Do not emit speculative resolution fields into drafts.
+- Classify supplied syntax with `_image-ref.cjs` and its
+  `check-image-references.cjs` CLI. Malformed digests cannot be saved or passed
+  through the deployment workflow; the helper performs no registry lookup.
 - Forward loaded images unchanged and retain upstream native confirmation.
   State the current plan's primary-image limitation.
 - Test draft save/env-merge preservation and the published preview/MCP input
   boundary. These checks do not prove registry resolution or provider upload.
+- Execute the generated author/deploy shell checks for both hosts, including
+  malformed inputs and full digest output. This guards the executable checks;
+  prompt choices and final prose presentation still require behavioral host
+  testing. Keyword assertions would not establish that behavior.
+- Mark all four affected release-evidence rows pending; preserve their recorded
+  source hashes and reports until fresh host acceptance is run for release.
 
 ## Upstream contract to settle in ENG-954
 

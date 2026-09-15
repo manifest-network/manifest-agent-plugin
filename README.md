@@ -123,11 +123,16 @@ For each image, authoring recommends a user-supplied
 `name@sha256:<64 hex characters>` reference and preserves it exactly. To
 use a mutable tag, choose **Keep mutable tag** explicitly. The recap lists
 every saved image and distinguishes supplied digests from unresolved tags.
+The local syntax check rejects malformed digests before saving or deploying;
+it accepts `sha256:` followed by 64 lowercase hex characters and does not
+verify registry contents or availability.
 Automatic tag resolution is not available in the pinned MCP 0.22.0 runtime.
 Preview validates the manifest; its `meta_hash_hex` hashes the manifest JSON
 and does not pin an image tag. The deployment plan currently shows only
-the primary image reference. Automatic resolution and a digest recap for
-every service depend on [ENG-954](https://linear.app/liftedinit/issue/ENG-954).
+the primary image reference; the subsequent native confirmation already
+lists every service's full image reference, including supplied digests.
+Automatic tag resolution and per-service resolution status depend on
+[ENG-954](https://linear.app/liftedinit/issue/ENG-954).
 
 The draft records the compute SKU and provider UUIDs, so identical SKU names
 remain distinct choices. Optional storage is selected on that provider and

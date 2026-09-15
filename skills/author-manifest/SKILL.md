@@ -107,12 +107,32 @@ choices to **each service** in Step 4b. Format hint:
 - Preferred (immutable): `registry/name@sha256:<64 hex characters>`
 - Mutable: `registry/name:tag` or `registry/name` (implicit `latest`)
 
+Classify every input and replacement with the local syntax checker. Create
+a private temporary file with `mktemp`, bind its path as `IMAGE_SPEC_PATH`,
+and use the **Write tool** to write `{ "image": <the exact input> }`
+as JSON. Only shell-quoted paths enter the command; never interpolate an
+image into shell source, a heredoc, or `echo`. Set `IMAGE_SPEC_PATH` in the
+same Bash call; shell variables do not persist between calls.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/check-image-references.cjs" --spec-file "$IMAGE_SPEC_PATH"
+```
+
+Use the returned `images[0].status`, not the presence of `@`, to choose the
+branch below. `malformed-digest` exits 1 with `valid: false`: report
+**Malformed digest; repair required**, ask for a corrected reference or
+cancel, and rerun the check. Do not label it a pin, strip its digest, or
+offer keeping the malformed value. Other checker errors also stop this
+choice until corrected. Remove the temporary file after reading the result.
+The check accepts the supported lowercase SHA-256 syntax only; it does not
+query a registry or validate the full OCI repository grammar.
+
 Keep the original input as the requested reference. Preserve a supplied
-digest reference exactly, including any registry port or tag before `@`.
+reference with status `digest` exactly, including any registry port or tag before `@`.
 Describe it as **user-supplied**, not registry-verified. Do not substitute
 a tag or another digest during preview, saving, or env merging.
 
-For an image without a digest, explain that a tag can point to different
+For status `tag`, explain that a tag can point to different
 image contents by deployment time and automatic tag resolution is not yet
 available. Use `AskUserQuestion` to offer:
 
@@ -422,7 +442,9 @@ into the chat transcript as a literal command):
    rm -f /tmp/.spec-PROCESS_PID-TIMESTAMP.json
    ```
 
-The script prints the saved file path on stdout. Capture it as `SAVED_PATH`.
+The script rejects malformed digests before writing and prints the saved
+file path on stdout on success. Capture it as `SAVED_PATH`. On failure,
+repair the reference and repeat its Step 3 choice before trying to save again.
 
 **If the user picked "From a file" for env in Step 4** (single-service or
 per-service in stacks), merge the file values into the saved spec now. For
@@ -460,15 +482,25 @@ file's bytes.
 
 ## Step 8 — Report
 
-For **every service**, show its exact image from the reloaded `SAVED_SPEC`
-and one of these statuses:
+Check the saved file again after any repairs or env merges. Set `SAVED_PATH`
+to its shell-quoted path in this Bash call:
 
-- **User-supplied digest** — the digest reference is preserved; registry
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/check-image-references.cjs" --spec-file "$SAVED_PATH"
+```
+
+For **every entry** in the checker's `images` array, show its exact `image`
+and the status below. A failed check means the draft needs repair; do not
+report it as ready to deploy.
+
+- `digest`: **User-supplied digest** — the digest syntax is valid and the reference is preserved; registry
   contents and availability have not been verified. If the user replaced
   a tag, also show the originally requested reference; do not describe the
   replacement as an automatic resolution.
-- **Mutable tag retained by choice; digest unresolved** — the provider may
+- `tag`: **Mutable tag retained by choice; digest unresolved** — the provider may
   pull different contents at deployment time.
+- `malformed-digest`: **Malformed digest; repair required** — never call
+  this a pin. Return to Step 3 for a corrected reference or cancel.
 
 Use full references, without abbreviating the digest. Report from the saved
 file so the recap reflects any repairs. An image changed during validation

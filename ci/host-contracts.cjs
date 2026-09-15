@@ -60,6 +60,7 @@ async function probeCallbacks(dataDir) {
     }
     let writes = 0;
     let calls = 0;
+    let forwarded;
     const prompts = [];
     const progress = [];
     const logs = [];
@@ -70,7 +71,7 @@ async function probeCallbacks(dataDir) {
       walletProvider: { getAddress: async () => { throw new Error('No fixture wallet access allowed'); } },
       orchestrators: { deployApp: async (_spec, callbacks, options) => {
         calls++;
-        assert.deepEqual(_spec, spec, 'MCP must forward exact per-service image references');
+        forwarded = structuredClone(_spec);
         callbacks.onProgress({ kind: 'deployment_plan_rendered', block: { text: 'Pinned-runtime fixture plan' } });
         const verdict = await callbacks.onPlan({ summary: {} });
         if (verdict !== 'confirm') throw new ManifestMCPError('OPERATION_CANCELLED', 'Fixture plan cancelled');
@@ -120,12 +121,14 @@ async function probeCallbacks(dataDir) {
       });
       if (scenario === 'cancel-after-broadcast') {
         await assert.rejects(pending);
+        if (calls > 0) assert.deepEqual(forwarded, spec, 'MCP must forward exact per-service image references');
         let timer;
         try { await Promise.race([logArrived, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Missing paid cancellation log')), 2000); })]); }
         finally { clearTimeout(timer); }
         assert.ok(logs.some((entry) => entry.data?.lease_uuid === LEASE));
       } else {
         const result = await pending;
+        if (calls > 0) assert.deepEqual(forwarded, spec, 'MCP must forward exact per-service image references');
         const value = JSON.parse(result.content[0].text);
         if (scenario === 'complete') assert.equal(value.leaseState, 'LEASE_STATE_ACTIVE');
         else {

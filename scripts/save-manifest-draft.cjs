@@ -38,6 +38,7 @@ const { join, isAbsolute, resolve, sep } = require('node:path');
 const { tmpdir } = require('node:os');
 const { atomicWrite, getDataDir } = require('./_io.cjs');
 const { firstImage } = require('./_spec.cjs');
+const { checkImageReferences } = require('./_image-ref.cjs');
 
 function isAllowedPath(p, allowedDirs) {
   const r = resolve(p);
@@ -102,6 +103,9 @@ function autoName(spec) {
   if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) {
     console.error('stdin must be a JSON object');
     process.exit(1);
+  }
+  if (!checkImageReferences(spec).valid) {
+    throw new Error('malformed image digest; expected sha256:<64 lowercase hex characters>');
   }
 
   let outPath;

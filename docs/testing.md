@@ -156,6 +156,13 @@ image preservation in the published manifest builder and MCP deploy handler.
 Its deployer is injected: this covers forwarding, not registry resolution or
 provider upload. Those behaviors and the canonical digest recap require
 the upstream [ENG-954](https://linear.app/liftedinit/issue/ENG-954) contract.
+Image-reference tests reject malformed digest syntax, preserve complete
+references, and ensure the draft saver refuses malformed digests before
+writing. Integration cases execute the generated authoring and deployment
+shell checks on both hosts with valid and hostile malformed inputs, verifying
+full output, exit status, unchanged files, and no env-value disclosure or shell
+execution. They exercise the script calls, not a model's prompt choices or
+final prose; those remain a behavioral host-testing concern.
 Storage-check tests reject a changed UUID or
 ambiguous same-provider name while allowing the same name on another provider.
 They execute the deploy skill's documented shell command with a serialized

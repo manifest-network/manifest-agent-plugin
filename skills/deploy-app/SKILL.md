@@ -54,6 +54,20 @@ the server's ambiguity checks; never infer or backfill their IDs.
 A `services` map requires `serviceName` when `customDomain`
 is set, even when the map contains only one service.
 
+Run the local image syntax check against the file before invoking deployment.
+Set `SPEC_PATH` to its shell-quoted path in this Bash call; never
+interpolate spec contents into shell source:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/check-image-references.cjs" --spec-file "$SPEC_PATH"
+```
+
+If it exits nonzero, stop before calling the orchestrator. A report with
+`malformed-digest` means **Malformed digest; repair required**: ask for a
+corrected reference; do not call it a pin or strip the digest and retry.
+The checker's `digest` status establishes supported syntax only. Preview
+does not perform this digest check in MCP 0.22.0.
+
 Preserve every `image` string exactly, whether top-level or per-service,
 including supplied digests, registry ports, and any tag before `@`. Pass
 the loaded spec to the orchestrator without replacing a pin with a tag,

@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, writeFileSync, readFileSync, statSync, rmSync } = require('node:fs');
+const { mkdtempSync, writeFileSync, readFileSync, statSync, existsSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join, dirname, isAbsolute } = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -134,8 +134,8 @@ for (const { name, serviceName, spec } of scenarios) {
       target.env = { ...target.env, ...mergedEnv };
       // Full equality covers SKU/storage names and UUIDs, unrelated services,
       // existing env keys, exact image references (pins and mutable opt-outs),
-      // and legacy specs that never had identity fields. Filename sanitization
-      // must not strip a digest or a registry port from the saved image.
+      // and legacy specs that never had identity fields. This checks the stored
+      // image independently of the intentionally simplified draft filename.
       assert.deepEqual(JSON.parse(readFileSync(specPath, 'utf8')), expected);
       assert.equal(statSync(specPath).mode & 0o777, 0o600);
     });
@@ -157,5 +157,19 @@ test('save refuses to overwrite a draft with a different selected SKU', () => {
     assert.equal(refused.stdout, '');
     assert.equal(readFileSync(specPath, 'utf8'), before);
     assert.equal(statSync(specPath).mode & 0o777, 0o600);
+  });
+});
+
+test('save refuses malformed digests before creating a draft in either spec shape', () => {
+  withDataDir((dataDir) => {
+    for (const image of ['nginx@', 'nginx@sha256:abc', `nginx@sha256:${'A'.repeat(64)}`]) {
+      for (const spec of [{ image, size: 'small' }, { size: 'small', services: { app: { image } } }]) {
+        const result = runScript('save-manifest-draft.cjs', [], JSON.stringify(spec), dataDir);
+        assert.equal(result.status, 1);
+        assert.equal(result.stdout, '');
+        assert.match(result.stderr, /malformed image digest/);
+        assert.equal(existsSync(join(dataDir, 'manifests-drafts')), false);
+      }
+    }
   });
 });

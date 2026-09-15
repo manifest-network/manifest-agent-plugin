@@ -152,6 +152,11 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 - `check-storage-selection.cjs` compares a draft's storage identity metadata
   with `browse_catalog` before deployment. It rejects changed or ambiguous
   storage selections; it does not add storage UUID support to MCP.
+- `check-image-references.cjs --spec-file <path>` uses `_image-ref.cjs` to
+  classify full references as `digest`, `tag`, or `malformed-digest` without
+  registry access. Authoring and deployment stop on malformed digests; the
+  draft saver enforces the same check before writing. Syntax validity does
+  not establish registry availability or validate the full repository grammar.
 - `ci/evidence-check.cjs` checks current host-report source hashes and distinguishes historical commit evidence; CI runs it alongside policy completeness. See `docs/approval-validation.md` for rerun and history requirements.
 - `ci/terminal-host-smoke.cjs` drives the actual Claude and Codex terminal UIs through a private tmux socket, a loopback model fixture, and marker-only MCP tools. It records rendered prompts, input keys, progress, results and mutation counts. See `docs/host-acceptance.md` for the pinned CLI versions and scope.
 - `ci/lease-state-parity.cjs --data-dir <runtime-dir>` compares the plugin's numeric `STATES` table with the installed manifestjs `LeaseState` enum, excluding the SDK's `UNRECOGNIZED = -1` sentinel. CI runs it after runtime installation; its unit tests use fixtures and require no runtime packages.
@@ -278,9 +283,14 @@ Helper: `scripts/save-manifest-draft.cjs` (atomic write + `0600`, refuses to ove
 
 Authoring preserves user-supplied digest references, offers an explicit
 mutable-tag choice for every service, and reports the exact saved images.
+The local image-reference checker rejects malformed digest suffixes, which
+the pinned preview's loose image validation otherwise accepts. Reports
+distinguish malformed digests from valid supplied syntax and unresolved tags.
 Deployment forwards those references unchanged. MCP 0.22.0 does not expose
 tag resolution; `meta_hash_hex` identifies manifest JSON, not OCI image
 contents. Its canonical DeploymentPlan shows the primary image only.
+The subsequent native intent confirmation lists all service image references;
+it does not resolve tags or attach resolution statuses to those references.
 
 [ENG-954](https://linear.app/liftedinit/issue/ENG-954) blocks automatic pinning
 and per-service digest rendering. It must establish matching SDK/MCP types,
