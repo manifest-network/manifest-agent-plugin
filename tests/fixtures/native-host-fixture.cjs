@@ -30,6 +30,7 @@ function serve(server) {
     result(call.id, { isError, content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
   };
   const progress = (call, phase) => {
+    record({ kind: 'progress', phase });
     send({ method: 'notifications/progress', params: { progressToken: call.params._meta?.progressToken || `fixture-${call.id}`, progress: ++sequence, message: phase } });
     send({ method: 'notifications/message', params: { level: 'info', logger: 'manifest-native-fixture', data: { phase, lease_uuid: LEASE } } });
   };
@@ -58,13 +59,14 @@ function serve(server) {
       if (!entry) return;
       pending.delete(call.id);
       const accepted = call.result?.action === 'accept' && call.result.content?.confirm === true;
-      record({ kind: 'elicitation_result', phase: entry.phase, accepted });
+      record({ kind: 'elicitation_result', phase: entry.phase, action: call.result?.action, accepted });
       if (entry.phase === 'recovery') done(entry.call, { status: 'partial', lease_uuid: LEASE, broadcast: true, domainVerified: false, recoveryAccepted: accepted });
       else if (accepted) mutate(entry.call);
       else done(entry.call, { code: 'OPERATION_CANCELLED', broadcast: false });
       return;
     }
     if (call.method === 'notifications/cancelled') {
+      record({ kind: 'cancellation' });
       for (const [id, entry] of pending) if (entry.call.id === call.params.requestId) {
         pending.delete(id);
         send({ method: 'notifications/cancelled', params: { requestId: id } });

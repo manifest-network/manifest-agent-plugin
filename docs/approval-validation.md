@@ -124,6 +124,12 @@ separately; neither set exercises production orchestrators or live chains.
 
 ## Native terminal UI validation
 
+The later ENG-894 [terminal acceptance matrix](host-acceptance.md#interactive-terminal-fixtures)
+records nine cases each on Claude Code 2.1.270 and Codex CLI 0.154.0 using
+the reproducible tmux harness, including progress, paid-partial results and
+post-broadcast cancellation limitations. The older four-case observation
+below retains its original scope and source commit.
+
 On 2026-09-09, Claude Code 2.1.263 was also exercised in an actual Linux
 terminal at plugin revision `0314a34`. The sessions reused the isolated
 plugin, local API, and harmless MCP fixtures from the harness, with

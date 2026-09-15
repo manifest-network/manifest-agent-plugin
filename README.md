@@ -302,7 +302,21 @@ original password if your wallet is encrypted.
 
 ### Uninstalling
 
-`/plugin uninstall manifest-agent` (or the equivalent UI action) removes the plugin and its data directory, including your config and keyfiles. **Back up `$MANIFEST_PLUGIN_DATA/keys/` before uninstalling** if you want to preserve the wallet — without the keyfile + the password from `config.json`, the wallet is unrecoverable from the plugin alone (you'd need the original mnemonic).
+`/plugin uninstall manifest-agent` (or the equivalent UI action) removes the plugin and its data directory, including your config and keyfiles. **Back up `$MANIFEST_PLUGIN_DATA` before uninstalling** if you want to preserve the wallet — without the keyfile + the password from `config.json`, the wallet is unrecoverable from the plugin alone (you'd need the original mnemonic).
+
+To reinstall while retaining Claude's data, use the CLI's `--keep-data` option:
+
+```bash
+claude plugin uninstall 'manifest-agent@<marketplace-name>' --keep-data
+claude plugin install 'manifest-agent@<marketplace-name>'
+```
+
+Replace `<marketplace-name>` with the marketplace shown by `claude plugin list`,
+then start a new Claude session. Codex's `codex plugin remove manifest-agent@manifest`
+followed by `codex plugin add manifest-agent@manifest` preserves its separate
+data directory. Both current-version paths and automatic runtime repair were
+checked with encrypted wallets and saved records; see
+[current-install acceptance](docs/current-install-acceptance.md).
 
 ## Skills reference
 

@@ -90,9 +90,16 @@ unknown; users must inspect existing state before retrying. Headless hosts
 that cannot present native prompts support the read-only workflow subset.
 
 Current evidence includes the real Codex 0.153.4 app-server with harmless
-fixtures, both pinned launchers and published callback contracts. Interactive
-UI and live testnet coverage remain explicit prerequisites for publishing
-the Codex archive; Claude-only releases can proceed independently.
+fixtures, both pinned launchers and published callback contracts, CLI terminal
+observations, the live testnet lifecycle, and
+[current-version reinstall and repair](current-install-acceptance.md).
+The 0.4.0 evidence explicitly exempts legacy upgrades because the repository
+owner confirms there are no existing legacy users; the gate requires reinstall
+and runtime-repair coverage in their place. Other records still require
+upgrade coverage unless they declare that exemption. GUI behavior and
+version-to-version migration were not tested. Interactive and live testnet
+evidence remains bound to the recorded source hashes and package version;
+a new version needs its own release record.
 
 ## Hotfixes
 

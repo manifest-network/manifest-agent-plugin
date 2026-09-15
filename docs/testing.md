@@ -6,8 +6,12 @@ and the release evidence matrix are covered in
 generated Claude skill drift fails the build. `ci/host-contracts.cjs` compares
 both real launchers against the installed runtime and tests published callback
 contracts offline. `ci/codex-host-smoke.cjs` characterizes the actual Codex
-app-server with harmless fixtures; CI pins Codex CLI 0.153.4. These checks do
-not substitute for interactive UI and live testnet evidence.
+app-server with harmless fixtures; CI pins Codex CLI 0.153.4.
+`ci/terminal-host-smoke.cjs` exercises the real terminal interfaces with
+scripted keys and local model responses, using Claude Code 2.1.270 or Codex
+CLI 0.154.0 plus tmux. It needs no API credentials. Its unit tests run in the
+normal suite; the terminal matrix is an explicit local acceptance command.
+Live testnet and published-version upgrade evidence remain separate.
 
 This document covers running and adding tests for the manifest-agent plugin. For the higher-level architecture, see [`../CLAUDE.md`](../CLAUDE.md).
 

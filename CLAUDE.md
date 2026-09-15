@@ -153,6 +153,7 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
   with `browse_catalog` before deployment. It rejects changed or ambiguous
   storage selections; it does not add storage UUID support to MCP.
 - `ci/evidence-check.cjs` checks current host-report source hashes and distinguishes historical commit evidence; CI runs it alongside policy completeness. See `docs/approval-validation.md` for rerun and history requirements.
+- `ci/terminal-host-smoke.cjs` drives the actual Claude and Codex terminal UIs through a private tmux socket, a loopback model fixture, and marker-only MCP tools. It records rendered prompts, input keys, progress, results and mutation counts. See `docs/host-acceptance.md` for the pinned CLI versions and scope.
 - `ci/lease-state-parity.cjs --data-dir <runtime-dir>` compares the plugin's numeric `STATES` table with the installed manifestjs `LeaseState` enum, excluding the SDK's `UNRECOGNIZED = -1` sentinel. CI runs it after runtime installation; its unit tests use fixtures and require no runtime packages.
 - Use `rg -n '<script>.cjs' skills/ scripts/` to locate callers — the call graph drifts and isn't worth restating in prose.
 

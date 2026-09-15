@@ -14,6 +14,8 @@ jobs:
         node: ['22.19.0', '24']
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -54,6 +56,18 @@ jobs:
           done
           exit $status
 
+      - name: Check release evidence schema and host statuses
+        # Pending and older-version records are valid here; publication checks source eligibility.
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const record = require('./docs/host-acceptance-release.json');
+          require('./ci/host-acceptance.cjs').codexReleaseCandidate(record);
+          for (const kind of ['interactive', 'testnet']) {
+            assert.ok(['pending', 'complete'].includes(record.hosts?.claude?.[kind]?.status), `Invalid claude/${kind} evidence status`);
+          }
+          NODE
+
       - name: Verify version consistency across manifests
         run: |
           PKG=$(node -p "require('./package.json').version")
@@ -71,8 +85,11 @@ jobs:
 
       - name: Verify recorded host evidence provenance
         run: |
-          node ci/evidence-check.cjs
-          node ci/host-acceptance.cjs
+          node ci/evidence-check.cjs --fetch-history --require-history
+          node ci/host-acceptance.cjs --require-history
+          for report in docs/host-evidence/*-terminal*.json; do
+            node ci/terminal-host-smoke.cjs --check "$report" --require-history
+          done
 
       - name: Verify PreToolUse policy completeness (matcher tools named in policy + CLAUDE.md parity)
         # Checks the dependency-free matcher / runtime policy / docs contract.
@@ -149,6 +166,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24'

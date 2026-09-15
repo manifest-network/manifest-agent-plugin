@@ -49,10 +49,19 @@ keeps routine source/version changes independent of a local Codex install;
 CI validates its freshly generated report against the checkout. Tagged Claude
 releases proceed while Codex acceptance is pending.
 
-ENG-894 remains open for the interactive UI and funded testnet runs, their
-cleanup evidence, and the separate compatibility version/tag release. See
-[the acceptance matrix](host-acceptance.md). The feature branch is
-`feat/eng-894-codex-packaging`; package versions remain 0.4.0.
+The packaging implementation merged in PR #16. The terminal follow-up records
+nine interactive CLI cases each for Claude Code 2.1.270 and Codex CLI 0.154.0,
+with 520 passing unit tests. Denial and pre-execution cancellation preserve
+zero mutations; accepted calls and paid-partial recovery retain the expected
+marker counts. Progress and post-broadcast cancellation visibility limitations
+are documented with the captured screens in [the acceptance matrix](host-acceptance.md).
+
+Both hosts now have completed [live-testnet and cleanup evidence](live-testnet-acceptance.md)
+and [current-install preservation evidence](current-install-acceptance.md).
+The repository owner excluded legacy-version migration because there are no
+existing users of the old plugin; native reinstall and runtime repair are
+the required replacement checks. The separate compatibility version/tag
+release remains. No GUI validation is included. Package versions remain 0.4.0.
 
 Sources checked during implementation (2026-09-11):
 
