@@ -92,7 +92,7 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **switch-chain** — Switch testnet/mainnet with mainnet confirmation before write
 - **set-gas-price** — Change gas fee token, price, and/or gas multiplier
 - **refresh-registry** — Re-fetch chain data from Cosmos chain registry
-- **author-manifest** — Plugin-side draft creation. Builds + validates a Fred spec via `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview`, saves via `save-manifest-draft.cjs` to `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json` (or a user-chosen path). No readiness pre-flight — the orchestrated deploy tool re-checks at broadcast time. No client-side image inspection or domain validation — both moved upstream. See DECISION 1.
+- **author-manifest** — Plugin-side draft creation. Builds + validates a Fred spec via `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview`, saves via `save-manifest-draft.cjs` to `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json` (or a user-chosen path). Preserves supplied image digests and asks for an explicit mutable-tag choice per service. No readiness pre-flight — the orchestrated deploy tool re-checks at broadcast time. No client-side image inspection or domain validation. MCP 0.22.0 exposes no tag-resolution API; preview validates the manifest, not registry contents. See DECISION 1 and the ENG-117 boundary below.
 - **troubleshoot-deployment** — Picker (`$ARGUMENTS` → `manifest://leases/active` → `list-saved-manifests.cjs` → lookup-by-FQDN → user-paste) plus a thin invocation of `mcp__plugin_manifest-agent_manifest-agent__troubleshoot_deployment_orchestrated`, which is a pure chain query returning pre-rendered Markdown. The cleanup elicitation, when the user opts in, drives `mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated` as a separate tool call. The outer close invocation is gated before execution; its internal SDK operations do not trigger separate host PreToolUse events.
 - **deploy-app** — Thin invocation of `mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated` over a complete spec JSON file. `/manifest-agent:deploy-app <path>` is the only input mode — the orchestrated tool requires a fully-formed `DeploySpec` (`validateSpec()` runs first), so non-file input directs the user at `/manifest-agent:author-manifest`. The wrapper owns plan rendering, fee itemization, partial-success recovery, and manifest persistence (via `MANIFEST_AGENT_DATA_DIR`) end-to-end through MCP elicitation. The skill resolves the file, invokes the tool, renders the typed `DeployResult`, and journals the run.
 - **manage-domain** — Lookup uses `mcp__plugin_manifest-agent_manifest-agent__lookup_custom_domain_orchestrated({fqdn})`, returning `{action:"lookup",fqdn,lease:{leaseUuid}|null}`. Set/clear use `manage_domain_orchestrated`, returning `{action,leaseUuid,verified,finalCustomDomain}` after native confirmation and verification. Errors may follow a successful broadcast; query the existing lease before proposing a retry.
@@ -273,6 +273,22 @@ in the plan and estimate ([ENG-944](https://linear.app/liftedinit/issue/ENG-944)
 `/manifest-agent:deploy-app <path>` consumes a spec file. The skill requires a `<path>` argument pointing at a saved spec; invocations without an argument are routed to `/manifest-agent:author-manifest` first, then the user re-invokes `deploy-app` with the saved path. The pre-rewire one-shot "deploy-with-inline-author" UX is gone — `deploy_app_orchestrated` requires a complete `DeploySpec` via `validateSpec()`.
 
 Helper: `scripts/save-manifest-draft.cjs` (atomic write + `0600`, refuses to overwrite). Skills should NOT write spec files via `Write` directly — it bypasses the safety checks.
+
+### Image digest boundary (ENG-117)
+
+Authoring preserves user-supplied digest references, offers an explicit
+mutable-tag choice for every service, and reports the exact saved images.
+Deployment forwards those references unchanged. MCP 0.22.0 does not expose
+tag resolution; `meta_hash_hex` identifies manifest JSON, not OCI image
+contents. Its canonical DeploymentPlan shows the primary image only.
+
+[ENG-954](https://linear.app/liftedinit/issue/ENG-954) blocks automatic pinning
+and per-service digest rendering. It must establish matching SDK/MCP types,
+resolution/opt-out semantics, and upstream plan/persistence behavior before
+the plugin adds tool calls or metadata. The internal inspector currently
+returns a selected platform manifest's digest after following a multi-arch
+index; it is not a safe substitute for a public index-pinning contract.
+See [the integration plan](docs/eng-117-plan.md) for the release gate.
 
 ### Sensitive env values (file-pipe pattern)
 

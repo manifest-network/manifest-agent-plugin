@@ -66,6 +66,39 @@ const scenarios = [
     serviceName: null,
     spec: { image: 'nginx:1.27', port: 80, size: 'small', env: { LOG_LEVEL: 'info', API_KEY: 'old-private-value' } },
   },
+  {
+    name: 'digest-pinned one-service map',
+    serviceName: 'app',
+    spec: {
+      ...IDENTITY,
+      services: {
+        app: {
+          image: `docker.io/library/nginx@sha256:${'a'.repeat(64)}`,
+          ports: { '80/tcp': { ingress: true } },
+        },
+      },
+    },
+  },
+  {
+    name: 'stack with a registry port, tag-plus-digest, and mutable opt-outs',
+    serviceName: 'web',
+    spec: {
+      ...IDENTITY,
+      services: {
+        web: {
+          image: `registry.example.com:5443/team/web:stable@sha256:${'b'.repeat(64)}`,
+          ports: { '8080/tcp': { ingress: true } },
+        },
+        db: { image: 'postgres:16' },
+        worker: { image: 'busybox' },
+      },
+    },
+  },
+  {
+    name: 'digest-pinned legacy flat spec',
+    serviceName: null,
+    spec: { size: 'small', image: `nginx@sha256:${'c'.repeat(64)}`, port: 80 },
+  },
 ];
 
 for (const { name, serviceName, spec } of scenarios) {
@@ -100,7 +133,9 @@ for (const { name, serviceName, spec } of scenarios) {
       const target = serviceName === null ? expected : expected.services[serviceName];
       target.env = { ...target.env, ...mergedEnv };
       // Full equality covers SKU/storage names and UUIDs, unrelated services,
-      // existing env keys, and legacy specs that never had identity fields.
+      // existing env keys, exact image references (pins and mutable opt-outs),
+      // and legacy specs that never had identity fields. Filename sanitization
+      // must not strip a digest or a registry port from the saved image.
       assert.deepEqual(JSON.parse(readFileSync(specPath, 'utf8')), expected);
       assert.equal(statSync(specPath).mode & 0o777, 0o600);
     });

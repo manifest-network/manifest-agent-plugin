@@ -52,6 +52,21 @@ the server's ambiguity checks; never infer or backfill their IDs.
 A `services` map requires `serviceName` when `customDomain`
 is set, even when the map contains only one service.
 
+Preserve every `image` string exactly, whether top-level or per-service,
+including supplied digests, registry ports, and any tag before `@`. Pass
+the loaded spec to the orchestrator without replacing a pin with a tag,
+resolving it again, or adding unsupported image-resolution metadata.
+Report a rejected image as an error; do not retry with a mutable reference.
+
+If the spec contains mutable references, explain that their digests are
+unresolved and the provider may pull different contents at deployment time.
+If the user requires an immutable deployment, stop and direct them to
+`{{invoke:author-manifest}}` to supply digest references. A manifest preview's
+`meta_hash_hex` hashes JSON and does not establish the digest of a tagged
+image. The MCP 0.22.0 plan shows the primary image reference; it has no
+per-service resolved-digest recap. Keep the server's native confirmation
+flow in Step 2; do not manufacture a resolved-digest plan.
+
 When either `storageSkuUuid` or `storageProviderUuid` is present, these are
 plugin documentation-only metadata; MCP 0.22.0 does not honor them as
 storage selectors. Call `{{tool:fred/browse_catalog}}`
