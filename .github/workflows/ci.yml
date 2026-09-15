@@ -56,6 +56,10 @@ jobs:
           done
           exit $status
 
+      - name: Check release evidence schema and Codex statuses
+        # Pending and older-version records are valid here; publication checks source eligibility.
+        run: node -e "require('./ci/host-acceptance.cjs').codexReleaseCandidate(require('./docs/host-acceptance-release.json'))"
+
       - name: Verify version consistency across manifests
         run: |
           PKG=$(node -p "require('./package.json').version")
