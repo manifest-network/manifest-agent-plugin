@@ -192,7 +192,7 @@ acceptance matrix against the intended source, including the funded live-testnet
 run for testnet rows, and update the release references with the new evidence.
 Ordinary `npm test` runs use a synthetic release fixture to test the validator;
 they do not require the active release record to be complete or current.
-PR CI checks the real record's JSON, schema version and Codex row statuses.
+PR CI checks the real record's JSON, schema version and both hosts' row statuses.
 Pending rows and records for another version pass this metadata check;
 publication still requires source eligibility.
 Pending Codex rows skip its artifact; stale completed rows fail validation.

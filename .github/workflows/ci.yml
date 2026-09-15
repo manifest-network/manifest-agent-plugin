@@ -56,9 +56,17 @@ jobs:
           done
           exit $status
 
-      - name: Check release evidence schema and Codex statuses
+      - name: Check release evidence schema and host statuses
         # Pending and older-version records are valid here; publication checks source eligibility.
-        run: node -e "require('./ci/host-acceptance.cjs').codexReleaseCandidate(require('./docs/host-acceptance-release.json'))"
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const record = require('./docs/host-acceptance-release.json');
+          require('./ci/host-acceptance.cjs').codexReleaseCandidate(record);
+          for (const kind of ['interactive', 'testnet']) {
+            assert.ok(['pending', 'complete'].includes(record.hosts?.claude?.[kind]?.status), `Invalid claude/${kind} evidence status`);
+          }
+          NODE
 
       - name: Verify version consistency across manifests
         run: |
