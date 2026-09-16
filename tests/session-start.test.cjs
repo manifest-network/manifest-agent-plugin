@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, symlinkSync, mkdirSync, cpSync } = require('node:fs');
+const { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, symlinkSync, mkdirSync, cpSync, chmodSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -295,6 +295,13 @@ function assertHookOutput(result) {
   return output;
 }
 
+function assertPolicyFallback(result) {
+  assert.equal(result.status, 0, result.stderr);
+  const policy = /cat <<'POLICY'\n([\s\S]*?)\nPOLICY/.exec(readFileSync(SCRIPT, 'utf8'))[1].trimEnd();
+  assert.equal(result.stdout, policy + '\n', 'one complete plain policy, without JSON fragments or duplicate content');
+  assert.match(result.stderr, /Session report unavailable; emitting the runtime policy as plain text/);
+}
+
 test('SessionStart delegates fresh runtime setup to the shared command with the persistent data path', (t) => {
   const f = bootstrapFixture(t, `
     const fs = require('node:fs');
@@ -333,6 +340,7 @@ test('SessionStart delivers safe identity and faucet advice to both model and us
     fs.writeFileSync(require('node:path').join(process.env.MANIFEST_PLUGIN_DATA, 'order'), 'setup\\n');
   `);
   writeFileSync(join(f.root, 'scripts/migrate-credentials.cjs'), `
+    require('node:assert/strict').deepEqual(process.argv.slice(2), ['--automatic']);
     require('node:fs').appendFileSync(require('node:path').join(process.env.MANIFEST_PLUGIN_DATA, 'order'), 'migration\\n');
     console.error('MIGRATION_DIAGNOSTIC');
     console.log('ACCIDENTAL_HELPER_STDOUT');
@@ -362,6 +370,67 @@ test('SessionStart treats failed balance diagnostics as optional after setup and
   assert.doesNotMatch(output.systemMessage, /request_faucet/);
 });
 
+for (const [name, reporter] of [
+  ['process exit', 'process.exit(17);'],
+  ['signal after buffered partial output', `exports.reportHook = async ({ stdout }) => {
+    stdout.write('{"hookSpecificOutput":'); process.kill(process.pid, 'SIGKILL');
+  };`],
+  ['process exit after private-fd partial output', `require('node:fs').writeSync(3, '{"hookSpecificOutput":'); process.exit(17);`],
+  ['process exit after complete private-fd output', `require('node:fs').writeSync(3, '{"systemMessage":"UNTRUSTED_DIAGNOSTIC"}'); process.exit(17);`],
+  ['empty successful process exit', 'process.exit(0);'],
+  ['malformed formatter output', `exports.reportHook = async ({ stdout }) => stdout.write('{');`],
+  ['duplicate formatter objects', `exports.reportHook = async ({ stdout }) => stdout.write('{}\\n{}');`],
+  ['valid JSON with missing policy', `exports.reportHook = async ({ stdout }) => stdout.write(JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'UNTRUSTED_DIAGNOSTIC' },
+  }));`],
+]) {
+  test(`SessionStart tolerates reporter ${name} and still delivers the policy with exit 0`, (t) => {
+    const f = bootstrapFixture(t, '');
+    writeFileSync(join(f.root, 'scripts/session-identity.cjs'), reporter);
+    const result = f.run();
+    assertPolicyFallback(result);
+    assert.match(readFileSync(f.env.CLAUDE_ENV_FILE, 'utf8'), /export MANIFEST_PLUGIN_DATA=/);
+    assert.doesNotMatch(result.stdout, /UNTRUSTED_DIAGNOSTIC|hookSpecificOutput/);
+  });
+}
+
+for (const source of ['startup', 'resume']) {
+  test(`SessionStart source ${source} survives Node wrapper stdout noise and preserves usable exports`, (t) => {
+    const f = bootstrapFixture(t, '');
+    configureSessionIdentity(f);
+    const shim = join(f.root, 'shim');
+    mkdirSync(shim);
+    const nodePath = join(shim, 'node');
+    writeFileSync(nodePath, `#!/bin/bash
+printf '%s\\n' 'Now using node SHIM_NOISE' '{"systemMessage":"SHIM_NOISE"}'
+'${process.execPath.replace(/'/g, `'\\''`)}' "$@"
+result=$?
+printf '%s\\n' 'SHIM_NOISE after node'
+exit "$result"
+`);
+    chmodSync(nodePath, 0o700);
+    writeFileSync(join(f.root, 'scripts/migrate-credentials.cjs'), `
+      require('node:assert/strict').deepEqual(process.argv.slice(2), ['--automatic']);
+      require('node:fs').writeFileSync(require('node:path').join(process.env.MANIFEST_PLUGIN_DATA, 'migrated'), 'yes');
+    `);
+    const result = f.run({ PATH: `${shim}:${process.env.PATH}` }, JSON.stringify({ source, session_id: 'noisy-node-session' }));
+    const output = assertHookOutput(result);
+    assert.doesNotMatch(result.stdout, /SHIM_NOISE/);
+    assert.match(result.stderr, /SHIM_NOISE/);
+    assert.equal(existsSync(join(f.data, 'migrated')), source === 'startup');
+    if (source === 'startup') assert.match(output.systemMessage, /Gas-token balance: 0 umfx/);
+    else assert.equal(output.systemMessage, undefined);
+    const exports = readFileSync(f.env.CLAUDE_ENV_FILE, 'utf8');
+    assert.doesNotMatch(exports, /SHIM_NOISE/);
+    const sourced = spawnSync('/bin/bash', ['-c', 'source "$CLAUDE_ENV_FILE"\nprintf "%s\\n" "$MANIFEST_PLUGIN_DATA" "$MANIFEST_SESSION_ID"'], {
+      env: f.env, encoding: 'utf8', timeout: 2000,
+    });
+    assert.equal(sourced.status, 0, sourced.stderr);
+    assert.equal(sourced.stderr, '');
+    assert.equal(sourced.stdout, `${f.data}\nnoisy-node-session\n`);
+  });
+}
+
 test('SessionStart skips the balance query when credential migration fails without undoing setup', (t) => {
   const f = bootstrapFixture(t, '');
   configureSessionIdentity(f);
@@ -372,6 +441,8 @@ test('SessionStart skips the balance query when credential migration fails witho
   for (const text of [output.systemMessage, output.hookSpecificOutput.additionalContext]) {
     assert.match(text, /Credential migration failed; wallet startup is blocked/);
     assert.match(text, /Unlock the OS credential store/);
+    assert.match(text, /ask the agent to run node/);
+    assert.match(text, /in its configured tool shell/);
     assert.match(text, /migrate-credentials\.cjs/);
     assert.match(text, /MANIFEST_CREDENTIAL_STORE=file/);
   }
@@ -400,6 +471,16 @@ test('SessionStart reads source even when the host omits CLAUDE_ENV_FILE', (t) =
   assert.equal(output.systemMessage, undefined);
   assert.equal(existsSync(join(f.data, 'order')), false);
 });
+
+for (const envFile of [true, false]) {
+  test(`SessionStart normalizes closed stdin with CLAUDE_ENV_FILE ${envFile ? 'set' : 'unset'}`, (t) => {
+    const f = bootstrapFixture(t, '');
+    const result = spawnSync('/bin/bash', ['-c', 'exec bash "$CLAUDE_PLUGIN_ROOT/scripts/session-start.sh" <&-'], {
+      env: { ...f.env, ...(envFile ? {} : { CLAUDE_ENV_FILE: '' }) }, encoding: 'utf8', timeout: 3000,
+    });
+    assertHookOutput(result);
+  });
+}
 
 test('SessionStart reports missing Node before running dependency setup', (t) => {
   const f = bootstrapFixture(t, 'throw new Error("must not execute");');

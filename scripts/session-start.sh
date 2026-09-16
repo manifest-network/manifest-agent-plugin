@@ -27,8 +27,9 @@
 #
 # Ordering is deliberate: capture stdin and the canonical policy, export
 # the environment, repair dependencies, then migrate and report on startup.
-# Successful hooks emit a single JSON object. An early failure still emits
-# the policy as plain stdout for diagnostics, as previous hooks did.
+# Completed reports emit a single JSON object. A reporter failure falls back
+# to the plain policy with exit 0 so Claude still loads it. Environment and
+# setup failures retain their nonzero status and plain diagnostic policy.
 # `set -euo pipefail` means a failed write produces a non-
 # zero exit Claude Code can surface, rather than silently leaving the
 # session in a half-enforced state.
@@ -37,6 +38,10 @@
 # runtime behavior.
 
 set -euo pipefail
+
+# With fd 0 closed, older Bash can reuse it for command substitution's pipe,
+# making `cat` read its own output forever. Normalize it before any capture.
+if ! ( exec 3<&0 ) 2>/dev/null; then exec </dev/null; fi
 
 # Only real hook invocations need stdin (session_id and startup source).
 # Policy-only CI/ad-hoc invocations must not wait on an unflushed pipe.
@@ -212,8 +217,7 @@ permission bypasses as a substitute for the user's confirmation.
 POLICY
 )
 
-# Preserve the canonical policy if dependency setup or environment export
-# aborts before the structured result can be emitted.
+# Preserve the canonical policy if no structured result can be emitted.
 POLICY_EMITTED=false
 trap 'if [ "$POLICY_EMITTED" = false ]; then printf "%s\n" "$RUNTIME_POLICY"; fi' EXIT
 
@@ -224,7 +228,13 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
     printf 'manifest-agent: Node 22.19.0+ is required. Install Node and restart Claude Code.\n' >&2
     exit 1
   fi
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/host-env.cjs" claude --shell >> "$CLAUDE_ENV_FILE"
+  # The adapter's exports have their own descriptor. A PATH wrapper or preload
+  # printing a Node banner must not put executable noise into the env file.
+  node -e '
+    const { writeSync } = require("node:fs");
+    process.stdout.write = value => { writeSync(3, value); return true; };
+    require(process.argv[1]).main(["claude", "--shell"]);
+  ' "${CLAUDE_PLUGIN_ROOT}/scripts/host-env.cjs" 3>> "$CLAUDE_ENV_FILE" >&2
 
   # Extract session_id from the captured hook payload. Use jq when
   # available, otherwise fall back to a tolerant grep+sed. Empty
@@ -271,23 +281,54 @@ if [ -n "${CLAUDE_PLUGIN_DATA:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/package.json"
   # only on initial startup, while policy and exports still run on every source.
   # Missing/malformed source preserves direct invocation and older-host behavior.
   SESSION_SOURCE=$(printf '%s' "$HOOK_PAYLOAD" | node -e '
+    const { writeSync } = require("node:fs");
     let input = ""; process.stdin.setEncoding("utf8");
     process.stdin.on("data", chunk => { input += chunk; });
     process.stdin.on("end", () => {
       let source; try { source = JSON.parse(input).source; } catch {}
-      process.stdout.write(typeof source === "string" && source ? source : "startup");
+      writeSync(3, typeof source !== "string" || !source || source === "startup" ? "startup" : "skip");
     });
-  ')
-  REPORT_ARGS=(--hook-report --skip-probe)
+  ' 3>&1 >&2) || SESSION_SOURCE=startup
+  REPORT_MODE=skip
   if [ "$SESSION_SOURCE" = startup ]; then
     # Persist credentials before the query launcher reads them. Raw helper
     # output never enters the hook JSON: failure uses a fixed recovery message.
-    REPORT_ARGS=(--hook-report)
-    if ! MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-credentials.cjs" >&2; then
-      REPORT_ARGS=(--hook-report --migration-failed)
+    REPORT_MODE=startup
+    if ! MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-credentials.cjs" --automatic >&2; then
+      REPORT_MODE=migration-failed
     fi
   fi
-  printf '%s\n' "$RUNTIME_POLICY" | MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" \
-    node "${CLAUDE_PLUGIN_ROOT}/scripts/session-identity.cjs" "${REPORT_ARGS[@]}"
-  POLICY_EMITTED=true
+
+  # Buffer the formatter's output until the whole process succeeds. Raw stdout
+  # (including banners) goes to stderr, never to Claude. Validate the one JSON
+  # object and its complete policy before publishing through the private fd.
+  # A crash, signal, partial write, or malformed result remains optional: exit 0
+  # lets the EXIT fallback deliver the unchanged policy exactly once.
+  if REPORT_OUTPUT=$(printf '%s\n' "$RUNTIME_POLICY" | MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node -e '
+    (async () => {
+      const { readFileSync, writeSync } = require("node:fs");
+      const policy = readFileSync(0, "utf8").trimEnd();
+      let report = "";
+      await require(process.argv[1]).reportHook({ policy,
+        skipProbe: process.argv[2] === "skip", migrationFailed: process.argv[2] === "migration-failed",
+        stdout: { write: value => { report += value; } },
+      });
+      const output = JSON.parse(report);
+      const hook = output?.hookSpecificOutput;
+      const context = hook?.additionalContext;
+      if (!output || Object.keys(output).some(key => !["hookSpecificOutput", "systemMessage"].includes(key))
+        || !hook || Object.keys(hook).sort().join(",") !== "additionalContext,hookEventName"
+        || hook.hookEventName !== "SessionStart" || typeof context !== "string" || context.length > 10000
+        || !(context === policy || context.startsWith(policy + "\n\n"))
+        || (Object.hasOwn(output, "systemMessage") && (typeof output.systemMessage !== "string" || output.systemMessage.length > 10000))) {
+        throw new Error("Invalid session report");
+      }
+      writeSync(3, JSON.stringify(output));
+    })().catch(() => { process.exitCode = 1; });
+  ' "${CLAUDE_PLUGIN_ROOT}/scripts/session-identity.cjs" "$REPORT_MODE" 3>&1 >&2) && [ -n "$REPORT_OUTPUT" ]; then
+    printf '%s\n' "$REPORT_OUTPUT"
+    POLICY_EMITTED=true
+  else
+    printf 'manifest-agent: Session report unavailable; emitting the runtime policy as plain text.\n' >&2
+  fi
 fi

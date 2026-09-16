@@ -89,6 +89,10 @@ If the pipeline fails, stop and show the diagnostic, including the retained
 keyfile path. Resolve the credential/config problem before retrying; repeated
 imports can leave unused encrypted keyfiles. Never delete a supplied keyfile
 automatically, because it may still be the active wallet.
+After the user restores store access, the manual
+`node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs"` command retries any
+legacy migration immediately. Explicit config writes also bypass the brief pause
+used by automatic startup attempts.
 
 Suggest the user delete their mnemonic file after a successful import.
 

@@ -20,6 +20,8 @@ offers explicit `--fetch-history` for archived commits outside main's ancestry.
 outcomes, recovery decisions, cancellation observations and process cleanup.
 Cleanup attempts every step and retains the original case error with any
 secondary cleanup/API failures attached as its cause.
+`check-powershell.ps1` parses the shipped PowerShell scripts without executing
+Windows APIs; dispatch tests also verify ACL operations skip native compilation.
 
 ## CLI entry points
 
@@ -42,7 +44,7 @@ secondary cleanup/API failures attached as its cause.
 - **`save-manifest-draft.cjs`** — Atomic-writes a deployment spec to a user-managed draft path under `$MANIFEST_PLUGIN_DATA/manifests-drafts/` (default) or a user-supplied absolute path. Refuses to overwrite or save malformed image digests. Flags: `--path`. Reads spec from stdin. The only writer for draft specs that `/manifest-agent:deploy-app` consumes; `manifest-agent-core` writes the post-deploy wrappers (different file tree, under `manifests/`).
 - **`summarize-manifest.cjs`** — Renders the redacted (env keys, never values) summary of a saved post-deploy wrapper at `$MANIFEST_PLUGIN_DATA/manifests/<lease_uuid>.json`, including SKU/provider UUIDs when present. Flags: `--lease-uuid`. Read-only discovery; pairs with `list-saved-manifests.cjs`. Missing identifiers preserve existing v2/v3 output.
 - **`update-config.cjs`** — Mutates `$MANIFEST_PLUGIN_DATA/config.json` in place (chain switch, gas price/multiplier change, registry refresh, status snapshot). Flags: `--status`, `--chain`, `--gas-price`, `--gas-token`, `--gas-multiplier`, `--refresh-chains`. `--status` is read-only and mutually exclusive with the mutating flags.
-- **`write-config.cjs`** — Initializes or replaces wallet config from key-script output + chain selection. Migrates any previous legacy credential before replacement; unreadable config must be repaired privately or moved aside as a private backup. Failed storage identifies the retained input keyfile without deleting it. Flags: `--chain`, `--gas-price`, `--gas-token`.
+- **`write-config.cjs`** — Initializes or replaces wallet config from key-script output + chain selection. Migrates any previous legacy credential before replacement; unreadable config must be repaired privately or moved aside as a private backup. Failures after reading valid key output report the cause and retained keyfile without deleting it. Explicit writes retry a repaired store immediately. Flags: `--chain`, `--gas-price`, `--gas-token`.
 - **`start-server.cjs`** — MCP wrapper. Reads `config.json`, builds env vars (see "config.json → MCP env var mapping" in CLAUDE.md), spawns `$MANIFEST_PLUGIN_DATA/node_modules/.bin/manifest-mcp-<name>` directly after checking runtime completion. If setup has not yet acquired its lock, the launcher gives it a two-second grace period; an observed install is awaited for at most 25 seconds total, leaving room within the default host initialization timeout. A failed/timed-out setup names the dependency problem and points at the shared repair command. The launcher uses the shared process-owner check to ignore stale locks; it neither installs dependencies nor removes the lock. Config must be a JSON object; unexpected failures, including lock-read errors, report a fixed phase and recognized error code without config values. Config overrides inherited endpoints, gas price/multiplier and wallet values; explicit empty passwords are preserved. The child runs in a disposable empty working directory with quiet dotenv. Forwards SIGTERM/SIGINT/SIGHUP. Uses `stdio: 'inherit'` so MCP JSON-RPC passes through transparently. Argv: `<name>` (one of `chain` / `lease` / `fred` / `cosmwasm` / `agent`). Sets agent-only env vars (`MANIFEST_AGENT_DATA_DIR`, `MANIFEST_CHAIN_DATA_FILE`, `MANIFEST_AGENT_FETCH_GUARDED` when set in parent) gated on `serverName === 'agent'`. Wired up via `.mcp.json`.
 
 ## Renderers not invoked by skills (documented exceptions to the underscore-prefix rule)
@@ -85,6 +87,8 @@ A non-underscore renderer composed by another renderer rather than directly by s
   payload travels through private stdin/stdout pipes.
 - **`migrate-credentials.cjs`** — standalone idempotent migration, no stdout;
   records its nonsecret breadcrumb in config only after credential verification.
+  No arguments means an immediate manual retry; internal `--automatic` honours
+  the shared pause after a native-store access failure.
 - **`session-identity.cjs`** — address, chain, gas denom and balance report using
   chain MCP `cosmos_query` bank/balance. Manual invocation accepts no arguments
   and writes only stderr; internal hook flags produce structured host JSON.

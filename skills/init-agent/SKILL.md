@@ -52,6 +52,10 @@ files under the data directory. Use this fallback only if the user chooses it;
 set it in the environment launching the host and in each setup shell. Never silently
 switch backends after a keychain error, or put passwords into config or command args.
 If credential setup fails, report the diagnostic and stop before claiming success.
+After the user restores credential-store access, run
+`node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs"` to retry any legacy
+migration immediately. Automatic startup attempts pause briefly after a store
+failure; this manual command and explicit config writes bypass that pause.
 
 For a repair-only request, run `update-config.cjs --status` after setup. If
 an existing agent is configured, report that dependencies are repaired and

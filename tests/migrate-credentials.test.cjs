@@ -27,10 +27,14 @@ test('migration CLI skips missing configs silently and rejects extra arguments',
   assert.equal(skipped.status, 0);
   assert.equal(skipped.stdout, '');
   assert.equal(skipped.stderr, '');
+  const automatic = run(dir, ['--automatic']);
+  assert.equal(automatic.status, 0);
+  assert.equal(automatic.stdout + automatic.stderr, '');
   const misuse = run(dir, ['--secret=TEST_ONLY_SENTINEL']);
   assert.equal(misuse.status, 1);
   assert.match(misuse.stderr, /Usage:/);
   assert.equal(misuse.stderr.includes('TEST_ONLY_SENTINEL'), false);
+  assert.equal(run(dir, ['--automatic', '--automatic']).status, 1);
   assert.equal(run('', [], { MANIFEST_PLUGIN_DATA: '' }).status, 1);
 });
 
@@ -60,4 +64,57 @@ test('migration CLI never leaks malformed config content and keeps the original 
   assert.equal(result.stderr.includes('TEST_ONLY_BROKEN_SECRET'), false);
   assert.match(result.stderr, /Invalid config.json/);
   assert.equal(fs.readFileSync(join(dir, 'config.json'), 'utf8'), contents);
+});
+
+test('manual migration retries an unlocked store immediately while automatic startup retains its cooldown', { skip: process.platform !== 'linux' }, (t) => {
+  const dir = fixture(t);
+  const bin = join(dir, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(join(bin, 'secret-tool'), `#!${process.execPath}\n
+    const fs = require('node:fs');
+    const { join } = require('node:path');
+    const dir = ${JSON.stringify(dir)};
+    fs.appendFileSync(join(dir, 'attempts'), process.argv[2] + '\\n');
+    if (!fs.existsSync(join(dir, 'unlocked'))) process.exit(1);
+    if (process.argv[2] === 'store') fs.writeFileSync(join(dir, 'stored-payload'), fs.readFileSync(0));
+    else process.stdout.write(fs.readFileSync(join(dir, 'stored-payload')));
+  `, { mode: 0o700 });
+  const legacy = JSON.stringify({ agent: { keyFile: 'wallet.json', keyPassword: 'TEST_ONLY_MANUAL_RETRY_PASSWORD' } });
+  fs.writeFileSync(join(dir, 'config.json'), legacy);
+  const env = { MANIFEST_CREDENTIAL_STORE: 'auto', PATH: bin };
+  const failed = run(dir, ['--automatic'], env);
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /Credential access failed \(libsecret\)/);
+  assert.equal(fs.readFileSync(join(dir, 'attempts'), 'utf8'), 'store\n');
+  fs.writeFileSync(join(dir, 'unlocked'), 'yes');
+  const automatic = run(dir, ['--automatic'], env);
+  assert.equal(automatic.status, 1);
+  assert.match(automatic.stderr, /retry is paused/);
+  assert.equal(fs.readFileSync(join(dir, 'attempts'), 'utf8'), 'store\n');
+  assert.equal(fs.readFileSync(join(dir, 'config.json'), 'utf8'), legacy);
+  const manual = run(dir, [], env);
+  assert.equal(manual.status, 0, manual.stderr);
+  assert.equal(fs.readFileSync(join(dir, 'attempts'), 'utf8'), 'store\nstore\nlookup\n');
+  const migrated = JSON.parse(fs.readFileSync(join(dir, 'config.json'), 'utf8'));
+  assert.equal(resolvePassword(migrated, dir, { env: { ...process.env, ...env } }), 'TEST_ONLY_MANUAL_RETRY_PASSWORD');
+  assert.equal(fs.existsSync(join(dir, '.credential-migration-failure.json')), false);
+  assert.equal(manual.stdout, '');
+  assert.doesNotMatch(failed.stderr + automatic.stderr + manual.stderr, /TEST_ONLY_MANUAL_RETRY_PASSWORD/);
+});
+
+test('manual and automatic migration report legacy shape recovery without mutating config', (t) => {
+  const dir = fixture(t);
+  for (const agent of [{ keyPassword: 'TEST_ONLY_INVALID_LEGACY' }, { keyFile: 'wallet.json', keyPassword: 12 }]) {
+    const contents = JSON.stringify({ agent });
+    fs.writeFileSync(join(dir, 'config.json'), contents);
+    for (const args of [[], ['--automatic']]) {
+      const result = run(dir, args);
+      assert.equal(result.status, 1);
+      assert.ok(result.stderr.includes(join(dir, 'config.json')));
+      assert.match(result.stderr, /Repair the previous config.*move it aside as a private backup/);
+      assert.doesNotMatch(result.stderr, /TEST_ONLY_INVALID_LEGACY/);
+      assert.equal(fs.readFileSync(join(dir, 'config.json'), 'utf8'), contents);
+      assert.equal(fs.existsSync(join(dir, '.credential-migration-failure.json')), false);
+    }
+  }
 });

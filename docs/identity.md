@@ -67,8 +67,9 @@ read-only.
 
 Migration holds the config lock, stores and reads back the password, then
 atomically replaces config with the reference and a `credentialMigration`
-breadcrumb (`version`, backend and completion time). It prints one migration
-notice on stderr. Retrying an already migrated config does not create another
+breadcrumb (`version`, backend and completion time). The migration CLI and
+launchers print one notice on stderr; in a successful Claude hook this notice
+is visible only in debug output. Retrying an already migrated config does not create another
 entry or notice. A store failure leaves the original config intact and stops
 wallet startup; unlock the keychain or explicitly select the headless fallback,
 then reconnect. Runtime policy injection still happens if migration fails.
@@ -77,17 +78,28 @@ The exclusive `.config.lock` file uses an owner token and Linux process start
 time to distinguish stale records from reused PIDs. Waiters stop after 20 seconds
 and name the lock path in the diagnostic. Stale recovery is serialized by
 `.config.lock.reclaim`; a crashed recovery process can leave this guard behind.
-The guard is never automatically stolen. If its timeout diagnostic appears,
+The guard is never automatically stolen. A timeout with a live recovery owner
+reports ordinary contention. If the diagnostic identifies abandoned recovery,
 stop all configuration writers and MCP launchers, verify none remain running,
 then remove only `$MANIFEST_PLUGIN_DATA/.config.lock.reclaim` and reconnect.
 Never remove a recovery guard while a configuration process is active.
+An older development build may leave a `.config.lock/` directory with unknown
+files. The timeout names this directory and gives a separate manual recovery
+step; stop and verify all configuration processes have exited before moving the
+directory aside privately. Unknown records are never automatically deleted.
 
-A native-store migration failure
+A failed native-store access during migration
 creates `.credential-migration-failure.json`, a private marker containing only
-the backend, config hash and failure time. Matching launchers fail promptly with
+the backend, config hash and failure time. Matching automatic hook and launcher
+attempts fail promptly with
 a retry delay for up to 30 seconds, preventing repeated prompts from the five servers.
-Changing config or selecting the file fallback allows an immediate retry; a
-successful migration removes the marker. No failure cache applies to file storage.
+Manual migration and explicit config writes retry the store immediately, so
+unlocking the keyring does not require waiting out the startup pause. Changing
+config or selecting file storage for a legacy password also permits a retry;
+existing references continue to require their original store. Successful
+migration removes the marker. File storage and local validation errors do not
+create a failure cache; invalid wallet fields, excessive password lengths and
+cross-platform references keep their specific diagnostics on repeated attempts.
 
 Atomic replacement removes the plaintext field from the current config; it
 cannot erase copies in backups, snapshots or filesystem history. Do not restore
@@ -98,6 +110,11 @@ For a manual migration, load the host environment first, then run:
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs"
 ```
+
+The hook uses the internal `--automatic` flag to share the launcher pause.
+The no-argument command above retries immediately. The hook's recovery message
+asks the agent to run it because the host exports these variables into the
+agent's tool shell, not the user's terminal.
 
 If an older Codex package cannot forward the headless selection, run the migration
 from a plain shell after selecting the intended host data directory:
@@ -119,12 +136,18 @@ does not rely on it for this report. It initializes the chain MCP server and
 calls only `cosmos_query` with `module: bank`, `subcommand: balance`, and the
 address and denom. It does not send transactions or request faucet funds.
 An unavailable credential/launcher is distinguished from a failed chain query.
-Failures do not prevent the session policy from loading, and migration failure
-guidance is included in the visible message and model context.
+Migration and report failures do not prevent the session policy from loading;
+migration failure guidance is included in the visible message and model context.
+The hook buffers and validates the report before publishing it. If that process
+crashes or emits an invalid result, the hook succeeds with the complete policy
+as plain text and a debug diagnostic. Runtime setup/environment failures still
+fail the hook. Node wrapper banners stay out of the policy, report and exported
+tool-shell environment, and a closed stdin is treated as empty input.
 
 The pinned MCP requires wallet resolution and decryption even for a public
 balance query, so this probe adds a keychain lookup and server startup work.
-The five-second query budget can expire on a slow machine. Resume, fork, clear
+The five-second query budget can expire on a slow machine; its diagnostic advises
+retrying after startup before troubleshooting persistent setup failures. Resume, fork, clear
 and compaction still receive policy and environment exports but skip the balance
 probe; no RPC latency or repeated decrypt is added on those events.
 
@@ -164,8 +187,9 @@ diagnostic names the path: repair the JSON privately to recover any legacy
 password, or move the file aside as a private backup before running initialization.
 Protect that backup like a password file (0600 on POSIX); do not paste it into
 chat. Missing or invalid legacy wallet fields follow the same recovery path.
-If credential storage fails after key generation/import, the writer reports the
-retained keyfile. It never deletes an arbitrary supplied path, which could be the
+Once valid key-script output has been read, any subsequent writer failure reports
+its cause first, followed by the retained keyfile path. This includes chain/gas
+validation and config/store errors. It never deletes an arbitrary supplied path, which could be the
 active wallet; repeated attempts may leave unused encrypted keyfiles.
 
 Automated tests exercise platform command contracts and isolated file storage.

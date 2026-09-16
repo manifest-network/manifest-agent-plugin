@@ -5,8 +5,13 @@ const { getDataDir } = require('./_io.cjs');
 const { migrateConfig, CredentialError } = require('./_credentials.cjs');
 
 try {
-  if (process.argv.length !== 2) throw new CredentialError('Usage: node migrate-credentials.cjs');
-  migrateConfig(getDataDir());
+  const args = process.argv.slice(2);
+  if (args.length !== 0 && (args.length !== 1 || args[0] !== '--automatic')) {
+    throw new CredentialError('Usage: node migrate-credentials.cjs [--automatic]');
+  }
+  // A deliberate user retry may follow unlocking the store. Only automatic
+  // hook/launcher starts share the cooldown that prevents repeated prompts.
+  migrateConfig(getDataDir(), args[0] === '--automatic' ? {} : { migrationRetryMs: 0 });
 } catch (err) {
   // The helper's errors are constant diagnostics, never native tool output or
   // JSON.parse excerpts that could repeat a stored password.

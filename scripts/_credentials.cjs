@@ -27,7 +27,11 @@ function credentialError(backend, operation) {
   const help = backend === 'file'
     ? 'Check the private credentials directory and restore the credential backup if needed.'
     : 'Unlock the OS credential store and retry. On headless systems, explicitly choose MANIFEST_CREDENTIAL_STORE=file for new credentials or legacy migration; existing references still require their original store.';
-  return new CredentialError(`Credential ${operation} failed (${backend}). ${help}`);
+  const error = new CredentialError(`Credential ${operation} failed (${backend}). ${help}`);
+  // Only failures from an actual store operation may suppress automatic
+  // retries. Validation and platform errors must retain their own guidance.
+  Object.defineProperty(error, 'storeAccess', { value: true });
+  return error;
 }
 
 function selectBackend(options) {
@@ -253,9 +257,31 @@ function withConfigLock(dataDir, callback, options = {}) {
   const deadline = performance.now() + (options.lockTimeoutMs ?? 20000);
   const owner = { pid: process.pid, pidStartTime: processStartTime(process.pid), token: randomUUID() };
   let ownedStat;
-  function wait(guarded = false) {
+  function wait() {
     if (performance.now() >= deadline) {
-      if (guarded) throw new CredentialError(`Timed out waiting for configuration lock recovery (${guardPath}). If a recovery process crashed, stop all configuration writers and MCP launchers, verify none are running, then remove only this recovery guard and reconnect. Never remove it while a configuration process is active.`);
+      // Diagnose the state now, not whichever transient guard the last poll
+      // encountered. Observation never removes a guard, even for a dead PID.
+      let abandonedGuard = false;
+      let unreadableGuard = false;
+      try {
+        const guardOwner = JSON.parse(fs.readFileSync(guardPath, 'utf8'));
+        abandonedGuard = !ownerAlive(guardOwner?.pid, guardOwner?.pidStartTime);
+      } catch (err) {
+        if (err instanceof SyntaxError) {
+          // Exclusive open precedes the owner write. A recent empty/partial
+          // record can belong to a live publisher, just like the main lock.
+          try { abandonedGuard = Date.now() - fs.lstatSync(guardPath).mtimeMs > 1000; }
+          catch (statError) { unreadableGuard = statError.code !== 'ENOENT'; }
+        } else unreadableGuard = err.code !== 'ENOENT';
+      }
+      if (unreadableGuard) throw new CredentialError(`Timed out waiting for configuration lock recovery (${guardPath}). Unable to read its owner record. Check this path and its permissions before retrying; do not remove it while configuration processes are active.`);
+      if (abandonedGuard) throw new CredentialError(`Timed out waiting for configuration lock recovery (${guardPath}). If a recovery process crashed, stop all configuration writers and MCP launchers, verify none are running, then remove only this recovery guard and reconnect. Never remove it while a configuration process is active.`);
+      let unknownLegacyRecords = false;
+      try {
+        unknownLegacyRecords = fs.lstatSync(lockPath).isDirectory() &&
+          fs.readdirSync(lockPath).some((name) => !/^([1-9][0-9]*)-[a-f0-9-]{36}\.json$/.test(name));
+      } catch { /* A disappearing lock or unreadable directory is not proof of an orphan. */ }
+      if (unknownLegacyRecords) throw new CredentialError(`Timed out waiting for the legacy configuration lock directory (${lockPath}). It contains unrecognized records that cannot be removed automatically. Stop all configuration writers and MCP launchers, verify none are running, then move only this lock directory aside as a private backup and reconnect.`);
       throw new CredentialError(`Timed out waiting for the configuration lock (${lockPath}). Another process may be migrating credentials or updating config.json; reconnect after it finishes.`);
     }
     Atomics.wait(sleeper, 0, 0, 25);
@@ -268,13 +294,13 @@ function withConfigLock(dataDir, callback, options = {}) {
       catch (err) {
         if (err.code !== 'EEXIST') throw err;
         try {
-          const recovered = withReclaimGuard(guardPath, () => {
+          withReclaimGuard(guardPath, () => {
             const stat = fs.lstatSync(lockPath);
             if (stat.isDirectory()) retireLegacyLockDirectory(lockPath);
             else if (stat.isFile()) reclaimLock(lockPath);
             else throw new CredentialError(`Invalid configuration lock (${lockPath}). Restore a regular lock file or remove the invalid entry after configuration processes exit.`);
           });
-          wait(!recovered);
+          wait();
         } catch (error) { if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error; }
         continue;
       }
@@ -289,7 +315,7 @@ function withConfigLock(dataDir, callback, options = {}) {
       // A creator can be paused between exclusive open and owner publication.
       // Let any reaper finish before verifying that it did not reclaim that
       // formerly empty record. Never enter using an already-unlinked inode.
-      while (fs.existsSync(guardPath)) wait(true);
+      while (fs.existsSync(guardPath)) wait();
       try {
         if (!sameLock(ownedStat, fs.lstatSync(lockPath))) { ownedStat = undefined; continue; }
       } catch (err) { if (err.code !== 'ENOENT') throw err; ownedStat = undefined; continue; }
@@ -315,7 +341,11 @@ function migrateConfig(dataDir, options = {}) {
     const config = readConfig(dataDir);
     if (!config || !config.agent || !Object.hasOwn(config.agent, 'keyPassword')) { clearFailure(); return config; }
     const password = config.agent.keyPassword;
-    if (typeof password !== 'string') throw new CredentialError('Invalid legacy agent.keyPassword: expected a string.');
+    const recovery = `Repair the previous config at ${path.join(dataDir, 'config.json')} to preserve any legacy password, or move it aside as a private backup before re-running init-agent. Do not paste its contents into chat.`;
+    if (typeof password !== 'string') throw new CredentialError(`Invalid legacy agent.keyPassword: expected a string. ${recovery}`);
+    if (typeof config.agent.keyFile !== 'string' || !config.agent.keyFile.trim()) {
+      throw new CredentialError(`The previous config is missing a valid agent.keyFile. ${recovery}`);
+    }
     // A partially transitioned file may contain both fields. Reuse a verified
     // reference only; a broken reference must never silently select a new store.
     const hasRef = Object.hasOwn(config.agent, 'keyPasswordRef');
@@ -339,7 +369,7 @@ function migrateConfig(dataDir, options = {}) {
         config.agent.keyPasswordRef = storePassword(dataDir, config.agent.keyFile, password, options);
       }
     } catch (err) {
-      if (backend !== 'file' && err instanceof CredentialError) {
+      if (backend !== 'file' && err instanceof CredentialError && err.storeAccess === true) {
         // Shared by the hook and concurrent launchers: one blocking native
         // attempt per config/backend during the short retry window. Never save
         // passwords, helper output, exception text, or credential references.

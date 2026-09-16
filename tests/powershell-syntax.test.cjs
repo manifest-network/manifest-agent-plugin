@@ -47,3 +47,56 @@ test('Windows helper reads Unicode JSON from redirected UTF-8 stdin before any W
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, target);
 });
+
+test('Windows helper compiles native bindings only for valid credential operations', {
+  skip: !available && 'pwsh is unavailable locally; Ubuntu CI runs this dispatch check',
+}, (t) => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'manifest-powershell-dispatch-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const helper = fs.readFileSync(join(ROOT, 'scripts/_wincred.ps1'), 'utf8');
+  const aclBoundary = '        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User';
+  assert.equal(helper.split(aclBoundary).length, 2);
+  const compileMarker = 'MANIFEST_ADD_TYPE_REACHED';
+  const aclMarker = 'MANIFEST_ACL_REACHED';
+  // Execute the real reader, validation and dispatch. Stop immediately before
+  // Windows ACL calls, and shadow Add-Type to record compilation attempts.
+  // No Windows APIs or C# compiler are needed for this ordering regression.
+  const instrument = (source) => `function Add-Type {
+    param([string]$TypeDefinition)
+    [Console]::Error.WriteLine('${compileMarker}')
+    throw 'Fixture compilation boundary.'
+}
+${source.replace(aclBoundary, `        [Console]::Out.WriteLine('${aclMarker}')\n        exit 0\n${aclBoundary}`)}`;
+  const target = 'org.manifest-network.manifest-agent/12345678-1234-4234-8234-123456789abc';
+  const run = (source, request) => {
+    const probe = join(dir, 'operation-dispatch.ps1');
+    fs.writeFileSync(probe, instrument(source));
+    return spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-File', probe], {
+      input: JSON.stringify(request), encoding: 'utf8', timeout: 10000,
+    });
+  };
+  const noCompile = (source, request, acl = false) => {
+    const result = run(source, request);
+    assert.doesNotMatch(result.stderr, new RegExp(compileMarker), `${request.operation} must not compile native bindings`);
+    assert.equal(result.status, acl ? 0 : 1, result.stderr);
+    assert.equal(result.stdout.trim(), acl ? aclMarker : '');
+  };
+  for (const operation of ['protect-directory', 'protect-file']) {
+    noCompile(helper, { operation, target: 'C:\\Users\\José\\credentials' }, true);
+  }
+  noCompile(helper, { operation: 'bogus', target });
+  noCompile(helper, { operation: 'read', target: 'invalid-target' });
+  for (const operation of ['store', 'read']) {
+    const result = run(helper, { operation, target, payload: 'public-fixture' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, new RegExp(compileMarker), `${operation} must reach the instrumented compiler`);
+    assert.equal(result.stdout, '');
+  }
+  // Negative control: the original placement compiled before knowing whether
+  // an ACL or credential operation was requested. The same checks must fail.
+  const definition = /    Add-Type -TypeDefinition @'\n[\s\S]*?\n'@\n/.exec(helper)?.[0];
+  assert.ok(definition);
+  const hoisted = helper.replace(definition, '').replace('try {\n', `try {\n${definition}`);
+  assert.throws(() => noCompile(hoisted, { operation: 'protect-file', target }, true), /must not compile native bindings/);
+  assert.throws(() => noCompile(hoisted, { operation: 'bogus', target }), /must not compile native bindings/);
+});

@@ -208,6 +208,98 @@ test('credential failure identifies retained key material without deleting a liv
   assert.equal(result.status, 1);
   assert.ok(result.stderr.includes(f.key.keyfile));
   assert.match(result.stderr, /retained|not deleted/i);
+  assert.match(result.stderr.split('\n')[0], /MANIFEST_CREDENTIAL_STORE must be/);
   assert.equal(fs.existsSync(f.path), false);
   assert.equal(fs.readFileSync(f.key.keyfile, 'utf8'), 'encrypted-wallet-fixture');
+});
+
+test('failures before credential storage report the cause before the retained keyfile', (t) => {
+  for (const missingChain of [false, true]) {
+    const f = fixture(t);
+    if (missingChain) fs.rmSync(join(f.data, 'chains'), { recursive: true });
+    const result = run(f, 'write-config.cjs', ['--chain', 'testnet', '--gas-token', 'BOGUS'], JSON.stringify(f.key));
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr.split('\n')[0], missingChain ? /Chain data not found/ : /BOGUS/);
+    assert.match(result.stderr.split('\n')[1], /Supplied keyfile retained/);
+    assert.ok(result.stderr.includes(f.key.keyfile));
+    assert.doesNotMatch(result.stderr, /Check the existing config/);
+    assert.equal(fs.existsSync(f.path), false);
+    assert.equal(fs.existsSync(join(f.data, '.config.lock')), false);
+    assert.equal(fs.readFileSync(f.key.keyfile, 'utf8'), 'encrypted-wallet-fixture');
+  }
+});
+
+test('unreadable config retains the safe access diagnostic alongside recovery steps', (t) => {
+  const f = fixture(t);
+  fs.mkdirSync(f.path); // A portable read failure, including when tests run as root.
+  const result = run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key));
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, '');
+  const cause = result.stderr.split('\n')[0];
+  assert.match(cause, /Unable to read config.json/);
+  assert.match(cause, /permissions/);
+  assert.match(cause, /repair/i);
+  assert.match(cause, /move.*aside/i);
+  assert.ok(cause.includes(f.path));
+  assert.match(result.stderr.split('\n')[1], /Supplied keyfile retained/);
+  assert.equal(fs.statSync(f.path).isDirectory(), true);
+  assert.equal(fs.existsSync(join(f.data, '.config.lock')), false);
+  assert.equal(fs.readFileSync(f.key.keyfile, 'utf8'), 'encrypted-wallet-fixture');
+});
+
+test('config edits give private recovery steps for invalid legacy wallet fields', (t) => {
+  const f = fixture(t);
+  for (const agent of [
+    { address: f.key.address, keyPassword: 'OLD_PASSWORD_SECRET' },
+    { address: f.key.address, keyFile: f.key.keyfile, keyPassword: 42 },
+  ]) {
+    const original = JSON.stringify({ activeChain: 'testnet', gasPrice: '1umfx', chains: f.chains, agent });
+    fs.writeFileSync(f.path, original);
+    assert.equal(run(f, 'update-config.cjs', ['--status']).status, 0);
+    const result = run(f, 'update-config.cjs', ['--gas-multiplier', '2']);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.ok(result.stderr.includes(f.path));
+    assert.match(result.stderr, /previous|existing/i);
+    assert.match(result.stderr, /repair/i);
+    assert.match(result.stderr, /move.*aside/i);
+    assert.equal(fs.readFileSync(f.path, 'utf8'), original);
+    assert.equal(fs.existsSync(join(f.data, '.config.lock')), false);
+    assert.equal(fs.existsSync(join(f.data, '.credential-migration-failure.json')), false);
+  }
+});
+
+test('explicit config writes retry a repaired native store immediately after migration failure', { skip: process.platform !== 'linux' }, (t) => {
+  for (const script of ['write-config.cjs', 'update-config.cjs']) {
+    const f = fixture(t);
+    const previous = JSON.stringify({ activeChain: 'testnet', gasPrice: '1umfx', chains: f.chains,
+      agent: { keyFile: f.key.keyfile, keyPassword: 'OLD_PASSWORD_SECRET', address: f.key.address } });
+    fs.writeFileSync(f.path, previous);
+    const bin = join(f.data, 'bin');
+    fs.mkdirSync(bin);
+    fs.writeFileSync(join(bin, 'secret-tool'), `#!${process.execPath}
+const fs = require('node:fs');
+const { join } = require('node:path');
+const dir = process.env.MANIFEST_PLUGIN_DATA;
+fs.appendFileSync(join(dir, 'attempts'), process.argv[2] + '\\n');
+if (!fs.existsSync(join(dir, 'unlocked'))) process.exit(1);
+const entry = join(dir, 'entry-' + process.argv.at(-1));
+if (process.argv[2] === 'store') fs.writeFileSync(entry, fs.readFileSync(0));
+else process.stdout.write(fs.readFileSync(entry));
+`, { mode: 0o700 });
+    const env = { PATH: bin, MANIFEST_PLUGIN_DATA: f.data, MANIFEST_CREDENTIAL_STORE: '' };
+    const args = script === 'write-config.cjs' ? writeArgs : ['--gas-multiplier', '2'];
+    const input = script === 'write-config.cjs' ? JSON.stringify(f.key) : undefined;
+    assert.equal(run(f, script, args, input, env).status, 1);
+    assert.equal(fs.readFileSync(f.path, 'utf8'), previous);
+    assert.equal(fs.existsSync(join(f.data, '.credential-migration-failure.json')), true);
+    assert.equal(fs.readFileSync(join(f.data, 'attempts'), 'utf8'), 'store\n');
+    fs.writeFileSync(join(f.data, 'unlocked'), 'yes');
+    const retry = run(f, script, args, input, env);
+    assert.equal(retry.status, 0, retry.stderr);
+    assert.equal(fs.existsSync(join(f.data, '.credential-migration-failure.json')), false);
+    assert.equal(Object.hasOwn(f.config().agent, 'keyPassword'), false);
+    assert.equal(resolvePassword(f.config(), f.data, { env }), script === 'write-config.cjs' ? f.key.password : 'OLD_PASSWORD_SECRET');
+  }
 });

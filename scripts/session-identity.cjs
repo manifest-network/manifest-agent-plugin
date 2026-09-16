@@ -198,7 +198,11 @@ async function reportSessionIdentity({ dataDir = process.env.MANIFEST_PLUGIN_DAT
   const result = await queryBalance({ ...identity, dataDir, launcherPath, timeoutMs: boundedTimeout });
   if (result.error) {
     if (result.stage === 'startup') {
-      print(`Gas-token balance unavailable (launcher initialization ${result.error}); check runtime setup and wallet credential access, then retry. The chain query did not start.`);
+      if (result.error === 'timed out') {
+        print('Gas-token balance unavailable (launcher initialization timed out); startup exceeded the five-second probe budget. Retry after startup finishes; if it keeps failing, check runtime setup and wallet credential access. The chain query did not start.');
+      } else {
+        print(`Gas-token balance unavailable (launcher initialization ${result.error}); check runtime setup and wallet credential access, then retry. The chain query did not start.`);
+      }
     } else {
       print(`Gas-token balance unavailable (${result.error}); retry the balance check when the chain server is reachable.`);
     }
@@ -211,7 +215,7 @@ async function reportSessionIdentity({ dataDir = process.env.MANIFEST_PLUGIN_DAT
 }
 
 const REPORT_UNAVAILABLE = 'manifest-agent: Session balance check unavailable.';
-const MIGRATION_FAILED = 'manifest-agent: Credential migration failed; wallet startup is blocked. Unlock the OS credential store, then run node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs" and reconnect the MCP servers. For headless setup, explicitly choose MANIFEST_CREDENTIAL_STORE=file and rerun migration; this stores the password in a private local file.';
+const MIGRATION_FAILED = 'manifest-agent: Credential migration failed; wallet startup is blocked. Unlock the OS credential store, then ask the agent to run node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs" in its configured tool shell and reconnect the MCP servers. For headless setup, explicitly choose MANIFEST_CREDENTIAL_STORE=file and ask the agent to rerun migration; this stores the password in a private local file.';
 
 async function reportHook({ policy, skipProbe = false, migrationFailed = false,
   stdout = process.stdout, ...identityOptions }) {

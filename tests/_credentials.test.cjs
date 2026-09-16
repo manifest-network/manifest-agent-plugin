@@ -327,7 +327,13 @@ test('configuration lock preserves live and unrecognized legacy records while up
   assert.equal(fs.readFileSync(join(lock, name), 'utf8'), live);
   fs.unlinkSync(join(lock, name));
   fs.writeFileSync(join(lock, 'unrecognized'), 'preserve me');
-  assert.throws(() => withConfigLock(dir, () => assert.fail('unknown record'), { lockTimeoutMs: 25 }), /Timed out/);
+  assert.throws(() => withConfigLock(dir, () => assert.fail('unknown record'), { lockTimeoutMs: 25 }), (error) => {
+    assert.ok(error.message.includes(lock));
+    assert.match(error.message, /unrecognized records/);
+    assert.match(error.message, /verify none are running/);
+    assert.match(error.message, /move only this lock directory aside as a private backup/);
+    return true;
+  });
   assert.equal(fs.readFileSync(join(lock, 'unrecognized'), 'utf8'), 'preserve me');
 });
 
@@ -478,6 +484,131 @@ test('an abandoned recovery guard blocks safely with bounded manual-recovery gui
   }
 });
 
+test('a live recovery guard produces ordinary contention guidance without manual removal advice', (t) => {
+  const dir = fixture(t);
+  const guard = join(dir, '.config.lock.reclaim');
+  const live = JSON.stringify({ pid: process.pid, pidStartTime: processStartTime(process.pid), token: 'live-reaper' });
+  fs.writeFileSync(guard, live);
+  for (const existingLock of [false, true]) {
+    if (existingLock) fs.writeFileSync(join(dir, '.config.lock'), JSON.stringify({ pid: process.pid, token: 'live-writer' }));
+    assert.throws(() => withConfigLock(dir, () => assert.fail('active recovery'), { lockTimeoutMs: 0 }), (error) => {
+      assert.match(error.message, /Another process may be migrating credentials/);
+      assert.doesNotMatch(error.message, /remove|crashed|\.reclaim/);
+      return true;
+    });
+    assert.equal(fs.readFileSync(guard, 'utf8'), live);
+  }
+});
+
+test('timeout rereads a vanished guard and reserves manual advice for an unknown owner', (t) => {
+  const dir = fixture(t);
+  const guard = join(dir, '.config.lock.reclaim');
+  fs.writeFileSync(guard, '{}');
+  const originalRead = fs.readFileSync;
+  t.after(() => { fs.readFileSync = originalRead; });
+  fs.readFileSync = function(target) {
+    // The last poll saw the guard, but its owner removes it before the
+    // deadline diagnostic observes it. This must not recommend cleanup.
+    if (target === guard) fs.unlinkSync(guard);
+    return originalRead.apply(fs, arguments);
+  };
+  try {
+    assert.throws(() => withConfigLock(dir, () => assert.fail('deadline elapsed'), { lockTimeoutMs: 0 }), (error) => {
+      assert.match(error.message, /Another process may be migrating credentials/);
+      assert.doesNotMatch(error.message, /remove|crashed|\.reclaim/);
+      return true;
+    });
+  } finally { fs.readFileSync = originalRead; }
+  fs.writeFileSync(guard, '{}');
+  assert.throws(() => withConfigLock(dir, () => assert.fail('unknown recovery owner'), { lockTimeoutMs: 0 }), /remove only this recovery guard/);
+  assert.equal(fs.readFileSync(guard, 'utf8'), '{}');
+});
+
+test('recent empty or partial recovery guards get publication grace before manual diagnostics', (t) => {
+  const dir = fixture(t);
+  const guard = join(dir, '.config.lock.reclaim');
+  for (const contents of ['', '{"pid":']) {
+    fs.writeFileSync(guard, contents);
+    assert.throws(() => withConfigLock(dir, () => assert.fail('recovery publication in progress'), { lockTimeoutMs: 0 }), (error) => {
+      assert.match(error.message, /Another process may be migrating credentials/);
+      assert.doesNotMatch(error.message, /remove|crashed|\.reclaim/);
+      return true;
+    });
+    const past = new Date(Date.now() - 5000);
+    fs.utimesSync(guard, past, past);
+    assert.throws(() => withConfigLock(dir, () => assert.fail('abandoned partial recovery record'), { lockTimeoutMs: 0 }), /remove only this recovery guard/);
+    assert.equal(fs.readFileSync(guard, 'utf8'), contents);
+  }
+});
+
+test('an unreadable recovery record reports access trouble without claiming a crashed owner', (t) => {
+  const dir = fixture(t);
+  const guard = join(dir, '.config.lock.reclaim');
+  fs.mkdirSync(guard);
+  assert.throws(() => withConfigLock(dir, () => assert.fail('unreadable recovery record'), { lockTimeoutMs: 0 }), (error) => {
+    assert.ok(error.message.includes(guard));
+    assert.match(error.message, /Unable to read its owner record.*permissions/);
+    assert.doesNotMatch(error.message, /crashed|remove only this recovery guard/);
+    return true;
+  });
+  assert.equal(fs.statSync(guard).isDirectory(), true);
+});
+
+test('legacy shape validation names private recovery before consulting a native failure marker', (t) => {
+  const { createHash } = require('node:crypto');
+  const dir = fixture(t);
+  for (const agent of [{ keyPassword: SENTINEL }, { keyFile: 'wallet.json', keyPassword: 12 }]) {
+    const contents = JSON.stringify({ agent });
+    fs.writeFileSync(join(dir, 'config.json'), contents);
+    const marker = { version: 1, backend: 'libsecret', fingerprint: createHash('sha256').update(contents).digest('hex'), failedAt: Date.now() };
+    fs.writeFileSync(join(dir, '.credential-migration-failure.json'), JSON.stringify(marker));
+    for (let i = 0; i < 2; i++) assert.throws(() => migrateConfig(dir, {
+      platform: 'linux', env: {}, spawnSync: () => assert.fail('invalid shape must not contact store'),
+    }), (error) => {
+      assert.ok(error.message.includes(join(dir, 'config.json')));
+      assert.match(error.message, /previous config.*private backup/);
+      assert.match(error.message, /Repair.*move it aside/);
+      assert.doesNotMatch(error.message, /Credential access failed|paused/);
+      assert.equal(error.storeAccess, undefined);
+      return true;
+    });
+    assert.equal(fs.readFileSync(join(dir, 'config.json'), 'utf8'), contents);
+  }
+});
+
+test('validation, cross-platform and password mismatch errors never create a migration cooldown', (t) => {
+  for (const scenario of ['keyfile', 'password-shape', 'long-password', 'cross-platform', 'mismatch']) {
+    const dir = fixture(t);
+    const legacy = config(dir);
+    const fake = nativeFixture('linux');
+    let options = fake.options;
+    let expected;
+    if (scenario === 'keyfile') { delete legacy.agent.keyFile; expected = /missing a valid agent.keyFile/; }
+    if (scenario === 'password-shape') { legacy.agent.keyPassword = 12; expected = /expected a string/; }
+    if (scenario === 'long-password') {
+      legacy.agent.keyPassword = 'x'.repeat(4000);
+      options = { platform: 'darwin', env: {}, spawnSync: () => assert.fail('oversized payload must not contact store') };
+      expected = /too long/;
+    }
+    if (scenario === 'cross-platform' || scenario === 'mismatch') {
+      legacy.agent.keyPasswordRef = storePassword(dir, legacy.agent.keyFile, 'other password', fake.options);
+      if (scenario === 'cross-platform') {
+        options = { platform: 'darwin', env: {}, spawnSync: () => assert.fail('foreign backend must not contact store') };
+        expected = /different operating system/;
+      } else expected = /does not match its credential reference/;
+    }
+    const contents = JSON.stringify(legacy);
+    fs.writeFileSync(join(dir, 'config.json'), contents);
+    for (let i = 0; i < 2; i++) assert.throws(() => migrateConfig(dir, options), (error) => {
+      assert.match(error.message, expected);
+      assert.equal(error.storeAccess, undefined);
+      return true;
+    });
+    assert.equal(fs.existsSync(join(dir, '.credential-migration-failure.json')), false, scenario);
+    assert.equal(fs.readFileSync(join(dir, 'config.json'), 'utf8'), contents);
+  }
+});
+
 test('native migration failures share a secret-free cooldown, expire, and clear on success', (t) => {
   const dir = fixture(t);
   const old = config(dir);
@@ -486,7 +617,12 @@ test('native migration failures share a secret-free cooldown, expire, and clear 
   let now = 100000;
   const options = { platform: 'linux', env: {}, now: () => now, migrationRetryMs: 100,
     spawnSync() { attempts++; return { status: 1, stderr: SENTINEL }; } };
-  assert.throws(() => migrateConfig(dir, options), /Credential access failed \(libsecret\)/);
+  assert.throws(() => migrateConfig(dir, options), (error) => {
+    assert.match(error.message, /Credential access failed \(libsecret\)/);
+    assert.equal(error.storeAccess, true);
+    assert.equal(Object.getOwnPropertyDescriptor(error, 'storeAccess').enumerable, false);
+    return true;
+  });
   for (let i = 0; i < 5; i++) assert.throws(() => migrateConfig(dir, options), /retry is paused for 1 second/);
   assert.equal(attempts, 1);
   assert.deepEqual(fs.readFileSync(join(dir, 'config.json')), before);

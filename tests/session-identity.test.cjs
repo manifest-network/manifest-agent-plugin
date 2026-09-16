@@ -234,6 +234,8 @@ for (const behavior of ['initialization-timeout', 'query-timeout', 'ignore-signa
     const result = fixture(t, { behavior, timeoutMs: 200 }).run();
     if (behavior === 'initialization-timeout') {
       assert.match(result.stderr, /Gas-token balance unavailable \(launcher initialization timed out\)/);
+      assert.match(result.stderr, /startup exceeded the five-second probe budget/);
+      assert.match(result.stderr, /Retry after startup finishes; if it keeps failing/);
       assert.match(result.stderr, /The chain query did not start/);
     } else assert.match(result.stderr, /Gas-token balance unavailable \(timed out\)/);
     assert.ok(result.elapsed < 1800, `probe took ${result.elapsed}ms`);

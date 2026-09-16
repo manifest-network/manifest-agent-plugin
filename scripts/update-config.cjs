@@ -113,7 +113,9 @@ function readChainFile(chainsDir, network) {
 
   withConfigLock(AGENT_DIR, () => {
     // Reread while locked so a concurrent migration or writer cannot be undone.
-    config = migrateConfig(AGENT_DIR, { locked: true });
+    // An explicit config edit retries immediately after credential repair;
+    // automatic hook/launcher migrations retain the shared failure cooldown.
+    config = migrateConfig(AGENT_DIR, { locked: true, migrationRetryMs: 0 });
     if (!config) throw new Error('Config disappeared before the update.');
 
     // Update active chain

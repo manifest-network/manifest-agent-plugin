@@ -48,6 +48,10 @@ function readChainFile(chainsDir, network) {
   return readJsonFile(p);
 }
 
+// Once stdin identifies a valid keyfile, every later failure must name the
+// retained file. It may be an existing wallet, so never delete it on failure.
+let suppliedKeyfilePath;
+
 (async () => {
   // getDataDir() inside the IIFE so a missing MANIFEST_PLUGIN_DATA produces
   // the helper's friendly error via the .catch handler, not a raw stack.
@@ -92,6 +96,7 @@ function readChainFile(chainsDir, network) {
     console.error('Key JSON missing required fields (address, keyfile, password).');
     process.exit(1);
   }
+  suppliedKeyfilePath = resolve(AGENT_DIR, keyfile);
 
   // Read chain data
   const mainnetData = readChainFile(CHAINS_DIR, 'mainnet');
@@ -99,8 +104,7 @@ function readChainFile(chainsDir, network) {
 
   const activeChainData = args.chain === 'mainnet' ? mainnetData : testnetData;
   if (!activeChainData) {
-    console.error(`Chain data not found for ${args.chain}. Run fetch-chain-registry.cjs first.`);
-    process.exit(1);
+    throw new Error(`Chain data not found for ${args.chain}. Run fetch-chain-registry.cjs first.`);
   }
 
   // Resolve gas-price (raw string or compose from token symbol)
@@ -108,12 +112,7 @@ function readChainFile(chainsDir, network) {
   if (args.gasPrice) {
     resolvedGasPrice = args.gasPrice;
   } else {
-    try {
-      resolvedGasPrice = composeGasPrice(activeChainData, args.gasToken);
-    } catch (err) {
-      console.error(err.message);
-      process.exit(1);
-    }
+    resolvedGasPrice = composeGasPrice(activeChainData, args.gasToken);
   }
 
   // Build config
@@ -134,34 +133,19 @@ function readChainFile(chainsDir, network) {
   // Write config.json
   mkdirSync(AGENT_DIR, { recursive: true });
   chmodSync(AGENT_DIR, 0o700);
-  try {
-    withConfigLock(AGENT_DIR, () => {
-      // A damaged previous config may still hold a recoverable legacy password.
-      // Refuse replacement with an explicit recovery path, without parser text.
-      const recovery = `Repair the previous config at ${CONFIG_PATH} to preserve any legacy password, or move it aside as a private backup before re-running init-agent. Do not paste its contents into chat.`;
-      let previous;
-      try { previous = readConfig(AGENT_DIR); }
-      catch { throw new Error(`Could not read the existing configuration. ${recovery}`); }
-      if (previous?.agent && Object.hasOwn(previous.agent, 'keyPassword')) {
-        if (typeof previous.agent.keyPassword !== 'string') {
-          throw new Error(`The previous config has an invalid agent.keyPassword. ${recovery}`);
-        }
-        if (typeof previous.agent.keyFile !== 'string' || !previous.agent.keyFile.trim()) {
-          throw new Error(`The previous config is missing agent.keyFile. ${recovery}`);
-        }
-      }
-      // Preserve a legacy wallet's credential before selecting a replacement.
-      // A unique new reference cannot overwrite the current wallet's password.
-      previous = migrateConfig(AGENT_DIR, { locked: true });
-      if (previous?.credentialMigration) config.credentialMigration = previous.credentialMigration;
-      config.agent.keyPasswordRef = storePassword(AGENT_DIR, keyfile, password);
-      atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
-    });
-  } catch (error) {
-    // Never remove an arbitrary stdin-supplied path: it may be the active wallet.
-    console.error(`Supplied keyfile retained at ${resolve(AGENT_DIR, keyfile)}; it was not deleted. Check the existing config before retrying key generation, which can leave unused encrypted keyfiles.`);
-    throw error;
-  }
+  withConfigLock(AGENT_DIR, () => {
+    // A damaged previous config may still hold a recoverable legacy password.
+    // Keep readConfig's safe permission/shape diagnostic alongside recovery.
+    const recovery = `Repair the previous config at ${CONFIG_PATH} to preserve any legacy password, or move it aside as a private backup before re-running init-agent. Do not paste its contents into chat.`;
+    try { readConfig(AGENT_DIR); }
+    catch (error) { throw new Error(`${error.message} ${recovery}`); }
+    // This explicit user action retries the store immediately after repair;
+    // only automatic hook/launcher retries honour the short failure cooldown.
+    const previous = migrateConfig(AGENT_DIR, { locked: true, migrationRetryMs: 0 });
+    if (previous?.credentialMigration) config.credentialMigration = previous.credentialMigration;
+    config.agent.keyPasswordRef = storePassword(AGENT_DIR, keyfile, password);
+    atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
+  });
 
   console.error(`Config written to ${CONFIG_PATH}`);
   console.error(`Agent address: ${address}`);
@@ -171,5 +155,8 @@ function readChainFile(chainsDir, network) {
   console.log(JSON.stringify({ address, activeChain: args.chain }));
 })().catch((err) => {
   console.error(err.message);
+  if (suppliedKeyfilePath) {
+    console.error(`Supplied keyfile retained at ${suppliedKeyfilePath}; it was not deleted. Resolve this failure before retrying; repeated key generation or import can leave unused encrypted keyfiles.`);
+  }
   process.exit(1);
 });

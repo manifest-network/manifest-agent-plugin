@@ -118,3 +118,30 @@ Additional integration evidence:
 - Both-host pinned runtime contracts passed with their committed deadlines:
   five servers per host, 25 workflow references and six callback cases, with
   outbound networking blocked.
+
+## Second review follow-up
+
+The [second review](https://github.com/manifest-network/manifest-agent-plugin/pull/19#issuecomment-5703109720)
+confirmed the earlier fixes and identified additional retry, diagnostic and hook
+failure cases. Automatic migration now caches only store-access failures; manual
+migration and explicit config writes retry immediately. Shared legacy validation
+keeps specific recovery guidance, and lock timeout messages use the current owner
+state, including a publication grace for incomplete records. Unknown legacy lock
+files remain intact with explicit manual recovery steps.
+
+Optional reporter crashes, signals and malformed output preserve the complete
+policy with a successful hook exit. Private descriptors isolate Node wrapper
+noise from source selection, reports and environment exports. Closed stdin no
+longer hangs. Writer failures after valid key input report the cause before the
+retained keyfile, including chain/gas validation failures. PowerShell dispatch
+tests now prove ACL operations avoid native compilation; a hoisted-compilation
+mutation fails the same regression.
+
+All 690 tests passed on Node 24.15.0 with no skips. Generated packages, executable
+docs, policy completeness, syntax/JSON/version and provenance checks passed.
+Real Claude 2.1.270 received the full policy in healthy, noisy-Node and reporter
+crash scenarios using local fixture APIs; healthy/noisy runs also delivered the
+complete public report. Pinned Codex 0.153.4 passed all eight host cases and
+validated all 68 current source hashes. These checks do not add live Windows or
+macOS credential-store coverage; closed-stdin behavior was exercised on Bash
+5.3.15, without a Bash 3.2 runtime available.

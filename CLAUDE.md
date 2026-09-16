@@ -78,8 +78,10 @@ uses a token and Linux PID start time; acquisition waits at most 20 seconds.
 The exclusive `.config.lock.reclaim` guard serializes stale recovery. A crashed
 reaper requires manual guard removal only after all configuration writers and
 MCP launchers have stopped; the timeout diagnostic names the recovery path.
-Native migration failures share a secret-free 30-second retry marker keyed by
-backend and config hash; explicit file storage bypasses it. A new credential uses a
+Native store-access failures share a secret-free 30-second retry marker keyed by
+backend and config hash for automatic hook/launcher attempts. Manual migration
+and config writes retry immediately; file storage and local validation failures
+do not create the marker. A new credential uses a
 unique ID and must round-trip before config references it. Migration atomically
 removes the plaintext field and records `credentialMigration`; failed storage
 preserves the previous config. `update-config --status` remains read-only.
@@ -94,6 +96,11 @@ the report also in `systemMessage`. Resume, clear, compact and fork still receiv
 policy and environment exports but skip the probe. Manual identity CLI output
 stays on stderr. Low testnet balance produces a hint, never a faucet call. See `docs/identity.md` for
 platform prerequisites, backup requirements and verification limits.
+
+The hook buffers and validates reporter output before publishing it. Optional
+reporter crashes or invalid output fall back to the complete plain policy with
+exit 0. Private descriptors keep Node wrapper noise out of reports and tool-shell
+exports. Runtime setup and environment failures still fail the hook.
 
 ## Open question decisions (ENG-130 rewire)
 
@@ -196,6 +203,7 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
   draft saver enforces the same check before writing. Syntax validity does
   not establish registry availability or validate the full repository grammar.
 - `ci/evidence-check.cjs` checks current host-report source hashes and distinguishes historical commit evidence; CI runs it alongside policy completeness. See `docs/approval-validation.md` for rerun and history requirements.
+- `ci/check-powershell.ps1` parses the shipped PowerShell scripts without running Windows APIs. Tests verify syntax-error rejection, Unicode stdin, and that ACL/invalid operations skip native compilation.
 - `ci/terminal-host-smoke.cjs` drives the actual Claude and Codex terminal UIs through a private tmux socket, a loopback model fixture, and marker-only MCP tools. It records rendered prompts, input keys, progress, results and mutation counts. See `docs/host-acceptance.md` for the pinned CLI versions and scope.
 - `ci/lease-state-parity.cjs --data-dir <runtime-dir>` compares the plugin's numeric `STATES` table with the installed manifestjs `LeaseState` enum, excluding the SDK's `UNRECOGNIZED = -1` sentinel. CI runs it after runtime installation; its unit tests use fixtures and require no runtime packages.
 - Use `rg -n '<script>.cjs' skills/ scripts/` to locate callers — the call graph drifts and isn't worth restating in prose.
