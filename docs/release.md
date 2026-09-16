@@ -73,9 +73,19 @@ There's no fixed cadence. Cut a release when:
 - [ ] Native build, `ci/host-contracts.cjs`, and the fresh Codex host report pass in CI. Keep the committed historical report's hashes and source commit intact; source/version changes do not require a local Codex run.
 - [ ] For a Codex archive, complete the Codex interactive and testnet rows in [`host-acceptance.md`](host-acceptance.md), record reviewed transcripts, and update `host-acceptance-release.json` for the new version and exact source hashes. `node ci/host-acceptance.cjs --codex-release-status` reports `eligible=true` and all testnet resources are cleaned up. The full both-host matrix remains required before claiming full compatibility.
 
+## Identity hardening release (ENG-85)
+
+ENG-85 explicitly requests a version update, so its changes align the three
+manifests and lockfile at 0.5.0. Desktop wallets use native credential storage;
+headless installs without a keychain must explicitly select the file fallback.
+Legacy config migration verifies storage before removing plaintext. See
+[identity setup and recovery](identity.md) and the [implementation plan](eng-85-plan.md).
+The existing 0.4.0 host acceptance records remain historical; this bump does
+not make them evidence for 0.5.0 or publish a release.
+
 ## Native Codex compatibility release (ENG-894)
 
-The feature keeps plugin version 0.4.0 pending the separate release chore.
+The original feature kept plugin version 0.4.0 pending a release chore.
 Both hosts consume one workflow source and the same locked MCP 0.22.0 runtime.
 Codex installs a separate native artifact, performs its own bootstrap, and
 uses independent data by default. No Claude wallet, chain selection or local
