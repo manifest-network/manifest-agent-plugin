@@ -208,10 +208,10 @@ test('does NOT export MANIFEST_SESSION_ID when the grep+sed fallback encounters 
   });
 });
 
-test('skips stdin read entirely when CLAUDE_ENV_FILE is not set', () => {
-  // Regression for the stdin-gating change: when CLAUDE_ENV_FILE is
-  // unset (e.g. CI policy-syntax check `bash session-start.sh`),
-  // HOOK_PAYLOAD is never used downstream — so we should NOT cat stdin
+test('policy-only invocation without CLAUDE_ENV_FILE or package.json skips stdin', () => {
+  // Without an env file or a package to bootstrap (e.g. CI policy-syntax
+  // check `bash session-start.sh`), HOOK_PAYLOAD is never used downstream
+  // for either session exports or source gating, so we should NOT cat stdin
   // at all, avoiding both wasted work and a hang risk on an open-but-
   // unflushed pipe. Test by passing a payload that WOULD trigger the
   // session_id extraction; assert the hook emits policy and exits 0
@@ -247,16 +247,52 @@ function bootstrapFixture(t, setupSource) {
   const data = join(dir, 'new runtime data');
   mkdirSync(join(root, 'scripts'), { recursive: true });
   cpSync(SCRIPT, join(root, 'scripts/session-start.sh'));
-    copyHostAdapter(root);
+  copyHostAdapter(root);
   writeFileSync(join(root, 'package.json'), '{}');
   writeFileSync(join(root, 'scripts/setup-runtime.cjs'), setupSource);
   writeFileSync(join(root, 'scripts/migrate-credentials.cjs'), '');
-  writeFileSync(join(root, 'scripts/session-identity.cjs'), '');
+  cpSync(join(__dirname, '../scripts/session-identity.cjs'), join(root, 'scripts/session-identity.cjs'));
   const env = { PATH: process.env.PATH, CLAUDE_PLUGIN_ROOT: root, CLAUDE_PLUGIN_DATA: data, CLAUDE_ENV_FILE: join(dir, 'session env') };
-  const run = (extra = {}) => spawnSync('/bin/bash', ['-c', hooks.hooks.SessionStart[0].hooks[0].command], {
-    env: { ...env, ...extra }, input: '{"session_id":"bootstrap-session"}', encoding: 'utf8', timeout: 5000,
+  const run = (extra = {}, input = '{"session_id":"bootstrap-session"}') => spawnSync('/bin/bash', ['-c', hooks.hooks.SessionStart[0].hooks[0].command], {
+    env: { ...env, ...extra }, input, encoding: 'utf8', timeout: 7000,
   });
   return { root, data, env, run };
+}
+
+function configureSessionIdentity(f, { behavior = 'normal' } = {}) {
+  mkdirSync(f.data, { recursive: true });
+  writeFileSync(join(f.data, 'config.json'), JSON.stringify({
+    activeChain: 'testnet', gasPrice: '0.025umfx',
+    chains: { testnet: { chainId: 'manifest-testnet-1' } },
+    agent: { address: 'manifest1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqjpzgn4', keyPassword: 'PRIVATE_PASSWORD' },
+  }));
+  writeFileSync(join(f.root, 'scripts/start-server.cjs'), `
+    const fs = require('node:fs');
+    fs.appendFileSync(require('node:path').join(process.env.MANIFEST_PLUGIN_DATA, 'order'), 'identity\\n');
+    console.error('PRIVATE_UPSTREAM_ERROR');
+    require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
+      const message = JSON.parse(line);
+      if (message.method === 'initialize') console.log(JSON.stringify({ jsonrpc: '2.0', id: message.id,
+        result: { capabilities: { tools: {} } } }));
+      if (message.method !== 'tools/call') return;
+      if (${JSON.stringify(behavior)} === 'malformed') { console.log('PRIVATE_UPSTREAM_OUTPUT'); return; }
+      console.log(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: {
+        content: [{ type: 'text', text: JSON.stringify({ module: 'bank', subcommand: 'balance',
+          result: { balance: { denom: 'umfx', amount: '0' } } }) }],
+      } }));
+    });
+  `);
+}
+
+function assertHookOutput(result) {
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.hookSpecificOutput.hookEventName, 'SessionStart');
+  const policy = /cat <<'POLICY'\n([\s\S]*?)\nPOLICY/.exec(readFileSync(SCRIPT, 'utf8'))[1].trimEnd();
+  assert.ok(output.hookSpecificOutput.additionalContext.startsWith(policy), 'complete canonical policy reaches model context');
+  assert.ok(output.hookSpecificOutput.additionalContext.length <= 10000);
+  assert.doesNotMatch(result.stdout, /PRIVATE_PASSWORD|PRIVATE_UPSTREAM|MIGRATION_DIAGNOSTIC/);
+  return output;
 }
 
 test('SessionStart delegates fresh runtime setup to the shared command with the persistent data path', (t) => {
@@ -268,6 +304,7 @@ test('SessionStart delegates fresh runtime setup to the shared command with the 
       argv: process.argv.slice(2), data: process.env.MANIFEST_PLUGIN_DATA,
     }));
     console.error('SETUP_DIAGNOSTIC_SENTINEL');
+    console.log('ACCIDENTAL_SETUP_STDOUT');
   `);
   const result = f.run();
   assert.equal(result.status, 0, result.stderr);
@@ -275,6 +312,8 @@ test('SessionStart delegates fresh runtime setup to the shared command with the 
   assert.match(result.stdout, /manifest-agent runtime transaction policy/);
   assert.doesNotMatch(result.stdout, /SETUP_DIAGNOSTIC_SENTINEL/);
   assert.match(result.stderr, /SETUP_DIAGNOSTIC_SENTINEL/);
+  assert.match(result.stderr, /ACCIDENTAL_SETUP_STDOUT/);
+  assertHookOutput(result);
   assert.equal(existsSync(join(f.root, 'node_modules')), false);
 });
 
@@ -287,7 +326,7 @@ test('SessionStart propagates runtime setup failures after emitting policy and e
   assert.match(readFileSync(f.env.CLAUDE_ENV_FILE, 'utf8'), /export MANIFEST_PLUGIN_DATA=/);
 });
 
-test('SessionStart runs credential migration before balance diagnostics, preserving policy stdout', (t) => {
+test('SessionStart delivers safe identity and faucet advice to both model and user after migration', (t) => {
   const f = bootstrapFixture(t, `
     const fs = require('node:fs');
     fs.mkdirSync(process.env.MANIFEST_PLUGIN_DATA, { recursive: true });
@@ -296,41 +335,70 @@ test('SessionStart runs credential migration before balance diagnostics, preserv
   writeFileSync(join(f.root, 'scripts/migrate-credentials.cjs'), `
     require('node:fs').appendFileSync(require('node:path').join(process.env.MANIFEST_PLUGIN_DATA, 'order'), 'migration\\n');
     console.error('MIGRATION_DIAGNOSTIC');
-  `);
-  writeFileSync(join(f.root, 'scripts/session-identity.cjs'), `
-    require('node:fs').appendFileSync(require('node:path').join(process.env.MANIFEST_PLUGIN_DATA, 'order'), 'identity\\n');
-    console.error('SESSION_BALANCE_DIAGNOSTIC');
     console.log('ACCIDENTAL_HELPER_STDOUT');
   `);
-  const result = f.run();
-  assert.equal(result.status, 0, result.stderr);
+  configureSessionIdentity(f);
+  const result = f.run({}, '{"session_id":"bootstrap-session","source":"startup"}');
+  const output = assertHookOutput(result);
   assert.equal(readFileSync(join(f.data, 'order'), 'utf8'), 'setup\nmigration\nidentity\n');
-  assert.match(result.stdout, /manifest-agent runtime transaction policy/);
-  assert.doesNotMatch(result.stdout, /MIGRATION_DIAGNOSTIC|SESSION_BALANCE_DIAGNOSTIC|ACCIDENTAL_HELPER_STDOUT/);
+  for (const text of [output.systemMessage, output.hookSpecificOutput.additionalContext]) {
+    assert.match(text, /Agent address: manifest1/);
+    assert.match(text, /Active chain: testnet \(manifest-testnet-1\)/);
+    assert.match(text, /Gas-token balance: 0 umfx/);
+    assert.match(text, /request_faucet/);
+  }
+  assert.doesNotMatch(result.stdout, /ACCIDENTAL_HELPER_STDOUT/);
   assert.match(result.stderr, /MIGRATION_DIAGNOSTIC/);
-  assert.match(result.stderr, /SESSION_BALANCE_DIAGNOSTIC/);
   assert.match(result.stderr, /ACCIDENTAL_HELPER_STDOUT/);
 });
 
 test('SessionStart treats failed balance diagnostics as optional after setup and exports', (t) => {
   const f = bootstrapFixture(t, '');
-  writeFileSync(join(f.root, 'scripts/session-identity.cjs'), 'process.exit(17);');
+  configureSessionIdentity(f, { behavior: 'malformed' });
   const result = f.run();
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /manifest-agent runtime transaction policy/);
+  const output = assertHookOutput(result);
   assert.match(readFileSync(f.env.CLAUDE_ENV_FILE, 'utf8'), /export MANIFEST_PLUGIN_DATA=/);
-  assert.match(result.stderr, /Session balance check unavailable/);
+  assert.match(output.systemMessage, /Gas-token balance unavailable \(invalid response\)/);
+  assert.doesNotMatch(output.systemMessage, /request_faucet/);
 });
 
 test('SessionStart skips the balance query when credential migration fails without undoing setup', (t) => {
   const f = bootstrapFixture(t, '');
+  configureSessionIdentity(f);
   writeFileSync(join(f.root, 'scripts/migrate-credentials.cjs'), 'console.error("Credential migration unavailable"); process.exit(1);');
-  writeFileSync(join(f.root, 'scripts/session-identity.cjs'), 'console.error("MUST_NOT_QUERY");');
   const result = f.run();
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /manifest-agent runtime transaction policy/);
+  const output = assertHookOutput(result);
   assert.match(result.stderr, /Credential migration unavailable/);
-  assert.doesNotMatch(result.stderr, /MUST_NOT_QUERY/);
+  for (const text of [output.systemMessage, output.hookSpecificOutput.additionalContext]) {
+    assert.match(text, /Credential migration failed; wallet startup is blocked/);
+    assert.match(text, /Unlock the OS credential store/);
+    assert.match(text, /migrate-credentials\.cjs/);
+    assert.match(text, /MANIFEST_CREDENTIAL_STORE=file/);
+  }
+  assert.equal(existsSync(join(f.data, 'order')), false, 'failed migration must not launch balance probe');
+});
+
+for (const source of ['resume', 'clear', 'compact', 'fork', 'future-source']) {
+  test(`SessionStart source ${source} preserves policy and exports without migration or balance startup`, (t) => {
+    const f = bootstrapFixture(t, '');
+    configureSessionIdentity(f);
+    writeFileSync(join(f.root, 'scripts/migrate-credentials.cjs'), 'throw new Error("MUST_NOT_MIGRATE");');
+    const result = f.run({}, JSON.stringify({ source, session_id: 'retained-session' }));
+    const output = assertHookOutput(result);
+    assert.equal(output.systemMessage, undefined);
+    assert.match(readFileSync(f.env.CLAUDE_ENV_FILE, 'utf8'), /MANIFEST_SESSION_ID=retained-session/);
+    assert.match(readFileSync(f.env.CLAUDE_ENV_FILE, 'utf8'), /export MANIFEST_PLUGIN_DATA=/);
+    assert.equal(existsSync(join(f.data, 'order')), false);
+    assert.doesNotMatch(result.stderr, /MUST_NOT_MIGRATE/);
+  });
+}
+
+test('SessionStart reads source even when the host omits CLAUDE_ENV_FILE', (t) => {
+  const f = bootstrapFixture(t, '');
+  configureSessionIdentity(f);
+  const output = assertHookOutput(f.run({ CLAUDE_ENV_FILE: '' }, '{"source":"resume"}'));
+  assert.equal(output.systemMessage, undefined);
+  assert.equal(existsSync(join(f.data, 'order')), false);
 });
 
 test('SessionStart reports missing Node before running dependency setup', (t) => {

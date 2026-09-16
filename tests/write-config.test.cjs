@@ -139,3 +139,75 @@ test('malformed legacy config stays secret in status diagnostics', (t) => {
   fs.writeFileSync(f.path, '{"agent":{"keyPassword":"PASSWORD_SECRET"}, BROKEN');
   assert.equal(run(f, 'update-config.cjs', ['--status']).status, 1);
 });
+
+test('configuration validation failures release the lock and preserve the selected wallet', (t) => {
+  const f = fixture(t);
+  assert.equal(run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key)).status, 0);
+  const before = fs.readFileSync(f.path);
+  for (const args of [['--gas-multiplier', '0.5'], ['--gas-token', 'UNKNOWN']]) {
+    const result = run(f, 'update-config.cjs', args);
+    assert.equal(result.status, 1);
+    assert.equal(fs.existsSync(join(f.data, '.config.lock')), false, 'validation must release its owned lock');
+    assert.deepEqual(fs.readFileSync(f.path), before);
+  }
+  fs.rmSync(join(f.data, 'chains'), { recursive: true });
+  for (const args of [['--gas-token', 'MFX'], ['--refresh-chains']]) {
+    assert.equal(run(f, 'update-config.cjs', args).status, 1);
+    assert.equal(fs.existsSync(join(f.data, '.config.lock')), false);
+    assert.deepEqual(fs.readFileSync(f.path), before);
+  }
+  assert.equal(resolvePassword(f.config(), f.data), f.key.password);
+});
+
+test('status rejects nonobject config with private recovery guidance and no mutation', (t) => {
+  const f = fixture(t);
+  for (const original of ['null', '[]', 'true', '123', '"OLD_PASSWORD_SECRET"']) {
+    fs.writeFileSync(f.path, original, { mode: 0o600 });
+    const result = run(f, 'update-config.cjs', ['--status']);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.ok(result.stderr.includes(f.path));
+    assert.match(result.stderr, /repair/i);
+    assert.match(result.stderr, /move.*aside/i);
+    assert.equal(fs.readFileSync(f.path, 'utf8'), original);
+    assert.equal(fs.existsSync(join(f.data, '.config.lock')), false);
+  }
+});
+
+test('unreadable previous configs get actionable recovery without losing their bytes', (t) => {
+  const f = fixture(t);
+  for (const original of [
+    '{"agent":{"keyPassword":"OLD_PASSWORD_SECRET"}, TRUNCATED',
+    'null', '[]',
+    JSON.stringify({ agent: { keyFile: f.key.keyfile, keyPassword: 123 } }),
+    JSON.stringify({ agent: { keyPassword: 'OLD_PASSWORD_SECRET' } }),
+  ]) {
+    fs.writeFileSync(f.path, original, { mode: 0o600 });
+    const result = run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key));
+    assert.equal(result.status, 1);
+    assert.ok(result.stderr.includes(f.path), 'name the previous config path');
+    assert.match(result.stderr, /previous|existing/i);
+    assert.match(result.stderr, /repair/i);
+    assert.match(result.stderr, /move.*aside/i);
+    assert.equal(fs.readFileSync(f.path, 'utf8'), original);
+    assert.equal(fs.readFileSync(f.key.keyfile, 'utf8'), 'encrypted-wallet-fixture');
+    const backup = `${f.path}.invalid-backup`;
+    fs.renameSync(f.path, backup);
+    const recovery = run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key));
+    assert.equal(recovery.status, 0, recovery.stderr);
+    assert.equal(fs.readFileSync(backup, 'utf8'), original);
+    assert.equal(resolvePassword(f.config(), f.data), f.key.password);
+  }
+});
+
+test('credential failure identifies retained key material without deleting a live keyfile', (t) => {
+  const f = fixture(t);
+  const result = run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key), {
+    MANIFEST_CREDENTIAL_STORE: 'unsupported',
+  });
+  assert.equal(result.status, 1);
+  assert.ok(result.stderr.includes(f.key.keyfile));
+  assert.match(result.stderr, /retained|not deleted/i);
+  assert.equal(fs.existsSync(f.path), false);
+  assert.equal(fs.readFileSync(f.key.keyfile, 'utf8'), 'encrypted-wallet-fixture');
+});

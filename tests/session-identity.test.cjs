@@ -6,7 +6,7 @@ const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync, exi
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { parseGasPrice, terminateProcessTree, DEFAULT_TIMEOUT_MS } = require('../scripts/session-identity.cjs');
+const { parseGasPrice, reportHook, terminateProcessTree, DEFAULT_TIMEOUT_MS } = require('../scripts/session-identity.cjs');
 
 const ADDRESS = 'manifest1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqjpzgn4';
 const SECRET = 'SESSION_PASSWORD_DO_NOT_PRINT_abc123';
@@ -20,6 +20,8 @@ function fixture(t, { amount = '10000', gasPrice = '0.025umfx', activeChain = 't
   const dataDir = join(dir, 'plugin data');
   const calls = join(dir, 'calls.jsonl');
   const pidFile = join(dir, 'probe.pid');
+  const scratchDir = join(dir, 'launcher-private-cwd');
+  const lifecycleFile = join(dir, 'lifecycle');
   mkdirSync(scripts);
   mkdirSync(dataDir);
   cpSync(join(__dirname, '../scripts/session-identity.cjs'), join(scripts, 'session-identity.cjs'));
@@ -44,6 +46,21 @@ function fixture(t, { amount = '10000', gasPrice = '0.025umfx', activeChain = 't
     console.error(${JSON.stringify(MNEMONIC)});
     if (behavior === 'offline') process.exit(1);
     if (behavior === 'ignore-signals') process.on('SIGTERM', () => {});
+    if (behavior === 'eof-race') {
+      fs.mkdirSync(${JSON.stringify(scratchDir)});
+      process.on('exit', () => fs.rmSync(${JSON.stringify(scratchDir)}, { recursive: true }));
+      process.on('SIGTERM', () => {
+        fs.appendFileSync(${JSON.stringify(lifecycleFile)}, 'TERM\\n');
+        process.exit(0);
+      });
+      // Model pinned bootstrap's non-exiting EOF shutdown. If stdin closes
+      // first, a hung RPC keeps the loop alive after graceful shutdown ends.
+      process.stdin.on('end', () => {
+        fs.appendFileSync(${JSON.stringify(lifecycleFile)}, 'EOF\\n');
+        process.removeAllListeners('SIGTERM');
+        process.on('SIGTERM', () => {});
+      });
+    }
     const send = (id, result) => console.log(JSON.stringify({ jsonrpc: '2.0', id, result }));
     readline.createInterface({ input: process.stdin }).on('line', (line) => {
       const message = JSON.parse(line);
@@ -55,7 +72,7 @@ function fixture(t, { amount = '10000', gasPrice = '0.025umfx', activeChain = 't
       assert.deepEqual(message.params, { name: 'cosmos_query', arguments: {
         module: 'bank', subcommand: 'balance', args: [${JSON.stringify(ADDRESS)}, ${JSON.stringify(denom)}],
       } });
-      if (behavior === 'query-timeout' || behavior === 'ignore-signals') { setInterval(() => {}, 1000); return; }
+      if (['query-timeout', 'ignore-signals', 'eof-race'].includes(behavior)) { setInterval(() => {}, 1000); return; }
       if (behavior === 'malformed-json') { console.log(${JSON.stringify(SECRET)}); return; }
       if (behavior === 'oversized') { console.log('x'.repeat(70000)); return; }
       if (behavior === 'rpc-error') { console.log(JSON.stringify({ jsonrpc: '2.0', id: message.id,
@@ -66,16 +83,16 @@ function fixture(t, { amount = '10000', gasPrice = '0.025umfx', activeChain = 't
   writeFileSync(join(scripts, 'run.cjs'), `
     require('./session-identity.cjs').reportSessionIdentity({ timeoutMs: ${JSON.stringify(timeoutMs)} });
   `);
-  const run = ({ cli = false, env = {} } = {}) => {
+  const run = ({ cli = false, env = {}, args = [], input, hook = false } = {}) => {
     const started = Date.now();
-    const result = spawnSync(process.execPath, [join(scripts, cli ? 'session-identity.cjs' : 'run.cjs')], {
+    const result = spawnSync(process.execPath, [join(scripts, cli ? 'session-identity.cjs' : 'run.cjs'), ...args], {
       env: { PATH: process.env.PATH, MANIFEST_PLUGIN_DATA: dataDir,
         COSMOS_MNEMONIC: MNEMONIC, MANIFEST_KEY_PASSWORD: SECRET, ...env },
-      encoding: 'utf8', timeout: DEFAULT_TIMEOUT_MS + 3000,
+      input, encoding: 'utf8', timeout: DEFAULT_TIMEOUT_MS + 3000,
     });
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout, '', 'identity must never pollute policy or MCP stdout');
-    assert.doesNotMatch(result.stderr, new RegExp(`${SECRET}|${MNEMONIC}|rpcUrl|keyPassword|keyFile|unused.invalid`));
+    if (!hook) assert.equal(result.stdout, '', 'manual identity must never pollute policy or MCP stdout');
+    assert.doesNotMatch(result.stdout + result.stderr, new RegExp(`${SECRET}|${MNEMONIC}|rpcUrl|keyPassword|keyFile|unused.invalid`));
     if (existsSync(pidFile)) {
       const pid = Number(readFileSync(pidFile, 'utf8'));
       assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, 'MCP probe must not survive the session report');
@@ -83,7 +100,7 @@ function fixture(t, { amount = '10000', gasPrice = '0.025umfx', activeChain = 't
     return { ...result, elapsed: Date.now() - started,
       calls: existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n').map(JSON.parse) : [] };
   };
-  return { run, dataDir };
+  return { run, dataDir, scripts, scratchDir, lifecycleFile, calls };
 }
 
 test('CLI prints public identity and current exact gas balance using only a bank MCP query', (t) => {
@@ -203,6 +220,11 @@ for (const behavior of ['offline', 'rpc-error', 'malformed-json', 'oversized']) 
     const result = fixture(t, { behavior }).run();
     assert.match(result.stderr, /Agent address: manifest1/);
     assert.match(result.stderr, /Gas-token balance unavailable/);
+    if (behavior === 'offline') {
+      assert.match(result.stderr, /launcher initialization unavailable/);
+      assert.match(result.stderr, /runtime setup and wallet credential access/);
+      assert.doesNotMatch(result.stderr, /chain server is reachable/);
+    } else assert.doesNotMatch(result.stderr, /launcher initialization/);
     assert.doesNotMatch(result.stderr, /Gas-token balance: 0|request_faucet/);
   });
 }
@@ -210,11 +232,69 @@ for (const behavior of ['offline', 'rpc-error', 'malformed-json', 'oversized']) 
 for (const behavior of ['initialization-timeout', 'query-timeout', 'ignore-signals']) {
   test(`${behavior} ends the MCP process within the bounded session budget`, (t) => {
     const result = fixture(t, { behavior, timeoutMs: 200 }).run();
-    assert.match(result.stderr, /Gas-token balance unavailable \(timed out\)/);
+    if (behavior === 'initialization-timeout') {
+      assert.match(result.stderr, /Gas-token balance unavailable \(launcher initialization timed out\)/);
+      assert.match(result.stderr, /The chain query did not start/);
+    } else assert.match(result.stderr, /Gas-token balance unavailable \(timed out\)/);
     assert.ok(result.elapsed < 1800, `probe took ${result.elapsed}ms`);
     assert.doesNotMatch(result.stderr, /request_faucet/);
   });
 }
+
+test('hung RPC cleanup sends TERM while stdin remains open, preserving the launcher exit cleanup', (t) => {
+  const f = fixture(t, { behavior: 'eof-race', timeoutMs: 200 });
+  const result = f.run();
+  assert.match(result.stderr, /Gas-token balance unavailable \(timed out\)/);
+  assert.equal(readFileSync(f.lifecycleFile, 'utf8'), 'TERM\n', 'EOF must not preempt graceful signal shutdown');
+  assert.equal(existsSync(f.scratchDir), false, 'launcher exit cleanup must run for the hung RPC deadline');
+});
+
+for (const args of [['--bogus'], ['--timeout', '10'], ['--hook-report', '--bogus'], ['--skip-probe'], ['--hook-report', '--skip-probe', '--migration-failed']]) {
+  test(`CLI rejects unexpected arguments ${args.join(' ')} without launching a query`, (t) => {
+    const f = fixture(t);
+    const result = spawnSync(process.execPath, [join(f.scripts, 'session-identity.cjs'), ...args], {
+      env: { PATH: process.env.PATH, MANIFEST_PLUGIN_DATA: f.dataDir }, encoding: 'utf8', timeout: 2000,
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /^Usage: node session-identity.cjs/);
+    assert.equal(existsSync(f.calls), false);
+  });
+}
+
+test('explicit hook mode serializes public diagnostics into model context and the user message', (t) => {
+  const f = fixture(t, { amount: '0' });
+  const result = f.run({ cli: true, args: ['--hook-report'], hook: true, input: '# trusted policy\n' });
+  assert.equal(result.stderr, '');
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.hookSpecificOutput.hookEventName, 'SessionStart');
+  assert.equal(output.hookSpecificOutput.additionalContext, `# trusted policy\n\n${output.systemMessage}`);
+  assert.match(output.systemMessage, /Gas-token balance: 0 umfx/);
+  assert.match(output.systemMessage, /request_faucet/);
+});
+
+test('explicit skipped hook mode emits policy without consulting configuration or starting the launcher', (t) => {
+  const f = fixture(t, { rawConfig: SECRET });
+  const result = f.run({ cli: true, args: ['--hook-report', '--skip-probe'], hook: true, input: '# trusted policy\n' });
+  assert.deepEqual(JSON.parse(result.stdout), {
+    hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: '# trusted policy' },
+  });
+  assert.deepEqual(result.calls, []);
+});
+
+test('hook context stays within the host limit while preserving the entire policy and faucet advice', async (t) => {
+  const f = fixture(t, { amount: '0' });
+  const policy = '# trusted policy\n' + 'x'.repeat(9590);
+  let serialized = '';
+  await reportHook({ policy, dataDir: f.dataDir, launcherPath: join(f.scripts, 'start-server.cjs'),
+    stdout: { write: (text) => { serialized += text; } } });
+  const output = JSON.parse(serialized);
+  assert.ok(output.hookSpecificOutput.additionalContext.startsWith(policy));
+  assert.ok(output.hookSpecificOutput.additionalContext.length <= 10000);
+  assert.match(output.hookSpecificOutput.additionalContext, /request_faucet/);
+  assert.match(output.systemMessage, /Agent address: manifest1/);
+  assert.match(output.systemMessage, /Gas-token balance: 0 umfx/);
+});
 
 const balanceResponse = (balance) => ({ content: [{ type: 'text', text: JSON.stringify({
   module: 'bank', subcommand: 'balance', result: { balance },

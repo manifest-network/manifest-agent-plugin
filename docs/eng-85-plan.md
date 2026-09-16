@@ -18,7 +18,8 @@ and Windows credential-store acceptance remains outstanding.
    password before atomically removing `agent.keyPassword`; record a durable,
    one-time breadcrumb. Preserve the original config if storage fails. Coordinate
    migration with config writers and all five launchers, including Codex.
-4. Extend Claude SessionStart with a bounded, stderr-only identity report:
+4. Extend new Claude sessions with a bounded identity report delivered through
+   structured hook context and a user message (manual CLI output uses stderr):
    address, chain, gas denom, and the balance returned by the chain MCP server.
    Use exact arithmetic for the low-funds threshold (gas price × 200,000 × 2).
    Offer a faucet hint on testnet only; startup never requests funds itself.
@@ -40,7 +41,7 @@ and Windows credential-store acceptance remains outstanding.
   live macOS/Windows keychain behavior. Existing host acceptance evidence remains
   historical; it does not certify this version's migration or UI behavior.
 
-## Recorded validation
+## Initial implementation validation
 
 - Node 24.15.0: all 631 unit/integration tests passed with test concurrency 2.
 - A real isolated D-Bus/GNOME Keyring session passed four libsecret flows:
@@ -68,3 +69,52 @@ and Windows credential-store acceptance remains outstanding.
 
 This validates implementation and local contracts. No live balance query,
 faucet request, deployment, release or real-user wallet operation was performed.
+
+## PR review follow-up
+
+The verified [PR review](https://github.com/manifest-network/manifest-agent-plugin/pull/19#issuecomment-5701516729)
+led to these corrections:
+
+- Forward the credential selector, Linux session bus variables and Windows
+  `SystemRoot` through every Codex MCP entry. The native smoke now starts with
+  legacy config and checks migration and preservation across reinstall.
+- Deliver startup identity and migration failures through Claude's structured
+  context/user-message fields while preserving the complete runtime policy.
+  Resume, clear, compact and fork skip the expensive balance probe.
+- Release config locks after validation errors; use exclusive file creation and
+  Linux PID start times, with serialized stale recovery and bounded diagnostics.
+  Concurrent native migration failures share a short, secret-free retry marker.
+- Preserve damaged configs with explicit private repair/backup instructions;
+  report retained encrypted keyfiles after storage failure. Reject concurrent
+  config changes during launcher startup.
+- Decode PowerShell stdin as UTF-8, skip native type compilation for ACL-only
+  operations, label file ACL failures correctly, and add a parser gate.
+- Send TERM before closing probe stdin, retry shutdown, and distinguish launcher
+  failure from chain-query failure. Reject unsupported manual CLI arguments.
+- Ship the linked recovery guide in the Codex package, include it in provenance,
+  regenerate onboarding skills and synchronize the script inventory.
+
+Additional integration evidence:
+
+- The final full suite passed all 665 tests on Node 24.15.0 with no skips.
+  Package generation, syntax/JSON/version checks, executable docs and historical
+  provenance checks passed. Stale-reaper and paused-creator races have
+  deterministic regression tests; the btrfs stress check preserved 240 updates.
+- Real Codex 0.153.4 and 0.154.0 passed eight isolated host cases, including all
+  five servers receiving credential environment values and one verified migration.
+- Real Claude Code 2.1.270 received the entire 9,092-character policy and public
+  zero-balance/faucet report in its API prompt through the actual SessionStart
+  hook. Its successful hook response contained the complete `systemMessage`.
+  This used a local fixture API/MCP peer in print mode; interactive display was
+  not observed.
+- Three probes against MCP 0.22.0 reached a local bank RPC that deliberately
+  withheld its response. Each finished in about 5.1 seconds; helper, launcher
+  and MCP processes exited, sockets closed, and no temporary working directory
+  remained. The fixture used a public encrypted wallet and explicit file storage.
+- PowerShell 7.6.6 parsed the shipped scripts, rejected a malformed fixture and
+  preserved a Unicode request under a simulated ASCII console. Native Windows
+  Credential Manager/ACL and macOS Keychain execution still need platform
+  acceptance.
+- Both-host pinned runtime contracts passed with their committed deadlines:
+  five servers per host, 25 workflow references and six callback cases, with
+  outbound networking blocked.

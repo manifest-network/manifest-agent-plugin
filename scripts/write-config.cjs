@@ -17,10 +17,10 @@
  */
 
 const { existsSync, mkdirSync, chmodSync } = require('node:fs');
-const { join } = require('node:path');
+const { join, resolve } = require('node:path');
 const { atomicWrite, readJsonFile, getDataDir } = require('./_io.cjs');
 const { composeGasPrice } = require('./_gas-price.cjs');
-const { storePassword, migrateConfig, withConfigLock } = require('./_credentials.cjs');
+const { storePassword, migrateConfig, withConfigLock, readConfig } = require('./_credentials.cjs');
 
 function parseArgs(argv) {
   const args = { chain: null, gasPrice: null, gasToken: null };
@@ -134,14 +134,34 @@ function readChainFile(chainsDir, network) {
   // Write config.json
   mkdirSync(AGENT_DIR, { recursive: true });
   chmodSync(AGENT_DIR, 0o700);
-  withConfigLock(AGENT_DIR, () => {
-    // Preserve a legacy wallet's credential before selecting a replacement.
-    // A unique new reference cannot overwrite the current wallet's password.
-    const previous = migrateConfig(AGENT_DIR, { locked: true });
-    if (previous?.credentialMigration) config.credentialMigration = previous.credentialMigration;
-    config.agent.keyPasswordRef = storePassword(AGENT_DIR, keyfile, password);
-    atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
-  });
+  try {
+    withConfigLock(AGENT_DIR, () => {
+      // A damaged previous config may still hold a recoverable legacy password.
+      // Refuse replacement with an explicit recovery path, without parser text.
+      const recovery = `Repair the previous config at ${CONFIG_PATH} to preserve any legacy password, or move it aside as a private backup before re-running init-agent. Do not paste its contents into chat.`;
+      let previous;
+      try { previous = readConfig(AGENT_DIR); }
+      catch { throw new Error(`Could not read the existing configuration. ${recovery}`); }
+      if (previous?.agent && Object.hasOwn(previous.agent, 'keyPassword')) {
+        if (typeof previous.agent.keyPassword !== 'string') {
+          throw new Error(`The previous config has an invalid agent.keyPassword. ${recovery}`);
+        }
+        if (typeof previous.agent.keyFile !== 'string' || !previous.agent.keyFile.trim()) {
+          throw new Error(`The previous config is missing agent.keyFile. ${recovery}`);
+        }
+      }
+      // Preserve a legacy wallet's credential before selecting a replacement.
+      // A unique new reference cannot overwrite the current wallet's password.
+      previous = migrateConfig(AGENT_DIR, { locked: true });
+      if (previous?.credentialMigration) config.credentialMigration = previous.credentialMigration;
+      config.agent.keyPasswordRef = storePassword(AGENT_DIR, keyfile, password);
+      atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
+    });
+  } catch (error) {
+    // Never remove an arbitrary stdin-supplied path: it may be the active wallet.
+    console.error(`Supplied keyfile retained at ${resolve(AGENT_DIR, keyfile)}; it was not deleted. Check the existing config before retrying key generation, which can leave unused encrypted keyfiles.`);
+    throw error;
+  }
 
   console.error(`Config written to ${CONFIG_PATH}`);
   console.error(`Agent address: ${address}`);

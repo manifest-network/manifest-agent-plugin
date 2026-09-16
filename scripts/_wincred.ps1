@@ -4,6 +4,32 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 try {
+    # Node writes UTF-8 bytes to redirected stdin. Console.In uses the Windows
+    # console code page in PowerShell 5.1, corrupting non-ASCII profile paths.
+    $reader = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), [Text.Encoding]::UTF8)
+    try { $request = $reader.ReadToEnd() | ConvertFrom-Json }
+    finally { $reader.Dispose() }
+    if ($request.operation -eq 'protect-directory' -or $request.operation -eq 'protect-file') {
+        # POSIX chmod has no owner-only ACL meaning on Windows. An explicitly
+        # selected file fallback must restrict access to the current user.
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+        if ($request.operation -eq 'protect-directory') {
+            $acl = New-Object System.Security.AccessControl.DirectorySecurity
+            $inheritance = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
+        } else {
+            $acl = New-Object System.Security.AccessControl.FileSecurity
+            $inheritance = [System.Security.AccessControl.InheritanceFlags]::None
+        }
+        $acl.SetOwner($identity)
+        $acl.SetAccessRuleProtection($true, $false)
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', $inheritance, 'None', 'Allow')
+        $acl.AddAccessRule($rule)
+        Set-Acl -LiteralPath ([string]$request.target) -AclObject $acl
+        exit 0
+    }
+    if ($request.target -notmatch '^org\.manifest-network\.manifest-agent/[a-f0-9-]+$') { throw 'Invalid target.' }
+    if ($request.operation -ne 'store' -and $request.operation -ne 'read') { throw 'Invalid operation.' }
+    # Only Credential Manager operations need the native API wrapper.
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -60,26 +86,6 @@ public static class ManifestCredentialStore {
     }
 }
 '@
-    $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
-    if ($request.operation -eq 'protect-directory' -or $request.operation -eq 'protect-file') {
-        # POSIX chmod has no owner-only ACL meaning on Windows. An explicitly
-        # selected file fallback must restrict access to the current user.
-        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-        if ($request.operation -eq 'protect-directory') {
-            $acl = New-Object System.Security.AccessControl.DirectorySecurity
-            $inheritance = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
-        } else {
-            $acl = New-Object System.Security.AccessControl.FileSecurity
-            $inheritance = [System.Security.AccessControl.InheritanceFlags]::None
-        }
-        $acl.SetOwner($identity)
-        $acl.SetAccessRuleProtection($true, $false)
-        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', $inheritance, 'None', 'Allow')
-        $acl.AddAccessRule($rule)
-        Set-Acl -LiteralPath ([string]$request.target) -AclObject $acl
-        exit 0
-    }
-    if ($request.target -notmatch '^org\.manifest-network\.manifest-agent/[a-f0-9-]+$') { throw 'Invalid target.' }
     if ($request.operation -eq 'store') {
         [ManifestCredentialStore]::Store([string]$request.target, [string]$request.payload)
     } elseif ($request.operation -eq 'read') {

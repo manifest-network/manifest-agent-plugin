@@ -613,6 +613,39 @@ test('malformed config diagnostic never repeats source text containing a passwor
   });
 });
 
+test('concurrent config changes after the first read stop startup before spawning a wallet', () => {
+  for (const change of ['keyfile', 'reference', 'chain', 'deleted']) {
+    withData((data) => {
+      // Use a migrated starting config so a reference swap cannot hide behind
+      // the permitted legacy-password-to-reference transition.
+      const { migrateConfig } = require('../scripts/_credentials.cjs');
+      migrateConfig(data, { env: { MANIFEST_CREDENTIAL_STORE: 'file' }, log: () => {} });
+      const helper = join(data, '.fixture-plugin', 'scripts', '_credentials.cjs');
+      const preload = join(data, 'concurrent-config-change.cjs');
+      writeFileSync(preload, `
+        const fs = require('node:fs');
+        const credentials = require(${JSON.stringify(helper)});
+        const migrate = credentials.migrateConfig;
+        credentials.migrateConfig = (...args) => {
+          const config = migrate(...args);
+          const change = ${JSON.stringify(change)};
+          if (change === 'keyfile') config.agent.keyFile = 'replacement-wallet.json';
+          if (change === 'reference') config.agent.keyPasswordRef.id = 'different-fixture-reference';
+          if (change === 'chain') config.activeChain = 'mainnet';
+          if (change === 'deleted') { fs.unlinkSync(${JSON.stringify(join(data, 'config.json'))}); return null; }
+          fs.writeFileSync(${JSON.stringify(join(data, 'config.json'))}, JSON.stringify(config));
+          return config;
+        };
+      `);
+      const result = runWrapper('chain', { data, extraEnv: { NODE_OPTIONS: `--require=${JSON.stringify(preload)}` } });
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, /configuration changed during startup/i);
+      assert.doesNotMatch(result.stderr, /fixture-password|Starting manifest-mcp/);
+    });
+  }
+});
+
 test('non-object config JSON reports the invalid root shape without exposing its contents', () => {
   for (const config of [null, [], 42, true, 'CONFIG_ROOT_SECRET']) {
     withData((data) => {

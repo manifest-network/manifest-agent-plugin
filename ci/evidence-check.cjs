@@ -171,6 +171,8 @@ function hostSourceFiles(tree, { terminal = false } = {}) {
     ...tree.filter((e) => /^scripts\/[^/]+\.(cjs|ps1)$/.test(e.path)).map((e) => e.path),
     'scripts/session-start.sh', 'scripts/pre-tool-use.sh', 'hooks/hooks.json', 'package.json', 'package-lock.json', 'docs/codex.md',
     ...workflows, 'hosts/codex/env.sh', 'hosts/codex/restart-confirmation.md', 'hosts/claude/restart-confirmation.md'];
+  // Identity recovery ships beside the Codex README in newer source trees.
+  if (tree.some((entry) => entry.path === 'docs/identity.md')) files.push('docs/identity.md');
   if (terminal) files.push('ci/terminal-host-smoke.cjs', 'tests/fixtures/terminal-model.cjs', '.mcp.json', '.claude-plugin/plugin.json',
     ...workflows.map((file) => `skills/${file.slice(10, -3)}/SKILL.md`));
   return files.sort();

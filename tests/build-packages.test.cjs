@@ -65,12 +65,17 @@ test('Codex package is relocatable, complete and isolated from Claude component 
     assert.ok(entry.startup_timeout_sec >= 90);
     assert.ok(entry.tool_timeout_sec >= 1800);
     assert.equal(entry.default_tools_approval_mode, 'writes');
+    for (const name of ['MANIFEST_CREDENTIAL_STORE', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR', 'SystemRoot']) {
+      assert.ok(entry.env_vars.includes(name), `${server} must forward ${name} for credential helpers`);
+    }
     assert.doesNotMatch(JSON.stringify(entry), /CLAUDE_|\/home\/|\/tmp\//);
   }
   assert.equal(fs.existsSync(join(plugin, 'hooks')), false);
   assert.equal(fs.existsSync(join(plugin, '.claude-plugin')), false);
   assert.equal(fs.existsSync(join(plugin, 'scripts/session-start.sh')), false);
   assert.deepEqual(fs.readFileSync(join(plugin, 'scripts/_wincred.ps1')), fs.readFileSync(join(ROOT, 'scripts/_wincred.ps1')));
+  assert.match(fs.readFileSync(join(plugin, 'README.md'), 'utf8'), /\]\(identity\.md\)/);
+  assert.deepEqual(fs.readFileSync(join(plugin, 'identity.md')), fs.readFileSync(join(ROOT, 'docs/identity.md')));
   assert.equal(fs.existsSync(join(plugin, 'node_modules')), false);
   assert.equal(fs.readdirSync(join(plugin, 'skills')).length, 14);
   assert.deepEqual(JSON.parse(fs.readFileSync(join(plugin, 'mcp-policy.json'), 'utf8')), mutationPolicy());
@@ -127,7 +132,7 @@ test('all generated skill helpers bootstrap a clean shell after relocating a pac
 test('workflow discovery, package generation and source hashes ignore non-workflow entries', (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'manifest-workflow-files-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  for (const name of ['ci', 'scripts', 'hosts', 'hooks', 'workflows', 'package.json', 'package-lock.json', 'docs/codex.md',
+  for (const name of ['ci', 'scripts', 'hosts', 'hooks', 'workflows', 'package.json', 'package-lock.json', 'docs/codex.md', 'docs/identity.md',
     'tests/fixtures/native-host-fixture.cjs', 'tests/fixtures/json-rpc-peer.cjs']) {
     fs.mkdirSync(require('node:path').dirname(join(root, name)), { recursive: true });
     fs.cpSync(join(ROOT, name), join(root, name), { recursive: true });

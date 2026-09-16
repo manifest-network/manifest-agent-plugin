@@ -8,11 +8,15 @@ const path = require('node:path');
 const { randomUUID, createHash } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { atomicWrite } = require('./_io.cjs');
+const { ownerAlive, processStartTime } = require('./_runtime.cjs');
 
 const SERVICE = 'org.manifest-network.manifest-agent';
 const BACKENDS = new Set(['libsecret', 'keychain', 'wincred', 'file']);
 const REF_ID = /^[a-f0-9]{24}-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const LOCK_NAME = '.config.lock';
+const RECLAIM_NAME = '.config.lock.reclaim';
+const MIGRATION_FAILURE_NAME = '.credential-migration-failure.json';
+const MIGRATION_RETRY_MS = 30000;
 const sleeper = new Int32Array(new SharedArrayBuffer(4));
 
 class CredentialError extends Error {
@@ -62,7 +66,7 @@ function windowsCommand(request, options) {
   const systemRoot = (options.env || process.env).SystemRoot || 'C:\\Windows';
   const powershell = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   return run(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, '_wincred.ps1')],
-    JSON.stringify(request), 'wincred', options);
+    JSON.stringify(request), request.operation.startsWith('protect-') ? 'file' : 'wincred', options);
 }
 
 function nativeCommand(ref, operation, payload, options) {
@@ -109,6 +113,8 @@ function readStored(ref, dataDir, options) {
       if (!fs.lstatSync(dir).isDirectory()) throw credentialError('file', 'read');
       const target = path.join(dir, `${ref.id}.json`);
       const stat = fs.lstatSync(target);
+      // Mode bits belong to the real OS; the injected platform only selects
+      // helper commands so Windows ACL contracts can also be tested on POSIX.
       if (!stat.isFile() || (process.platform !== 'win32' && ((stat.mode & 0o077) || (fs.statSync(dir).mode & 0o077)))) {
         throw credentialError('file', 'read');
       }
@@ -174,87 +180,179 @@ function readConfig(dataDir) {
   } catch { throw new CredentialError('Invalid config.json: expected a JSON object.'); }
 }
 
-function ownerAlive(owner) {
-  if (!owner || !Number.isSafeInteger(owner.pid) || owner.pid <= 0) return false;
-  try { process.kill(owner.pid, 0); return true; }
-  catch (err) { return err.code !== 'ESRCH'; }
+function sameLock(first, second) {
+  return first.dev === second.dev && first.ino === second.ino && first.mtimeMs === second.mtimeMs;
 }
 
-// A filesystem bakery lock avoids a shared stale-lock removal race. Each
-// process owns one unique, atomically published choosing/ticket record; crashed
-// records can be unlinked without ever removing a successor's lock. The parent
-// directory stays in place. No secret is written into these records.
+function releaseLock(lockPath, owner, ownedStat) {
+  if (!ownedStat) return;
+  try {
+    const current = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    if (current.token === owner.token && sameLock(ownedStat, fs.lstatSync(lockPath))) fs.unlinkSync(lockPath);
+  } catch { /* Never remove another owner or replace the operation's outcome. */ }
+}
+
+function withReclaimGuard(guardPath, callback) {
+  const owner = { pid: process.pid, pidStartTime: processStartTime(process.pid), token: randomUUID() };
+  let fd, ownedStat;
+  try { fd = fs.openSync(guardPath, 'wx', 0o600); }
+  catch (err) { if (err.code === 'EEXIST') return false; throw err; }
+  try {
+    try {
+      fs.writeFileSync(fd, JSON.stringify(owner));
+      ownedStat = fs.fstatSync(fd);
+    } catch (err) {
+      try { if (sameLock(fs.fstatSync(fd), fs.lstatSync(guardPath))) fs.unlinkSync(guardPath); }
+      catch { /* Preserve the write error. */ }
+      throw err;
+    } finally { fs.closeSync(fd); }
+    callback();
+    return true;
+  } finally { releaseLock(guardPath, owner, ownedStat); }
+}
+
+// Called only while holding the separate reclaim guard. A stat/unlink pair
+// alone is not atomic: two reapers could otherwise unlink a live successor.
+// Always reread owner and metadata after acquiring that guard.
+function reclaimLock(lockPath, legacyPid) {
+  let before, owner;
+  try {
+    before = fs.lstatSync(lockPath);
+    if (!before.isFile()) return;
+    try { owner = JSON.parse(fs.readFileSync(lockPath, 'utf8')); }
+    catch (err) { if (!(err instanceof SyntaxError)) throw err; }
+    // Legacy filenames also identify their owner, including damaged records.
+    const pid = legacyPid || owner?.pid;
+    const pidStartTime = owner?.pid === pid ? owner?.pidStartTime : undefined;
+    // Exclusive open precedes the owner write; allow a creator to publish it.
+    if (pid ? ownerAlive(pid, pidStartTime) : Date.now() - before.mtimeMs <= 1000) return;
+    if (sameLock(before, fs.lstatSync(lockPath))) fs.unlinkSync(lockPath);
+  } catch (err) { if (err.code !== 'ENOENT') throw err; }
+}
+
+function retireLegacyLockDirectory(lockPath) {
+  // Older versions used a directory of bakery records. Never recursively
+  // remove it: live/unknown records must continue to block the upgrade. An
+  // atomic rmdir succeeds only if no old contender has published a record.
+  for (const name of fs.readdirSync(lockPath)) {
+    const match = /^([1-9][0-9]*)-[a-f0-9-]{36}\.json$/.exec(name);
+    if (!match) continue;
+    reclaimLock(path.join(lockPath, name), Number(match[1]));
+  }
+  try { fs.rmdirSync(lockPath); }
+  catch (err) { if (!['ENOENT', 'ENOTEMPTY', 'EEXIST', 'ENOTDIR'].includes(err.code)) throw err; }
+}
+
+// An exclusive file create supplies mutual exclusion without relying on a
+// directory listing (which can omit concurrently replaced records on btrfs).
+// Lock records contain process identity and an ownership token, never secrets.
 function withConfigLock(dataDir, callback, options = {}) {
   const lockPath = path.join(dataDir, LOCK_NAME);
-  const deadline = Date.now() + (options.lockTimeoutMs ?? 35000);
-  const owner = { pid: process.pid, token: randomUUID(), ticket: 0 };
-  const name = `${owner.pid}-${owner.token}.json`;
-  const recordPath = path.join(lockPath, name);
-  const namePattern = /^([1-9][0-9]*)-[a-f0-9-]{36}\.json$/;
-  function names() { return fs.readdirSync(lockPath).filter((entry) => namePattern.test(entry)); }
-  function read(name) {
-    let raw;
-    try { raw = fs.readFileSync(path.join(lockPath, name), 'utf8'); }
-    catch (err) { if (err.code === 'ENOENT') return null; throw err; }
-    const pid = Number(name.match(namePattern)[1]);
-    if (!ownerAlive({ pid })) {
-      try { fs.unlinkSync(path.join(lockPath, name)); } catch (err) { if (err.code !== 'ENOENT') throw err; }
-      return null;
+  const guardPath = path.join(dataDir, RECLAIM_NAME);
+  // Leave room for the launcher handshake within the host's 30-second limit.
+  const deadline = performance.now() + (options.lockTimeoutMs ?? 20000);
+  const owner = { pid: process.pid, pidStartTime: processStartTime(process.pid), token: randomUUID() };
+  let ownedStat;
+  function wait(guarded = false) {
+    if (performance.now() >= deadline) {
+      if (guarded) throw new CredentialError(`Timed out waiting for configuration lock recovery (${guardPath}). If a recovery process crashed, stop all configuration writers and MCP launchers, verify none are running, then remove only this recovery guard and reconnect. Never remove it while a configuration process is active.`);
+      throw new CredentialError(`Timed out waiting for the configuration lock (${lockPath}). Another process may be migrating credentials or updating config.json; reconnect after it finishes.`);
     }
-    let other;
-    try { other = JSON.parse(raw); } catch { throw new CredentialError('Invalid configuration lock record. Retry after the other configuration process exits.'); }
-    if (other.pid !== pid || !Number.isSafeInteger(other.ticket) || other.ticket < 0) throw new CredentialError('Invalid configuration lock record.');
-    return other;
-  }
-  function wait() {
-    if (Date.now() >= deadline) throw new CredentialError('Timed out waiting for another configuration update. Retry after it completes.');
     Atomics.wait(sleeper, 0, 0, 25);
   }
   try {
-    fs.mkdirSync(lockPath, { recursive: true, mode: 0o700 });
-    if (!fs.lstatSync(lockPath).isDirectory()) throw new CredentialError('Invalid configuration lock directory.');
-    atomicWrite(recordPath, JSON.stringify(owner));
-    const maxTicket = names().reduce((max, entry) => Math.max(max, read(entry)?.ticket || 0), 0);
-    if (maxTicket >= Number.MAX_SAFE_INTEGER) throw new CredentialError('Invalid configuration lock ticket.');
-    owner.ticket = maxTicket + 1;
-    atomicWrite(recordPath, JSON.stringify(owner));
-    for (const otherName of names()) {
-      if (otherName === name) continue;
-      for (;;) {
-        const other = read(otherName);
-        if (!other) break;
-        // ticket=0 means choosing; wait until its atomic ticket write completes.
-        if (other.ticket !== 0 && (other.ticket > owner.ticket || (other.ticket === owner.ticket && otherName > name))) break;
-        wait();
+    fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+    for (;;) {
+      let fd;
+      try { fd = fs.openSync(lockPath, 'wx', 0o600); }
+      catch (err) {
+        if (err.code !== 'EEXIST') throw err;
+        try {
+          const recovered = withReclaimGuard(guardPath, () => {
+            const stat = fs.lstatSync(lockPath);
+            if (stat.isDirectory()) retireLegacyLockDirectory(lockPath);
+            else if (stat.isFile()) reclaimLock(lockPath);
+            else throw new CredentialError(`Invalid configuration lock (${lockPath}). Restore a regular lock file or remove the invalid entry after configuration processes exit.`);
+          });
+          wait(!recovered);
+        } catch (error) { if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error; }
+        continue;
       }
+      try {
+        fs.writeFileSync(fd, JSON.stringify(owner));
+        ownedStat = fs.fstatSync(fd);
+      } catch (err) {
+        try { if (sameLock(fs.fstatSync(fd), fs.lstatSync(lockPath))) fs.unlinkSync(lockPath); }
+        catch { /* Preserve the write error. */ }
+        throw err;
+      } finally { fs.closeSync(fd); }
+      // A creator can be paused between exclusive open and owner publication.
+      // Let any reaper finish before verifying that it did not reclaim that
+      // formerly empty record. Never enter using an already-unlinked inode.
+      while (fs.existsSync(guardPath)) wait(true);
+      try {
+        if (!sameLock(ownedStat, fs.lstatSync(lockPath))) { ownedStat = undefined; continue; }
+      } catch (err) { if (err.code !== 'ENOENT') throw err; ownedStat = undefined; continue; }
+      break;
     }
   } catch (err) {
-    try { fs.unlinkSync(recordPath); } catch { /* not published, or already gone */ }
+    releaseLock(lockPath, owner, ownedStat);
     if (err instanceof CredentialError) throw err;
-    throw new CredentialError('Unable to acquire the configuration lock.');
+    throw new CredentialError(`Unable to acquire the configuration lock (${lockPath}). Check the data-directory permissions.`);
   }
   try { return callback(); }
-  finally { try { fs.unlinkSync(recordPath); } catch { /* preserve callback outcome */ } }
+  finally { releaseLock(lockPath, owner, ownedStat); }
 }
 
 function migrateConfig(dataDir, options = {}) {
+  const failurePath = path.join(dataDir, MIGRATION_FAILURE_NAME);
+  const now = options.now || Date.now;
+  const retryMs = options.migrationRetryMs ?? MIGRATION_RETRY_MS;
+  function clearFailure() {
+    try { fs.unlinkSync(failurePath); } catch { /* A retry hint is best effort. */ }
+  }
   function migrate() {
     const config = readConfig(dataDir);
-    if (!config || !config.agent || !Object.hasOwn(config.agent, 'keyPassword')) return config;
+    if (!config || !config.agent || !Object.hasOwn(config.agent, 'keyPassword')) { clearFailure(); return config; }
     const password = config.agent.keyPassword;
     if (typeof password !== 'string') throw new CredentialError('Invalid legacy agent.keyPassword: expected a string.');
     // A partially transitioned file may contain both fields. Reuse a verified
     // reference only; a broken reference must never silently select a new store.
-    const ref = config.agent.keyPasswordRef;
-    if (Object.hasOwn(config.agent, 'keyPasswordRef')) {
-      if (resolvePassword(config, dataDir, options) !== password) throw new CredentialError('Legacy password does not match its credential reference. Migration left config.json unchanged.');
-    } else {
-      config.agent.keyPasswordRef = storePassword(dataDir, config.agent.keyFile, password, options);
+    const hasRef = Object.hasOwn(config.agent, 'keyPasswordRef');
+    const backend = hasRef ? validateRef(config.agent.keyPasswordRef).backend : selectBackend(options);
+    let fingerprint;
+    if (backend !== 'file') {
+      try { fingerprint = createHash('sha256').update(fs.readFileSync(path.join(dataDir, 'config.json'))).digest('hex'); }
+      catch { throw new CredentialError('Unable to read config.json. Check the data directory permissions.'); }
+      let failure;
+      try { failure = JSON.parse(fs.readFileSync(failurePath, 'utf8')); } catch { /* Missing/invalid hint permits retry. */ }
+      const age = now() - failure?.failedAt;
+      if (failure?.version === 1 && failure.backend === backend && failure.fingerprint === fingerprint && Number.isFinite(age) && age >= 0 && age < retryMs) {
+        const seconds = Math.ceil((retryMs - age) / 1000);
+        throw new CredentialError(`${credentialError(backend, 'access').message} Credential migration retry is paused for ${seconds} second${seconds === 1 ? '' : 's'} after the recent failure; reconnect after that delay.`);
+      }
+    }
+    try {
+      if (hasRef) {
+        if (resolvePassword(config, dataDir, options) !== password) throw new CredentialError('Legacy password does not match its credential reference. Migration left config.json unchanged.');
+      } else {
+        config.agent.keyPasswordRef = storePassword(dataDir, config.agent.keyFile, password, options);
+      }
+    } catch (err) {
+      if (backend !== 'file' && err instanceof CredentialError) {
+        // Shared by the hook and concurrent launchers: one blocking native
+        // attempt per config/backend during the short retry window. Never save
+        // passwords, helper output, exception text, or credential references.
+        try { atomicWrite(failurePath, JSON.stringify({ version: 1, backend, fingerprint, failedAt: now() }) + '\n'); }
+        catch { /* Preserve the actionable credential-store failure. */ }
+      }
+      throw err;
     }
     delete config.agent.keyPassword;
     config.credentialMigration = { version: 1, backend: config.agent.keyPasswordRef.backend, completedAt: new Date().toISOString() };
     try { (options.atomicWrite || atomicWrite)(path.join(dataDir, 'config.json'), JSON.stringify(config, null, 2) + '\n'); }
     catch { throw new CredentialError('Could not commit credential migration. The previous config and credential remain available; retry after checking data-directory permissions.'); }
+    clearFailure();
     (options.log || console.error)('Manifest wallet credential migrated; plaintext password removed from config.json.');
     return config;
   }

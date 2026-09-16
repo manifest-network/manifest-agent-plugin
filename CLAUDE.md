@@ -73,17 +73,26 @@ Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
 
 `_credentials.cjs` owns native credential access, the explicit
 `MANIFEST_CREDENTIAL_STORE=file` fallback, secret-safe config reading and the
-`.config.lock` shared by migration and config writers. A new credential uses a
+exclusive `.config.lock` file shared by migration and config writers. Ownership
+uses a token and Linux PID start time; acquisition waits at most 20 seconds.
+The exclusive `.config.lock.reclaim` guard serializes stale recovery. A crashed
+reaper requires manual guard removal only after all configuration writers and
+MCP launchers have stopped; the timeout diagnostic names the recovery path.
+Native migration failures share a secret-free 30-second retry marker keyed by
+backend and config hash; explicit file storage bypasses it. A new credential uses a
 unique ID and must round-trip before config references it. Migration atomically
 removes the plaintext field and records `credentialMigration`; failed storage
 preserves the previous config. `update-config --status` remains read-only.
 All launchers migrate/resolve, including Codex without a lifecycle hook.
 
-Claude SessionStart runs migration and `session-identity.cjs` after setup. The
+Claude SessionStart runs migration and `session-identity.cjs` after setup on
+new sessions only. The
 identity query invokes only chain MCP `cosmos_query` bank/balance for the gas
-coin, bounds its lifetime and protocol size, and prints only public identity
-and balance fields to stderr. Low testnet balance produces a hint, never a
-faucet call. Runtime policy remains on stdout. See `docs/identity.md` for
+coin, and bounds its lifetime and protocol size. Structured hook JSON supplies
+the complete runtime policy and public report through `additionalContext`, with
+the report also in `systemMessage`. Resume, clear, compact and fork still receive
+policy and environment exports but skip the probe. Manual identity CLI output
+stays on stderr. Low testnet balance produces a hint, never a faucet call. See `docs/identity.md` for
 platform prerequisites, backup requirements and verification limits.
 
 ## Open question decisions (ENG-130 rewire)
@@ -168,7 +177,8 @@ Identity helpers added for ENG-85:
   requests and secret responses use stdin/stdout pipes owned by the adapter.
 - `scripts/migrate-credentials.cjs` — migration CLI; no stdout, sanitized stderr.
 - `scripts/session-identity.cjs` — bounded chain MCP balance query and public
-  identity/faucet advisory on stderr; safe no-op before initialization.
+  identity/faucet advisory; manual stderr or internal structured hook output;
+  safe no-op before initialization.
 
 The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.cjs` helpers, hook scripts) lives in [`docs/scripts.md`](docs/scripts.md). Read that file when you need to know a specific script's flags, stdin contract, or call site rules. The conventions that apply to the catalog as a whole:
 

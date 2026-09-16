@@ -443,6 +443,8 @@ this stream-control harness does not itself exercise the terminal UI.
 
 1. `node --check` syntax check on every `scripts/*.cjs`, `ci/*.cjs`, and `tests/fixtures/*.cjs`.
 2. `bash -n` syntax check on every `scripts/*.sh`.
+   PowerShell's parser also checks `scripts/*.ps1` and `ci/*.ps1` without invoking
+   Windows APIs; its regression test rejects deliberately malformed syntax.
 3. `JSON.parse` on every tracked `.json` file.
 4. Version consistency: `package.json` and `.claude-plugin/plugin.json` must match.
 5. Installed MCP tool inventory: `ci/mcp-tool-policy.cjs` discovers the actual tools published by all configured servers, checks metadata and anchored scoped matcher coverage, and preserves the explicit read-only/testnet-faucet exceptions. It sends initialization and `tools/list` requests only, using an isolated synthetic signer fixture with outbound network operations blocked. It never invokes a transaction or provider tool.
@@ -479,9 +481,23 @@ launcher tests use explicit file storage and verify that config contains only a
 reference and that startup receives the expected password. Invalid JSON must
 not leak parser excerpts containing secrets.
 
+Review regressions cover validation-error lock release, Linux PID reuse, guarded
+stale-lock recovery, concurrent updates on btrfs, and a single timed-out native
+helper attempt shared by concurrent migration callers. Damaged previous configs
+retain their exact bytes and report private repair/backup steps. Launchers reject
+config changes during migration, and failed storage identifies the retained
+encrypted keyfile. The real Codex smoke starts from legacy config and asserts
+environment forwarding and migration for every server, plus config, wallet and
+credential preservation across reinstall.
+
 `tests/session-identity.test.cjs` drives a mock MCP peer through initialization
 and the bank/balance query, including zero/funded/mainnet balances, exact
 threshold arithmetic, malformed replies, deadlines and stdout isolation.
+Hook tests parse structured output and verify the complete policy and safe report
+reach both context and user-message fields, including migration failures. Source
+gating covers startup, resume, clear, compact and fork; cleanup tests reproduce a
+peer whose EOF handler would swallow TERM. PowerShell transport tests read a
+Unicode request under a simulated ASCII console without running Windows APIs.
 These are protocol and behavior tests, not a live RPC or desktop UI acceptance
 record. An isolated Linux D-Bus/GNOME Keyring session additionally verified actual
 libsecret storage, readback and migration. Before a compatibility release,

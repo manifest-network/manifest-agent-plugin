@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 
-// Session diagnostics belong on stderr: stdout remains the host's policy or
-// MCP transport. Query the pinned chain server through the normal launcher so
-// wallet selection, credential migration, and runtime validation stay shared.
+// Manual diagnostics belong on stderr. The explicit --hook-report mode emits
+// Claude's structured context/user message, using only validated public fields.
+// Query the pinned chain server through the normal launcher so wallet selection,
+// credential migration, and runtime validation stay shared.
 const { readFileSync } = require('node:fs');
 const { join, win32 } = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
@@ -84,6 +85,7 @@ function queryBalance({ address, denom, dataDir, launcherPath, timeoutMs }) {
     let buffer = '';
     let receivedBytes = 0;
     let initialized = false;
+    let closed = false;
     let deadline;
     const grouped = process.platform !== 'win32';
     let windowsTreeStopped = false;
@@ -96,19 +98,38 @@ function queryBalance({ address, denom, dataDir, launcherPath, timeoutMs }) {
       if (finished) return;
       finished = true;
       clearTimeout(deadline);
-      if (!child) { resolve(value); return; }
+      if (!child?.pid) { resolve(value); return; }
       // The launcher owns an MCP descendant. Kill their private process group
       // so connection retries cannot outlive this bounded, read-only probe.
-      child.stdin.destroy();
-      child.stdout.destroy();
-      signal('SIGTERM');
-      const force = setTimeout(() => { signal('SIGKILL'); resolve(value); }, TERMINATION_GRACE_MS);
+      // Keep stdin open until shutdown. Pinned bootstrap treats EOF as a
+      // non-exiting shutdown and removes its SIGTERM handler; closing stdin
+      // first can swallow TERM while a hung RPC keeps the server alive.
+      const release = () => {
+        child.stdin.destroy();
+        child.stdout.destroy();
+        resolve(value);
+      };
+      if (closed || child.exitCode !== null || child.signalCode !== null) {
+        signal('SIGTERM');
+        signal('SIGKILL');
+        release();
+        return;
+      }
+      let force;
+      let retry;
       child.once('close', () => {
+        clearTimeout(retry);
         clearTimeout(force);
         signal('SIGKILL'); // also retire any remaining descendant
-        resolve(value);
+        release();
       });
+      signal('SIGTERM');
+      retry = setTimeout(() => {
+        signal('SIGTERM');
+        force = setTimeout(() => { signal('SIGKILL'); release(); }, TERMINATION_GRACE_MS);
+      }, TERMINATION_GRACE_MS);
     };
+    const fail = (error) => finish({ error, stage: initialized ? 'query' : 'startup' });
     const send = (message) => {
       if (!finished) child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
     };
@@ -117,16 +138,19 @@ function queryBalance({ address, denom, dataDir, launcherPath, timeoutMs }) {
         env: { ...process.env, MANIFEST_PLUGIN_DATA: dataDir },
         detached: grouped, stdio: ['pipe', 'pipe', 'ignore'],
       });
-      deadline = setTimeout(() => finish({ error: 'timed out' }), timeoutMs);
-      child.on('error', () => finish({ error: 'unavailable' }));
-      child.on('close', () => finish({ error: 'unavailable' }));
-      child.stdin.on('error', () => finish({ error: 'unavailable' }));
-      child.stdout.on('error', () => finish({ error: 'unavailable' }));
+      deadline = setTimeout(() => fail('timed out'), timeoutMs);
+      child.on('error', () => fail('unavailable'));
+      child.on('close', () => {
+        closed = true;
+        fail('unavailable');
+      });
+      child.stdin.on('error', () => fail('unavailable'));
+      child.stdout.on('error', () => fail('unavailable'));
       child.stdout.setEncoding('utf8');
       child.stdout.on('data', (chunk) => {
         if (finished) return;
         receivedBytes += Buffer.byteLength(chunk);
-        if (receivedBytes > MAX_RESPONSE_BYTES) { finish({ error: 'invalid response' }); return; }
+        if (receivedBytes > MAX_RESPONSE_BYTES) { fail('invalid response'); return; }
         buffer += chunk;
         let newline;
         while (!finished && (newline = buffer.indexOf('\n')) !== -1) {
@@ -145,15 +169,15 @@ function queryBalance({ address, denom, dataDir, launcherPath, timeoutMs }) {
               } });
             } else if (initialized && message.id === 2 && !message.error) {
               finish({ amount: parseBalance(message.result, denom) });
-            } else finish({ error: 'unavailable' });
-          } catch { finish({ error: 'invalid response' }); }
+            } else fail('unavailable');
+          } catch { fail('invalid response'); }
         }
       });
       send({ id: 1, method: 'initialize', params: {
         protocolVersion: '2024-11-05', capabilities: {},
         clientInfo: { name: 'manifest-session-identity', version: '1.0.0' },
       } });
-    } catch { finish({ error: 'unavailable' }); }
+    } catch { fail('unavailable'); }
   });
 }
 
@@ -173,7 +197,11 @@ async function reportSessionIdentity({ dataDir = process.env.MANIFEST_PLUGIN_DAT
     ? Math.min(timeoutMs, DEFAULT_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
   const result = await queryBalance({ ...identity, dataDir, launcherPath, timeoutMs: boundedTimeout });
   if (result.error) {
-    print(`Gas-token balance unavailable (${result.error}); retry the balance check when the chain server is reachable.`);
+    if (result.stage === 'startup') {
+      print(`Gas-token balance unavailable (launcher initialization ${result.error}); check runtime setup and wallet credential access, then retry. The chain query did not start.`);
+    } else {
+      print(`Gas-token balance unavailable (${result.error}); retry the balance check when the chain server is reachable.`);
+    }
     return;
   }
   print(`Gas-token balance: ${result.amount} ${identity.denom}`);
@@ -182,8 +210,47 @@ async function reportSessionIdentity({ dataDir = process.env.MANIFEST_PLUGIN_DAT
   }
 }
 
-if (require.main === module) reportSessionIdentity().catch(() => {
-  console.error('manifest-agent: Session balance check unavailable.');
-});
+const REPORT_UNAVAILABLE = 'manifest-agent: Session balance check unavailable.';
+const MIGRATION_FAILED = 'manifest-agent: Credential migration failed; wallet startup is blocked. Unlock the OS credential store, then run node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs" and reconnect the MCP servers. For headless setup, explicitly choose MANIFEST_CREDENTIAL_STORE=file and rerun migration; this stores the password in a private local file.';
 
-module.exports = { reportSessionIdentity, parseGasPrice, parseBalance, terminateProcessTree, DEFAULT_TIMEOUT_MS };
+async function reportHook({ policy, skipProbe = false, migrationFailed = false,
+  stdout = process.stdout, ...identityOptions }) {
+  const lines = [];
+  if (migrationFailed) lines.push(MIGRATION_FAILED);
+  else if (!skipProbe) {
+    try {
+      await reportSessionIdentity({ ...identityOptions, stderr: { write: (line) => lines.push(line.trimEnd()) } });
+    } catch { lines.push(REPORT_UNAVAILABLE); }
+  }
+  const message = lines.join('\n');
+  let context = policy.trimEnd();
+  if (message) {
+    // Claude caps each output string at 10k characters. Preserve the complete
+    // policy and prioritize balance/faucet advice over repeated identity labels
+    // for unusually long but valid public fields. The user gets every line.
+    const selected = [];
+    for (const line of [...lines].reverse()) {
+      if (context.length + selected.join('\n').length + line.length + 3 <= 10000) selected.unshift(line);
+    }
+    if (selected.length) context += `\n\n${selected.join('\n')}`;
+  }
+  stdout.write(`${JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context },
+    ...(message ? { systemMessage: message } : {}),
+  })}\n`);
+}
+
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  if (args.length === 0) reportSessionIdentity().catch(() => console.error(REPORT_UNAVAILABLE));
+  else if (args[0] === '--hook-report' && (args.length === 1
+    || (args.length === 2 && ['--skip-probe', '--migration-failed'].includes(args[1])))) {
+    reportHook({ policy: readFileSync(0, 'utf8'), skipProbe: args[1] === '--skip-probe',
+      migrationFailed: args[1] === '--migration-failed' });
+  } else {
+    console.error('Usage: node session-identity.cjs [--hook-report [--skip-probe|--migration-failed]]');
+    process.exitCode = 1;
+  }
+}
+
+module.exports = { reportSessionIdentity, reportHook, parseGasPrice, parseBalance, terminateProcessTree, DEFAULT_TIMEOUT_MS };

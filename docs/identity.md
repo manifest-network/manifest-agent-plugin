@@ -21,6 +21,12 @@ process-scoped execution-policy override for its bundled script; organization
 Group Policy still takes precedence. Backend diagnostics do not print
 the password or native command output.
 
+Codex forwards `MANIFEST_CREDENTIAL_STORE`, `DBUS_SESSION_BUS_ADDRESS` and
+`XDG_RUNTIME_DIR` to each MCP launcher so setup and server processes use the same
+Linux credential service. `SystemRoot` locates the Windows helper. The PowerShell
+bridge reads UTF-8 explicitly, including non-ASCII paths in the file fallback;
+ACL operations do not compile the native Credential Manager bridge.
+
 Initialization and key import pipe their secret output directly to
 `write-config.cjs`. The writer stores a new credential and verifies a readback
 before updating config. Passwords never appear in command arguments or the
@@ -67,6 +73,22 @@ entry or notice. A store failure leaves the original config intact and stops
 wallet startup; unlock the keychain or explicitly select the headless fallback,
 then reconnect. Runtime policy injection still happens if migration fails.
 
+The exclusive `.config.lock` file uses an owner token and Linux process start
+time to distinguish stale records from reused PIDs. Waiters stop after 20 seconds
+and name the lock path in the diagnostic. Stale recovery is serialized by
+`.config.lock.reclaim`; a crashed recovery process can leave this guard behind.
+The guard is never automatically stolen. If its timeout diagnostic appears,
+stop all configuration writers and MCP launchers, verify none remain running,
+then remove only `$MANIFEST_PLUGIN_DATA/.config.lock.reclaim` and reconnect.
+Never remove a recovery guard while a configuration process is active.
+
+A native-store migration failure
+creates `.credential-migration-failure.json`, a private marker containing only
+the backend, config hash and failure time. Matching launchers fail promptly with
+a retry delay for up to 30 seconds, preventing repeated prompts from the five servers.
+Changing config or selecting the file fallback allows an immediate retry; a
+successful migration removes the marker. No failure cache applies to file storage.
+
 Atomic replacement removes the plaintext field from the current config; it
 cannot erase copies in backups, snapshots or filesystem history. Do not restore
 an old plaintext config as a routine dependency repair.
@@ -77,14 +99,34 @@ For a manual migration, load the host environment first, then run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs"
 ```
 
+If an older Codex package cannot forward the headless selection, run the migration
+from a plain shell after selecting the intended host data directory:
+
+```bash
+MANIFEST_CREDENTIAL_STORE=file node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs"
+```
+
+This is an explicit choice of private file storage for legacy plaintext config.
+Existing keychain references still require access to their original store.
+
 ## Startup balance and faucet guidance
 
-Claude SessionStart prints the agent address, active chain and chain ID, gas
-denom, and gas-token balance on stderr. It initializes the chain MCP server and
+On a new Claude session, the hook delivers the agent address, active chain and
+chain ID, gas denom, balance and faucet guidance through structured
+`hookSpecificOutput.additionalContext` for the model and `systemMessage` for
+the user. Successful-hook stderr is a debug diagnostic channel, so the hook
+does not rely on it for this report. It initializes the chain MCP server and
 calls only `cosmos_query` with `module: bank`, `subcommand: balance`, and the
 address and denom. It does not send transactions or request faucet funds.
-An unavailable RPC, invalid reply, or timeout reports an unavailable balance
-without preventing the session policy from loading.
+An unavailable credential/launcher is distinguished from a failed chain query.
+Failures do not prevent the session policy from loading, and migration failure
+guidance is included in the visible message and model context.
+
+The pinned MCP requires wallet resolution and decryption even for a public
+balance query, so this probe adds a keychain lookup and server startup work.
+The five-second query budget can expire on a slow machine. Resume, fork, clear
+and compaction still receive policy and environment exports but skip the balance
+probe; no RPC latency or repeated decrypt is added on those events.
 
 For testnet, a balance below `ceil(gas price × 200,000 × 2)` prompts the user to
 request faucet funds. A zero balance always produces the hint, including when
@@ -98,6 +140,9 @@ loading its skill environment, the same report can be run manually:
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/session-identity.cjs"
 ```
+
+The manual command writes its report to stderr and rejects additional arguments.
+Its hook-report flags are internal to the SessionStart integration.
 
 ## Backup and recovery
 
@@ -113,6 +158,15 @@ need its reference later; re-keying does not move the old wallet's funds.
 The plugin does not garbage-collect keychain entries during re-keying or uninstall.
 Restoring a copied data directory on another machine requires restoring its
 referenced credential or explicitly importing the original mnemonic.
+
+An unreadable or malformed existing config is never silently overwritten. Its
+diagnostic names the path: repair the JSON privately to recover any legacy
+password, or move the file aside as a private backup before running initialization.
+Protect that backup like a password file (0600 on POSIX); do not paste it into
+chat. Missing or invalid legacy wallet fields follow the same recovery path.
+If credential storage fails after key generation/import, the writer reports the
+retained keyfile. It never deletes an arbitrary supplied path, which could be the
+active wallet; repeated attempts may leave unused encrypted keyfiles.
 
 Automated tests exercise platform command contracts and isolated file storage.
 An isolated Linux D-Bus/GNOME Keyring session verified real libsecret storage,

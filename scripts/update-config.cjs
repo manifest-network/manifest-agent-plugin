@@ -33,7 +33,7 @@ const { existsSync } = require('node:fs');
 const { join } = require('node:path');
 const { atomicWrite, readJsonFile, getDataDir } = require('./_io.cjs');
 const { composeGasPrice } = require('./_gas-price.cjs');
-const { migrateConfig, withConfigLock } = require('./_credentials.cjs');
+const { migrateConfig, withConfigLock, readConfig } = require('./_credentials.cjs');
 
 function parseArgs(argv) {
   const args = { chain: null, gasPrice: null, gasToken: null, gasMultiplier: null, refreshChains: false, status: false };
@@ -91,9 +91,10 @@ function readChainFile(chainsDir, network) {
 
   let config;
   try {
-    config = readJsonFile(CONFIG_PATH);
+    config = readConfig(AGENT_DIR);
+    if (!config) throw new Error('Config disappeared before reading.');
   } catch {
-    console.error('Could not read config.json. Repair its JSON or restore the configuration.');
+    console.error(`Could not read ${CONFIG_PATH}. Repair its JSON to preserve any legacy password, or move it aside as a private backup before running init-agent. Do not paste its contents into chat.`);
     process.exit(1);
   }
 
@@ -128,28 +129,20 @@ function readChainFile(chainsDir, network) {
       // --chain X --gas-token Y in one invocation does the right thing).
       const targetChain = args.chain || config.activeChain;
       if (!targetChain) {
-        console.error('--gas-token requires an active chain (pass --chain or set one previously)');
-        process.exit(1);
+        throw new Error('--gas-token requires an active chain (pass --chain or set one previously)');
       }
       const chainData = readChainFile(CHAINS_DIR, targetChain);
       if (!chainData) {
-        console.error(`Chain data not found for ${targetChain}. Run fetch-chain-registry.cjs or pass --refresh-chains first.`);
-        process.exit(1);
+        throw new Error(`Chain data not found for ${targetChain}. Run fetch-chain-registry.cjs or pass --refresh-chains first.`);
       }
-      try {
-        config.gasPrice = composeGasPrice(chainData, args.gasToken);
-      } catch (err) {
-        console.error(err.message);
-        process.exit(1);
-      }
+      config.gasPrice = composeGasPrice(chainData, args.gasToken);
     }
 
     // Update gas multiplier
     if (args.gasMultiplier) {
       const val = Number(args.gasMultiplier);
       if (!Number.isFinite(val) || val < 1) {
-        console.error('--gas-multiplier must be a number >= 1.');
-        process.exit(1);
+        throw new Error('--gas-multiplier must be a number >= 1.');
       }
       config.gasMultiplier = val;
     }
@@ -160,8 +153,7 @@ function readChainFile(chainsDir, network) {
       const testnetData = readChainFile(CHAINS_DIR, 'testnet');
 
       if (!mainnetData && !testnetData) {
-        console.error('No chain data files found. Run fetch-chain-registry.cjs first.');
-        process.exit(1);
+        throw new Error('No chain data files found. Run fetch-chain-registry.cjs first.');
       }
 
       if (!config.chains) config.chains = {};

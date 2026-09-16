@@ -99,8 +99,9 @@ Once the MCP servers are connected, verify the agent is wired up correctly:
 
 `$MANIFEST_PLUGIN_DATA` resolves to `~/.claude/plugins/data/<plugin-id>/` and is exposed to scripts as `$MANIFEST_PLUGIN_DATA`. It's where all your runtime state lives — config, keys, chain data, saved deployments. The plugin root is read-only; nothing is written to your clone or marketplace cache.
 
-Claude SessionStart reports the configured address, chain, gas denom and current
-gas-token balance on stderr. Low testnet balances produce a faucet hint; startup
+On new Claude sessions, SessionStart supplies the configured address, chain,
+gas denom and current gas-token balance as model context and a user message.
+Low testnet balances produce a faucet hint; startup
 does not request funds automatically. Offline or failed queries show an unavailable
 balance. See [session identity and credentials](docs/identity.md).
 

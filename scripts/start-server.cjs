@@ -36,6 +36,8 @@ try {
   process.exit(1);
 }
 const CONFIG_PATH = join(AGENT_DIR, 'config.json');
+const configRecovery = () => `Repair ${CONFIG_PATH} to preserve any legacy password, or move it aside as a private backup before running ${skillCommand('init-agent')}. Do not paste its contents into chat.`;
+const omit = (value, keys) => Object.fromEntries(Object.entries(value ?? {}).filter(([key]) => !keys.includes(key)));
 
 // --- Validate server name ---
 const serverName = process.argv[2];
@@ -88,14 +90,14 @@ async function startServer() {
     if (!(error instanceof SyntaxError)) throw error;
     // JSON parser messages can include the invalid source text, including a
     // wallet password. Report only the file to repair.
-    console.error(`Failed to parse ${CONFIG_PATH}. Repair the JSON or re-run ${skillCommand('init-agent')}.`);
+    console.error(`Failed to parse ${CONFIG_PATH}. ${configRecovery()}`);
     process.exit(1);
   }
 
   // --- Validate config fields ---
   startupPhase = 'validating config.json';
   if (config === null || typeof config !== 'object' || Array.isArray(config)) {
-    console.error(`Invalid config: config.json must contain a JSON object. Re-run ${skillCommand('init-agent')}.`);
+    console.error(`Invalid config: config.json must contain a JSON object. ${configRecovery()}`);
     process.exit(1);
   }
   const { activeChain, gasPrice, gasMultiplier, chains, agent } = config;
@@ -120,7 +122,7 @@ async function startServer() {
   // mnemonic or the upstream binary's default ~/.manifest/key.json wallet.
   if (typeof agent?.keyFile !== 'string' || !agent.keyFile.trim()
     || (typeof agent.keyPassword !== 'string' && !agent.keyPasswordRef)) {
-    console.error(`Invalid config: agent.keyFile and agent.keyPasswordRef (or legacy agent.keyPassword) are required. Re-run ${skillCommand('init-agent')}.`);
+    console.error(`Invalid config: agent.keyFile and agent.keyPasswordRef (or legacy agent.keyPassword) are required. ${configRecovery()}`);
     process.exit(1);
   }
   const keyFile = resolve(AGENT_DIR, agent.keyFile);
@@ -135,12 +137,11 @@ async function startServer() {
   const migrated = migrateConfig(AGENT_DIR);
   // A concurrent wallet/config change requires a reconnect; never combine
   // one wallet's file/chain snapshot with another wallet's password.
-  const { keyPassword: legacyPassword, keyPasswordRef: oldRef, ...oldAgent } = agent;
-  const { keyPassword: migratedLegacy, keyPasswordRef: newRef, ...newAgent } = migrated?.agent ?? {};
-  const { agent: oldIdentity, credentialMigration: oldMigration, ...oldConfig } = config;
-  const { agent: newIdentity, credentialMigration: newMigration, ...newConfig } = migrated ?? {};
-  if (!isDeepStrictEqual(oldAgent, newAgent) || !isDeepStrictEqual(oldConfig, newConfig)
-    || (oldRef && !isDeepStrictEqual(oldRef, newRef))) {
+  const passwordFields = ['keyPassword', 'keyPasswordRef'];
+  const identityFields = ['agent', 'credentialMigration'];
+  if (!isDeepStrictEqual(omit(agent, passwordFields), omit(migrated?.agent, passwordFields))
+    || !isDeepStrictEqual(omit(config, identityFields), omit(migrated, identityFields))
+    || (agent.keyPasswordRef && !isDeepStrictEqual(agent.keyPasswordRef, migrated?.agent?.keyPasswordRef))) {
     console.error('Manifest configuration changed during startup. Reconnect the MCP server.');
     process.exit(1);
   }
@@ -270,6 +271,7 @@ async function startServer() {
 startServer().catch((error) => {
   if (startupPhase === 'resolving wallet credentials' && error instanceof CredentialError) {
     console.error(`Manifest MCP startup failed: ${error.message}`);
+    console.error('See the credential setup and recovery guide: https://github.com/manifest-network/manifest-agent-plugin/blob/main/docs/identity.md');
     process.exitCode = 1;
     return;
   }
@@ -283,7 +285,7 @@ startServer().catch((error) => {
   } else if (startupPhase === 'creating the MCP working directory') {
     guidance = 'Check the system temporary directory';
   } else if (startupPhase === 'resolving wallet credentials') {
-    guidance = 'Unlock the OS keychain and check credential setup; headless installs can explicitly select MANIFEST_CREDENTIAL_STORE=file for legacy migration. See docs/identity.md';
+    guidance = 'Check credential setup and data-directory permissions';
   }
   console.error(`Manifest MCP startup failed while ${startupPhase}${detail}. ${guidance}, then reconnect the server.`);
   process.exitCode = 1;
