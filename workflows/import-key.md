@@ -34,7 +34,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 
 If it fails, tell the user to run `{{invoke:init-agent}}` first and stop. Otherwise parse the JSON; you need `activeChain` AND `gasPrice` — both are required in Step 2 to preserve the existing chain + gas-price settings when re-writing the config.
 
-**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains the key password. Always use `update-config.cjs --status` to read safe fields.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password. Always use `update-config.cjs --status` to read safe fields.
 
 ## Step 1 — Get mnemonic file path
 
@@ -55,6 +55,13 @@ Wait for the user to provide the file path before proceeding.
 Do NOT read the mnemonic file. The file content must never enter {{host}}'s context.
 
 ## Step 2 — Import key and update config
+
+The password is saved in the OS credential store and config keeps only its
+reference. Linux requires `secret-tool` and an unlocked Secret Service session.
+For headless use without a keychain, explain the private-file fallback and set
+`MANIFEST_CREDENTIAL_STORE=file` only when the user has selected it. A keychain
+failure must stop the import, with the existing wallet configuration preserved;
+do not work around it by writing a plaintext password into config.
 
 Run (replacing `MNEMONIC_FILE` with the user's file path, `ACTIVE_CHAIN`
 with the `activeChain` from Step 0, and `CURRENT_GAS_PRICE` with the

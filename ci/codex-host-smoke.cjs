@@ -19,7 +19,7 @@ const ROOT = resolve(__dirname, '..');
 function sourceHashes(root = ROOT) {
   const files = ['ci/build-packages.cjs', 'ci/codex-host-smoke.cjs', 'tests/fixtures/native-host-fixture.cjs', 'tests/fixtures/json-rpc-peer.cjs',
     'hosts/codex/manifest-agent/.mcp.json', 'hosts/codex/manifest-agent/.codex-plugin/plugin.json',
-    ...fs.readdirSync(join(root, 'scripts')).filter((name) => name.endsWith('.cjs')).map((name) => `scripts/${name}`),
+    ...fs.readdirSync(join(root, 'scripts')).filter((name) => /\.(cjs|ps1)$/.test(name)).map((name) => `scripts/${name}`),
     'scripts/session-start.sh', 'scripts/pre-tool-use.sh', 'hooks/hooks.json', 'package.json', 'package-lock.json', 'docs/codex.md',
     ...workflowFiles(root).map((name) => `workflows/${name}`), 'hosts/codex/env.sh', 'hosts/codex/restart-confirmation.md', 'hosts/claude/restart-confirmation.md'];
   return Object.fromEntries(files.sort().map((name) => [name, createHash('sha256').update(fs.readFileSync(join(root, name))).digest('hex')]));
@@ -32,7 +32,8 @@ async function runHost({ codex = 'codex' } = {}) {
   const dataDir = join(temp, 'persistent-data');
   const hostHome = join(temp, 'codex-home');
   fs.mkdirSync(hostHome);
-  const env = { PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C.UTF-8', CODEX_HOME: hostHome, MANIFEST_CODEX_DATA: dataDir };
+  const env = { PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C.UTF-8', CODEX_HOME: hostHome, MANIFEST_CODEX_DATA: dataDir,
+    MANIFEST_CREDENTIAL_STORE: 'file' };
   let client;
   const command = (args) => {
     const result = spawnSync(codex, args, { cwd: temp, env, encoding: 'utf8', timeout: 30000 });

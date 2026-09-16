@@ -70,6 +70,7 @@ test('Codex package is relocatable, complete and isolated from Claude component 
   assert.equal(fs.existsSync(join(plugin, 'hooks')), false);
   assert.equal(fs.existsSync(join(plugin, '.claude-plugin')), false);
   assert.equal(fs.existsSync(join(plugin, 'scripts/session-start.sh')), false);
+  assert.deepEqual(fs.readFileSync(join(plugin, 'scripts/_wincred.ps1')), fs.readFileSync(join(ROOT, 'scripts/_wincred.ps1')));
   assert.equal(fs.existsSync(join(plugin, 'node_modules')), false);
   assert.equal(fs.readdirSync(join(plugin, 'skills')).length, 14);
   assert.deepEqual(JSON.parse(fs.readFileSync(join(plugin, 'mcp-policy.json'), 'utf8')), mutationPolicy());

@@ -35,6 +35,8 @@ It handles keypair generation and import, chain configuration (testnet/mainnet),
 
 - [Claude Code](https://claude.ai/code), or Codex with native plugin discovery and MCP form elicitation (see the host matrix for tested surfaces)
 - Stable Node.js >= 22.19.0 (Node 24 is also tested)
+- An unlocked OS credential store; Linux also requires `secret-tool` (libsecret).
+  See [credential setup and the explicit headless fallback](docs/identity.md).
 
 ## Installation
 
@@ -96,6 +98,11 @@ Once the MCP servers are connected, verify the agent is wired up correctly:
 - **Saved deployments** — `$MANIFEST_PLUGIN_DATA/manifests/` lists one JSON wrapper per past deployment (named `<lease_uuid>.json`). The `troubleshoot-deployment` skill includes a saved-manifest picker.
 
 `$MANIFEST_PLUGIN_DATA` resolves to `~/.claude/plugins/data/<plugin-id>/` and is exposed to scripts as `$MANIFEST_PLUGIN_DATA`. It's where all your runtime state lives — config, keys, chain data, saved deployments. The plugin root is read-only; nothing is written to your clone or marketplace cache.
+
+Claude SessionStart reports the configured address, chain, gas denom and current
+gas-token balance on stderr. Low testnet balances produce a faucet hint; startup
+does not request funds automatically. Offline or failed queries show an unavailable
+balance. See [session identity and credentials](docs/identity.md).
 
 ### 3. Fund your wallet
 
@@ -317,7 +324,7 @@ original password if your wallet is encrypted.
 
 ### Uninstalling
 
-`/plugin uninstall manifest-agent` (or the equivalent UI action) removes the plugin and its data directory, including your config and keyfiles. **Back up `$MANIFEST_PLUGIN_DATA` before uninstalling** if you want to preserve the wallet — without the keyfile + the password from `config.json`, the wallet is unrecoverable from the plugin alone (you'd need the original mnemonic).
+`/plugin uninstall manifest-agent` (or the equivalent UI action) removes the plugin and its data directory, including your config and keyfiles. **Back up `$MANIFEST_PLUGIN_DATA` and its referenced OS credential store before uninstalling** to preserve the wallet. With the explicit file fallback, include `credentials/`. Config plus an encrypted keyfile alone is insufficient; the original mnemonic is the independent recovery option. See [backup and recovery](docs/identity.md#backup-and-recovery).
 
 To reinstall while retaining Claude's data, use the CLI's `--keep-data` option:
 
@@ -370,7 +377,7 @@ The servers start automatically when Claude Code launches but **will fail until 
 
 ### MCP servers show "failed"
 
-**Before init-agent**: Expected. The servers need `$MANIFEST_PLUGIN_DATA/config.json` (which holds the chain choice + key password — created by init-agent, never created automatically). Run `/manifest-agent:init-agent` first, then restart. Dependencies are installed automatically by SessionStart; onboarding also runs the same setup command before using them. To repair a failed or incomplete install, run:
+**Before init-agent**: Expected. The servers need `$MANIFEST_PLUGIN_DATA/config.json` (which holds the chain choice and credential reference — created by init-agent, never created automatically). Run `/manifest-agent:init-agent` first, then restart. Dependencies are installed automatically by SessionStart; onboarding also runs the same setup command before using them. To repair a failed or incomplete install, run:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs"
@@ -416,9 +423,14 @@ The custom domain you specified is already attached to another lease on-chain. C
 
 Bypass permissions mode (`--dangerously-skip-permissions`) is permanently reset after the first broadcast prompt due to upstream Claude Code bug [#37420](https://github.com/anthropics/claude-code/issues/37420). This is a known trade-off — see [Security](#security) below.
 
-### Lost the keyfile or forgot the password
+### Credential store unavailable or wallet backup missing
 
-The keyfile is encrypted with a password stored in `config.json` (protected by `0600` file permissions). If `config.json` is intact and you can read it, the password is in `agent.keyPassword`. If `config.json` is gone, the wallet is unrecoverable from the plugin — you'll need to re-import from your original mnemonic via `/manifest-agent:import-key`.
+Unlock the OS keychain and reconnect the MCP servers. Linux requires `secret-tool`
+and a running Secret Service session. Headless installs can explicitly select
+`MANIFEST_CREDENTIAL_STORE=file` for new credentials or legacy migration; existing
+keychain references still need that keychain. Config contains a reference, not the
+password. Restore the config, encrypted keyfile and referenced credential together,
+or re-import your original mnemonic. See [credential recovery](docs/identity.md).
 
 ## Supported chains
 
@@ -470,7 +482,10 @@ For the full architectural picture (data flow, scripts inventory, hook contracts
 
 - Keyfiles are encrypted using CosmJS wallet serialization (Argon2id + XChaCha20-Poly1305) with a random 32-byte password
 - Keyfiles are written with `0600` permissions; the keys directory with `0700`
-- `config.json` is written with `0600` permissions (contains the key password)
+- `config.json` is written with `0600` permissions and contains a credential reference;
+  passwords use Linux Secret Service, macOS Keychain or Windows Credential Manager.
+  Legacy plaintext passwords are migrated after verified storage. An explicit
+  headless fallback uses separate private files ([details](docs/identity.md)).
 - Mnemonics are imported from a user-created file via pipe — they never enter Claude's conversation context
 - The key password flows between scripts via pipe and never enters the conversation
 - The plugin root is never written to
@@ -478,9 +493,11 @@ For the full architectural picture (data flow, scripts inventory, hook contracts
 
 ### Known trade-offs
 
-- The key password is stored in plaintext in `config.json` (protected by file permissions). A future version may use the OS keychain.
+- The explicit headless file fallback stores recoverable passwords in private files.
+  Keychain credentials and decrypted passwords remain accessible to authorized
+  processes running as the same user; this is not hardware signer isolation.
 - Hook behavior depends on the Claude version and permission mode. An older [upstream report](https://github.com/anthropics/claude-code/issues/37420) described bypass mode being reset after an `ask` decision; its behavior on current releases has not been established here. See [approval validation](docs/approval-validation.md) for what local tests cover and what requires a real host run.
-- The hook is an MCP entry-point guard, not signer isolation. The password and keyfile remain available to processes with access to the plugin data directory; shell commands or direct SDK calls do not pass through this MCP hook.
+- The hook is an MCP entry-point guard, not signer isolation. The launcher supplies a decrypted password to its MCP child, and processes with access to the credential store and keyfile can use the wallet; shell commands or direct SDK calls do not pass through this MCP hook.
 - Env values supplied via the file-pipe pattern stay out of chat input and prose summaries, but they DO enter the agent's API context as part of the `build_manifest_preview` and `deploy_app` MCP tool call args at validation/broadcast time. Eliminating that exposure entirely needs upstream MCP support for "load env from this path" and is out of scope here.
 
 ## Contributing

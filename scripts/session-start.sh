@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SessionStart hook for the manifest-agent plugin.
 #
-# Four responsibilities:
+# Five responsibilities:
 #   1. Emit the runtime transaction policy on stdout so it is injected
 #      into every Claude session that uses the plugin. Plugin CLAUDE.md
 #      files are developer docs and do NOT reach runtime sessions — this
@@ -21,11 +21,14 @@
 #      dependencies in persistent data. The same command serves setup
 #      skills and recovery; a completion record detects interrupted or
 #      incomplete installs even when package.json has not changed.
+#   5. Migrate legacy wallet credentials, then show the public agent
+#      identity and a bounded read-only gas balance check on stderr.
 #
 # Ordering is deliberate: stdin is captured first (gated on
 # CLAUDE_ENV_FILE since that's the only consumer), then policy
 # injection writes to stdout, then env-file writes happen, then locked
-# dependency setup. `set -euo pipefail` means a failed write produces a non-
+# dependency setup, then credential migration and session diagnostics.
+# `set -euo pipefail` means a failed write produces a non-
 # zero exit Claude Code can surface, rather than silently leaving the
 # session in a half-enforced state.
 #
@@ -262,4 +265,13 @@ if [ -n "${CLAUDE_PLUGIN_DATA:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/package.json"
     exit 1
   fi
   MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/setup-runtime.cjs"
+
+  # Migration persists credentials before the query's launcher reads them.
+  # Both helpers are stderr-only; keep policy stdout isolated even if a future
+  # helper accidentally writes a status message to stdout. A missing wallet or
+  # offline chain must not turn successful dependency setup into a failed hook.
+  if MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-credentials.cjs" >&2; then
+    MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/session-identity.cjs" >&2 \
+      || printf 'manifest-agent: Session balance check unavailable.\n' >&2
+  fi
 fi

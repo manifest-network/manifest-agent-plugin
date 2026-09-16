@@ -6,7 +6,7 @@
  *
  * Reads key JSON from stdin (piped from gen-agent-key.cjs or import-key.cjs).
  * Reads chain data from $MANIFEST_PLUGIN_DATA/chains/{mainnet,testnet}.json.
- * Writes config.json with the password — so the password never enters the conversation.
+ * Stores the password in the credential store and writes only its reference.
  *
  * Usage:
  *   node gen-agent-key.cjs | node write-config.cjs --chain testnet --gas-price 1umfx
@@ -20,6 +20,7 @@ const { existsSync, mkdirSync, chmodSync } = require('node:fs');
 const { join } = require('node:path');
 const { atomicWrite, readJsonFile, getDataDir } = require('./_io.cjs');
 const { composeGasPrice } = require('./_gas-price.cjs');
+const { storePassword, migrateConfig, withConfigLock } = require('./_credentials.cjs');
 
 function parseArgs(argv) {
   const args = { chain: null, gasPrice: null, gasToken: null };
@@ -80,13 +81,14 @@ function readChainFile(chainsDir, network) {
   let keyData;
   try {
     keyData = JSON.parse(raw);
-  } catch (err) {
-    console.error(`Failed to parse key JSON from stdin: ${err.message}`);
+  } catch {
+    console.error('Failed to parse key JSON from stdin.');
     process.exit(1);
   }
 
-  const { address, keyfile, password } = keyData;
-  if (!address || !keyfile || !password) {
+  const { address, keyfile, password } = keyData ?? {};
+  if (typeof address !== 'string' || !address.trim()
+    || typeof keyfile !== 'string' || !keyfile.trim() || typeof password !== 'string') {
     console.error('Key JSON missing required fields (address, keyfile, password).');
     process.exit(1);
   }
@@ -125,7 +127,6 @@ function readChainFile(chainsDir, network) {
     chains,
     agent: {
       keyFile: keyfile,
-      keyPassword: password,
       address,
     },
   };
@@ -133,7 +134,14 @@ function readChainFile(chainsDir, network) {
   // Write config.json
   mkdirSync(AGENT_DIR, { recursive: true });
   chmodSync(AGENT_DIR, 0o700);
-  atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
+  withConfigLock(AGENT_DIR, () => {
+    // Preserve a legacy wallet's credential before selecting a replacement.
+    // A unique new reference cannot overwrite the current wallet's password.
+    const previous = migrateConfig(AGENT_DIR, { locked: true });
+    if (previous?.credentialMigration) config.credentialMigration = previous.credentialMigration;
+    config.agent.keyPasswordRef = storePassword(AGENT_DIR, keyfile, password);
+    atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
+  });
 
   console.error(`Config written to ${CONFIG_PATH}`);
   console.error(`Agent address: ${address}`);

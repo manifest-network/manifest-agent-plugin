@@ -62,7 +62,7 @@ use by `/manifest-agent:init-agent`.
 If it succeeds, capture `chains` from the output as `AFTER`.
 
 **IMPORTANT**: Do NOT read `$MANIFEST_PLUGIN_DATA/config.json` directly — it
-contains the key password. Use the scripts above which never expose the
+may contain a legacy key password. Use the scripts above which never expose the
 password.
 
 ## Step 4 — Report

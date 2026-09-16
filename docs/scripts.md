@@ -76,3 +76,20 @@ A non-underscore renderer composed by another renderer rather than directly by s
 - **`session-start.sh`** — SessionStart hook. (1) Captures the hook payload from stdin so step (3) can extract `session_id`. (2) Emits the runtime transaction policy heredoc on stdout (canonical source of the runtime-facing policy; CLAUDE.md is dev-only). Post-ENG-130 the policy points at the orchestrated `mcp__plugin_manifest-agent_manifest-agent__*_orchestrated` tools as the canonical confirmation surface (elicitation, not textual recap). (3) Exports `MANIFEST_PLUGIN_ROOT`, `MANIFEST_PLUGIN_DATA`, `NODE_PATH` via `CLAUDE_ENV_FILE`, and `MANIFEST_SESSION_ID` when the hook payload's `session_id` field is parseable (jq if available, grep+sed fallback otherwise; absent → field omitted, journal records carry `session_id: null`). (4) Invokes `setup-runtime.cjs` (hook timeout: 90 seconds) for the same validated, locked install/repair path as onboarding. An unsupported Node or failed installation produces a hook failure with an actionable diagnostic.
 - **`pre-tool-use.sh`** — Shell entry point for the PreToolUse hook. Clears `NODE_OPTIONS` and `NODE_PATH` for the classifier child, captures its private decision token, and emits fixed host JSON itself. Only `ask-direct`, `ask-orchestrated`, and `defer` are accepted; the last emits no host decision. Missing Node, a failed handler, empty output, or unexpected text (including a successful Node shim's banner) produces the fixed deny response.
 - **`pre-tool-use.cjs`** — Reads the host event from stdin and checks the scoped matcher for direct writes and outer deploy/manage/close calls (see "Tools gated by the PreToolUse hook" in CLAUDE.md). Emits the private token `ask-direct` or `ask-orchestrated` for mutations, and `defer` for non-matches, including the dedicated read-only `lookup_custom_domain_orchestrated`. Invalid actions on the mutating domain tool remain gated. It validates matcher presence and exits nonzero on invalid events; the shell owns the host-visible deny response. Exports `decidePermission` for focused tests. Internal SDK operations do not create nested host tool events, and the hook cannot verify prose or isolate the signer.
+
+## Identity and credentials (ENG-85)
+
+- **`_credentials.cjs`** — native OS credential storage, explicit private-file
+  fallback, verified retrieval, config locking and atomic legacy migration.
+- **`_wincred.ps1`** — Windows-only Credential Manager API helper; its secret
+  payload travels through private stdin/stdout pipes.
+- **`migrate-credentials.cjs`** — standalone idempotent migration, no stdout;
+  records its nonsecret breadcrumb in config only after credential verification.
+- **`session-identity.cjs`** — stderr-only address, chain, gas denom and balance
+  report using chain MCP `cosmos_query` bank/balance. Bounded failures report an
+  unavailable balance; low testnet funds produce a faucet hint without a call.
+
+`write-config.cjs` stores a credential reference; `update-config.cjs` migrates
+legacy config before mutating it, while `--status` stays read-only. The shared
+launcher migrates and resolves credentials for either host. See
+[credential setup, headless use and recovery](identity.md).

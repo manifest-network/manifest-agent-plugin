@@ -468,3 +468,23 @@ verification of the historical bytes too.
 
 `tests/evidence-check.test.cjs` exercises source drift, missing/malformed
 metadata, historical commit mismatches, and unavailable-history behavior.
+
+## Identity hardening checks (ENG-85)
+
+`tests/_credentials.test.cjs` and `tests/migrate-credentials.test.cjs` exercise
+native command contracts, verified storage, permissions, secret-safe errors,
+legacy migration and concurrent callers. Native commands are replaced with
+isolated fakes; they never access a developer's keychain. The config-writer and
+launcher tests use explicit file storage and verify that config contains only a
+reference and that startup receives the expected password. Invalid JSON must
+not leak parser excerpts containing secrets.
+
+`tests/session-identity.test.cjs` drives a mock MCP peer through initialization
+and the bank/balance query, including zero/funded/mainnet balances, exact
+threshold arithmetic, malformed replies, deadlines and stdout isolation.
+These are protocol and behavior tests, not a live RPC or desktop UI acceptance
+record. An isolated Linux D-Bus/GNOME Keyring session additionally verified actual
+libsecret storage, readback and migration. Before a compatibility release,
+record macOS Keychain and Windows Credential Manager round trips, migration,
+and the host's display of the startup report. The previous 0.4.0 host reports
+remain historical evidence.

@@ -172,7 +172,7 @@ async function main(argv = process.argv.slice(2)) {
       const guard = join(temp, 'deny-network.cjs');
       fs.writeFileSync(guard, NETWORK_GUARD);
       const result = spawnSync(process.execPath, ['--require', guard, __filename, '--data-dir', dataDir], {
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, MANIFEST_CONTRACT_WORKER: '1' }, stdio: 'inherit', timeout: 90000,
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, MANIFEST_CONTRACT_WORKER: '1', MANIFEST_CREDENTIAL_STORE: 'file' }, stdio: 'inherit', timeout: 90000,
       });
       if (result.error || result.status !== 0) throw new Error(`Pinned host contracts failed: ${result.error?.message || result.signal || result.status}`);
     } finally { fs.rmSync(temp, { recursive: true, force: true }); }

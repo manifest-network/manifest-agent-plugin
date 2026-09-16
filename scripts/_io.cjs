@@ -6,7 +6,7 @@
  * - `atomicWrite(target, contents, {mode, ensureDir, dirMode})` — write to a
  *   sibling tmpfile, chmod it, rename over the target. Cleans up the tmpfile
  *   on error. Default mode 0o600 reflects this plugin's secrets-by-default
- *   posture (config.json carries the wallet password, encrypted keyfiles,
+ *   posture (legacy config.json may carry a wallet password, encrypted keyfiles,
  *   manifest JSON contains user env values). Pass `mode: 0o644` for
  *   non-secret data like the chain registry. Pass `ensureDir: true` to have
  *   the helper create the parent directory (recursive, default `dirMode`

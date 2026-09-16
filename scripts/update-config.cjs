@@ -5,7 +5,8 @@
  * Update $MANIFEST_PLUGIN_DATA/config.json without exposing the key password.
  *
  * Updates activeChain and/or refreshes chain data from $MANIFEST_PLUGIN_DATA/chains/.
- * Preserves the existing agent section (keyFile, keyPassword, address) untouched.
+ * Preserves the selected wallet and credential reference; migrates legacy secrets
+ * before a configuration update. --status remains read-only.
  *
  * Usage:
  *   node update-config.cjs --status                  # Read-only: show safe config fields
@@ -32,6 +33,7 @@ const { existsSync } = require('node:fs');
 const { join } = require('node:path');
 const { atomicWrite, readJsonFile, getDataDir } = require('./_io.cjs');
 const { composeGasPrice } = require('./_gas-price.cjs');
+const { migrateConfig, withConfigLock } = require('./_credentials.cjs');
 
 function parseArgs(argv) {
   const args = { chain: null, gasPrice: null, gasToken: null, gasMultiplier: null, refreshChains: false, status: false };
@@ -90,8 +92,8 @@ function readChainFile(chainsDir, network) {
   let config;
   try {
     config = readJsonFile(CONFIG_PATH);
-  } catch (err) {
-    console.error(err.message);
+  } catch {
+    console.error('Could not read config.json. Repair its JSON or restore the configuration.');
     process.exit(1);
   }
 
@@ -108,62 +110,68 @@ function readChainFile(chainsDir, network) {
     return;
   }
 
-  // Update active chain
-  if (args.chain) {
-    config.activeChain = args.chain;
-  }
+  withConfigLock(AGENT_DIR, () => {
+    // Reread while locked so a concurrent migration or writer cannot be undone.
+    config = migrateConfig(AGENT_DIR, { locked: true });
+    if (!config) throw new Error('Config disappeared before the update.');
 
-  // Update gas price (either by raw string or by token symbol)
-  if (args.gasPrice) {
-    config.gasPrice = args.gasPrice;
-  } else if (args.gasToken) {
-    // Resolve symbol against the post-update activeChain (so combining
-    // --chain X --gas-token Y in one invocation does the right thing).
-    const targetChain = args.chain || config.activeChain;
-    if (!targetChain) {
-      console.error('--gas-token requires an active chain (pass --chain or set one previously)');
-      process.exit(1);
-    }
-    const chainData = readChainFile(CHAINS_DIR, targetChain);
-    if (!chainData) {
-      console.error(`Chain data not found for ${targetChain}. Run fetch-chain-registry.cjs or pass --refresh-chains first.`);
-      process.exit(1);
-    }
-    try {
-      config.gasPrice = composeGasPrice(chainData, args.gasToken);
-    } catch (err) {
-      console.error(err.message);
-      process.exit(1);
-    }
-  }
-
-  // Update gas multiplier
-  if (args.gasMultiplier) {
-    const val = Number(args.gasMultiplier);
-    if (!Number.isFinite(val) || val < 1) {
-      console.error('--gas-multiplier must be a number >= 1.');
-      process.exit(1);
-    }
-    config.gasMultiplier = val;
-  }
-
-  // Refresh chain data from files
-  if (args.refreshChains) {
-    const mainnetData = readChainFile(CHAINS_DIR, 'mainnet');
-    const testnetData = readChainFile(CHAINS_DIR, 'testnet');
-
-    if (!mainnetData && !testnetData) {
-      console.error('No chain data files found. Run fetch-chain-registry.cjs first.');
-      process.exit(1);
+    // Update active chain
+    if (args.chain) {
+      config.activeChain = args.chain;
     }
 
-    if (!config.chains) config.chains = {};
-    if (mainnetData) config.chains.mainnet = mainnetData;
-    if (testnetData) config.chains.testnet = testnetData;
-  }
+    // Update gas price (either by raw string or by token symbol)
+    if (args.gasPrice) {
+      config.gasPrice = args.gasPrice;
+    } else if (args.gasToken) {
+      // Resolve symbol against the post-update activeChain (so combining
+      // --chain X --gas-token Y in one invocation does the right thing).
+      const targetChain = args.chain || config.activeChain;
+      if (!targetChain) {
+        console.error('--gas-token requires an active chain (pass --chain or set one previously)');
+        process.exit(1);
+      }
+      const chainData = readChainFile(CHAINS_DIR, targetChain);
+      if (!chainData) {
+        console.error(`Chain data not found for ${targetChain}. Run fetch-chain-registry.cjs or pass --refresh-chains first.`);
+        process.exit(1);
+      }
+      try {
+        config.gasPrice = composeGasPrice(chainData, args.gasToken);
+      } catch (err) {
+        console.error(err.message);
+        process.exit(1);
+      }
+    }
 
-  // Write config back (preserves agent section with password untouched)
-  atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
+    // Update gas multiplier
+    if (args.gasMultiplier) {
+      const val = Number(args.gasMultiplier);
+      if (!Number.isFinite(val) || val < 1) {
+        console.error('--gas-multiplier must be a number >= 1.');
+        process.exit(1);
+      }
+      config.gasMultiplier = val;
+    }
+
+    // Refresh chain data from files
+    if (args.refreshChains) {
+      const mainnetData = readChainFile(CHAINS_DIR, 'mainnet');
+      const testnetData = readChainFile(CHAINS_DIR, 'testnet');
+
+      if (!mainnetData && !testnetData) {
+        console.error('No chain data files found. Run fetch-chain-registry.cjs first.');
+        process.exit(1);
+      }
+
+      if (!config.chains) config.chains = {};
+      if (mainnetData) config.chains.mainnet = mainnetData;
+      if (testnetData) config.chains.testnet = testnetData;
+    }
+
+    // Write config back with the credential reference preserved.
+    atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
+  });
 
   console.error(`Config updated at ${CONFIG_PATH}`);
 

@@ -250,6 +250,8 @@ function bootstrapFixture(t, setupSource) {
     copyHostAdapter(root);
   writeFileSync(join(root, 'package.json'), '{}');
   writeFileSync(join(root, 'scripts/setup-runtime.cjs'), setupSource);
+  writeFileSync(join(root, 'scripts/migrate-credentials.cjs'), '');
+  writeFileSync(join(root, 'scripts/session-identity.cjs'), '');
   const env = { PATH: process.env.PATH, CLAUDE_PLUGIN_ROOT: root, CLAUDE_PLUGIN_DATA: data, CLAUDE_ENV_FILE: join(dir, 'session env') };
   const run = (extra = {}) => spawnSync('/bin/bash', ['-c', hooks.hooks.SessionStart[0].hooks[0].command], {
     env: { ...env, ...extra }, input: '{"session_id":"bootstrap-session"}', encoding: 'utf8', timeout: 5000,
@@ -283,6 +285,52 @@ test('SessionStart propagates runtime setup failures after emitting policy and e
   assert.match(result.stderr, /runtime repair failed/);
   assert.match(result.stdout, /manifest-agent runtime transaction policy/);
   assert.match(readFileSync(f.env.CLAUDE_ENV_FILE, 'utf8'), /export MANIFEST_PLUGIN_DATA=/);
+});
+
+test('SessionStart runs credential migration before balance diagnostics, preserving policy stdout', (t) => {
+  const f = bootstrapFixture(t, `
+    const fs = require('node:fs');
+    fs.mkdirSync(process.env.MANIFEST_PLUGIN_DATA, { recursive: true });
+    fs.writeFileSync(require('node:path').join(process.env.MANIFEST_PLUGIN_DATA, 'order'), 'setup\\n');
+  `);
+  writeFileSync(join(f.root, 'scripts/migrate-credentials.cjs'), `
+    require('node:fs').appendFileSync(require('node:path').join(process.env.MANIFEST_PLUGIN_DATA, 'order'), 'migration\\n');
+    console.error('MIGRATION_DIAGNOSTIC');
+  `);
+  writeFileSync(join(f.root, 'scripts/session-identity.cjs'), `
+    require('node:fs').appendFileSync(require('node:path').join(process.env.MANIFEST_PLUGIN_DATA, 'order'), 'identity\\n');
+    console.error('SESSION_BALANCE_DIAGNOSTIC');
+    console.log('ACCIDENTAL_HELPER_STDOUT');
+  `);
+  const result = f.run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(join(f.data, 'order'), 'utf8'), 'setup\nmigration\nidentity\n');
+  assert.match(result.stdout, /manifest-agent runtime transaction policy/);
+  assert.doesNotMatch(result.stdout, /MIGRATION_DIAGNOSTIC|SESSION_BALANCE_DIAGNOSTIC|ACCIDENTAL_HELPER_STDOUT/);
+  assert.match(result.stderr, /MIGRATION_DIAGNOSTIC/);
+  assert.match(result.stderr, /SESSION_BALANCE_DIAGNOSTIC/);
+  assert.match(result.stderr, /ACCIDENTAL_HELPER_STDOUT/);
+});
+
+test('SessionStart treats failed balance diagnostics as optional after setup and exports', (t) => {
+  const f = bootstrapFixture(t, '');
+  writeFileSync(join(f.root, 'scripts/session-identity.cjs'), 'process.exit(17);');
+  const result = f.run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /manifest-agent runtime transaction policy/);
+  assert.match(readFileSync(f.env.CLAUDE_ENV_FILE, 'utf8'), /export MANIFEST_PLUGIN_DATA=/);
+  assert.match(result.stderr, /Session balance check unavailable/);
+});
+
+test('SessionStart skips the balance query when credential migration fails without undoing setup', (t) => {
+  const f = bootstrapFixture(t, '');
+  writeFileSync(join(f.root, 'scripts/migrate-credentials.cjs'), 'console.error("Credential migration unavailable"); process.exit(1);');
+  writeFileSync(join(f.root, 'scripts/session-identity.cjs'), 'console.error("MUST_NOT_QUERY");');
+  const result = f.run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /manifest-agent runtime transaction policy/);
+  assert.match(result.stderr, /Credential migration unavailable/);
+  assert.doesNotMatch(result.stderr, /MUST_NOT_QUERY/);
 });
 
 test('SessionStart reports missing Node before running dependency setup', (t) => {

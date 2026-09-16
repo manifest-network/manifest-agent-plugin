@@ -107,6 +107,7 @@ function serve(server) {
 
 async function prepareFixture({ pluginRoot, dataDir }) {
   const { setupRuntime } = require('../../scripts/setup-runtime.cjs');
+  const { storePassword } = require('../../scripts/_credentials.cjs');
   const dependencies = { '@manifest-network/manifest-mcp-node': '0.0.0-fixture' };
   fs.writeFileSync(join(pluginRoot, 'package.json'), JSON.stringify({ dependencies }));
   fs.writeFileSync(join(pluginRoot, 'package-lock.json'), JSON.stringify({ lockfileVersion: 3, packages: {
@@ -122,9 +123,12 @@ async function prepareFixture({ pluginRoot, dataDir }) {
       `#!/usr/bin/env node\nrequire('../@manifest-network/manifest-mcp-node/fixture.cjs').serve(${JSON.stringify(server)});\n`, { mode: 0o755 });
   } });
   fs.writeFileSync(join(dataDir, 'fixture-wallet.json'), '{}', { mode: 0o600 });
+  const keyPasswordRef = storePassword(dataDir, 'fixture-wallet.json', 'public-fixture', {
+    env: { MANIFEST_CREDENTIAL_STORE: 'file' },
+  });
   fs.writeFileSync(join(dataDir, 'config.json'), JSON.stringify({ activeChain: 'testnet', gasPrice: '0.025umfx', chains: {
     testnet: { chainId: 'manifest-fixture-testnet', rpcUrl: 'http://127.0.0.1:1', converterAddress: 'manifest1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqjpzgn4' },
-  }, agent: { keyFile: 'fixture-wallet.json', keyPassword: 'public-fixture' } }), { mode: 0o600 });
+  }, agent: { keyFile: 'fixture-wallet.json', keyPasswordRef } }), { mode: 0o600 });
 }
 
 module.exports = { prepareFixture, serve, TOOLS, LEASE };

@@ -37,6 +37,15 @@ Ensure the locked runtime is installed before running helpers that need it:
 node "$MANIFEST_PLUGIN_ROOT/scripts/setup-runtime.cjs"
 ```
 
+Wallet passwords use the OS credential store: Linux needs `secret-tool` (libsecret)
+and an unlocked Secret Service session; macOS uses Keychain; Windows uses Credential
+Manager through Windows PowerShell. In a headless environment without that service,
+explain that `MANIFEST_CREDENTIAL_STORE=file` stores a recoverable secret in private
+files under the data directory. Use this fallback only if the user chooses it;
+set it in the environment launching the host and in each setup shell. Never silently
+switch backends after a keychain error, or put passwords into config or command args.
+If credential setup fails, report the diagnostic and stop before claiming success.
+
 This is also the repair command for an interrupted install or missing dependencies.
 It preserves configuration, keys, drafts, and saved deployments. If it fails,
 report its diagnostic and stop; fix Node (22.19.0+) or the installation failure
@@ -93,15 +102,16 @@ If the command succeeds and the JSON output has a non-null `address` field,
 warn the user:
 
 > An agent key already exists with address `<address>`.
-> Proceeding will generate a new key. The old key's password will be lost
-> (the old keyfile stays on disk but becomes unrecoverable without the password).
+> Proceeding will replace the active wallet. Back up its config, encrypted
+> keyfile and OS credential store (or the explicitly selected credential files)
+> first if you need to restore this identity later. Existing funds stay at the old address.
 
 Confirm via `{{ask}}` (Yes / No) before continuing. Stop on No.
 
 If the command fails (no config.json yet), that's fine — skip the warning and
 proceed.
 
-**IMPORTANT**: Do NOT read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains
+**IMPORTANT**: Do NOT read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain
 the key password. Always use `update-config.cjs --status` to read safe fields.
 
 ## Step 5 — Generate or import key and write config
@@ -213,6 +223,7 @@ journal write in your reply to the user.
 - The key password NEVER appears in this conversation. It flows directly from
   the key script to write-config via pipe.
 - Never display the mnemonic or password in conversation output.
-- The keyfile is encrypted; the password is stored only in config.json (0600).
+- The keyfile is encrypted; config stores only a credential reference. The password
+  is stored in the OS keychain, or separate private files after explicit headless opt-in.
 - Never log or display the mnemonic. Only the address and keyfile path are safe
   to show.

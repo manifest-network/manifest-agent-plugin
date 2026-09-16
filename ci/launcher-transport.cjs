@@ -73,6 +73,7 @@ async function probeLaunchers({ dataDir, root = resolve(__dirname, '..'), timeou
         `process.env.MANIFEST_PLUGIN_DATA = ${JSON.stringify(cwd)};`,
         `process.env.MANIFEST_CODEX_DATA = ${JSON.stringify(cwd)};`,
         `process.env.MANIFEST_PLUGIN_HOST = ${JSON.stringify(host)};`,
+        "process.env.MANIFEST_CREDENTIAL_STORE = 'file';",
         `process.env.NODE_OPTIONS = ${JSON.stringify(`--require ${JSON.stringify(guardPath)}`)};`,
         "process.env.DOTENV_CONFIG_QUIET = 'false';",
         "process.env.COSMOS_MNEMONIC = 'invalid inherited mnemonic';",
@@ -86,6 +87,10 @@ async function probeLaunchers({ dataDir, root = resolve(__dirname, '..'), timeou
         tools = await listTools({ binaryPath: runnerPath, cwd, guardPath, timeoutMs });
       } catch (error) {
         throw new Error(`${serverName} launcher: ${error.message}`);
+      }
+      const migrated = readJson(join(cwd, 'config.json'));
+      if (Object.hasOwn(migrated.agent, 'keyPassword') || migrated.agent.keyPasswordRef?.backend !== 'file') {
+        throw new Error(`${serverName} launcher did not migrate the public fixture password to the explicit file store`);
       }
       if (!includeFaucet && serverName === 'manifest-chain' && tools.some((tool) => tool.name === 'request_faucet')) {
         throw new Error('manifest-chain launcher inherited an unconfigured faucet');

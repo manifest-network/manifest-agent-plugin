@@ -168,7 +168,7 @@ function hostSourceFiles(tree, { terminal = false } = {}) {
     .map((e) => e.path);
   const files = ['ci/build-packages.cjs', 'ci/codex-host-smoke.cjs', 'tests/fixtures/native-host-fixture.cjs', 'tests/fixtures/json-rpc-peer.cjs',
     'hosts/codex/manifest-agent/.mcp.json', 'hosts/codex/manifest-agent/.codex-plugin/plugin.json',
-    ...tree.filter((e) => /^scripts\/[^/]+\.cjs$/.test(e.path)).map((e) => e.path),
+    ...tree.filter((e) => /^scripts\/[^/]+\.(cjs|ps1)$/.test(e.path)).map((e) => e.path),
     'scripts/session-start.sh', 'scripts/pre-tool-use.sh', 'hooks/hooks.json', 'package.json', 'package-lock.json', 'docs/codex.md',
     ...workflows, 'hosts/codex/env.sh', 'hosts/codex/restart-confirmation.md', 'hosts/claude/restart-confirmation.md'];
   if (terminal) files.push('ci/terminal-host-smoke.cjs', 'tests/fixtures/terminal-model.cjs', '.mcp.json', '.claude-plugin/plugin.json',
