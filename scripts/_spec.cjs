@@ -12,6 +12,7 @@
  * The shape branch lives here so all consumers agree on how to detect
  * and walk the two forms. Current consumers:
  *   - _journal.cjs (isStack, normalizeServices, skuIdentity)
+ *   - _image-ref.cjs (normalizeServices)
  *   - check-storage-selection.cjs (skuIdentity)
  *   - save-manifest-draft.cjs (firstImage)
  *   - merge-env.cjs (isStack)

@@ -100,23 +100,65 @@ name. A stack uses the same compute SKU for all services. Do not resolve
 the choice again by name or substitute another SKU if this UUID later
 becomes unavailable.
 
-## Step 3 — Image reference (single-service only)
+## Step 3 — Image reference
 
-If `SHAPE == single`, ask the user for the image reference. Format hint:
-- Preferred (immutable): `registry/name@sha256:<digest>`
-- Acceptable: `registry/name:tag`
+If `SHAPE == single`, collect the image now; for a stack, apply these same
+choices to **each service** in Step 4b. Format hint:
+- Preferred (immutable): `registry/name@sha256:<64 hex characters>`
+- Mutable: `registry/name:tag` or `registry/name` (implicit `latest`)
 
-Store as `IMAGE`. State up-front:
+Classify every input and replacement with the local syntax checker. Create
+a private temporary file with `mktemp`, bind its path as `IMAGE_SPEC_PATH`,
+and use the **Write tool** to write `{ "image": <the exact input> }`
+as JSON. Only shell-quoted paths enter the command; never interpolate an
+image into shell source, a heredoc, or `echo`. Set `IMAGE_SPEC_PATH` in the
+same Bash call; shell variables do not persist between calls.
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/check-image-references.cjs" --spec-file "$IMAGE_SPEC_PATH"
+```
+
+Use the returned `images[0].status`, not the presence of `@`, to choose the
+branch below. `malformed-digest` exits 1 with `valid: false`: report
+**Malformed digest; repair required**, ask for a corrected reference or
+cancel, and rerun the check. Do not label it a pin, strip its digest, or
+offer keeping the malformed value. Other checker errors also stop this
+choice until corrected. Remove the temporary file after reading the result.
+The check accepts the supported lowercase SHA-256 syntax only; it does not
+query a registry or validate the full OCI repository grammar.
+
+Keep the original input as the requested reference. Preserve a supplied
+reference with status `digest` exactly, including any registry port or tag before `@`.
+Describe it as **user-supplied**, not registry-verified. Do not substitute
+a tag or another digest during preview, saving, or env merging.
+
+For status `tag`, explain that a tag can point to different
+image contents by deployment time and automatic tag resolution is not yet
+available. Use `AskUserQuestion` to offer:
+
+- **Provide a digest reference (Recommended)** — collect the immutable
+  reference from the user, then continue with it.
+- **Keep mutable tag** — retain the exact input; its digest is unresolved.
+- **Cancel** — stop authoring.
+
+Honor an explicit request to keep a rolling tag without asking again.
+Otherwise wait for the choice; do not silently keep a tag. If a replacement
+is also tag-only, apply the same choice to it. Keep the requested and
+selected references for the recap; store the selected reference as `IMAGE`
+(or that service's `image`). No resolution metadata fields are supported
+by the current deployment contract; do not invent any in the spec.
+
+State up-front:
 
 > The image registry allowlist is enforced by the provider at deploy-time,
 > not in pre-flight. A permitted-looking string can still be rejected when
 > `/manifest-agent:deploy-app` runs.
 
-Do NOT attempt to inspect the image client-side. `build_manifest_preview`
-(Step 6) is the validator, and the orchestrated deploy flow re-validates
-the image against the provider at broadcast time.
-
-If `SHAPE == stack`: defer image collection to Step 4b.
+MCP 0.22.0 has no public image-resolution tool. Do not inspect registries
+client-side or invoke internal SDK helpers. `build_manifest_preview`
+validates manifest structure; it does not resolve tags, verify image
+availability, or attest to the provider's eventual pull. Its `meta_hash_hex`
+hashes the manifest JSON and is never an OCI image digest.
 
 ## Step 4 — Author the spec
 
@@ -252,9 +294,8 @@ Required per service:
   hyphens, no leading/trailing hyphens (RFC 1123 DNS label). The MCP server
   validates this on `build_manifest_preview`; if a user-supplied name is
   rejected, surface the error and re-ask.
-- **`image`** — same format hint as Step 3. Just collect the string; the
-  provider validates the registry at deploy time and `build_manifest_preview`
-  validates the format.
+- **`image`** — apply Step 3's reference choices and preservation rules to
+  this service, including an explicit choice before retaining a mutable tag.
 - **`ports`** — optional map; ask for each port-protocol pair if needed.
   At most one TCP port per service may enable ingress; UDP ingress is
   invalid. Omit `host_port` (only zero or omitted is supported).
@@ -401,7 +442,9 @@ into the chat transcript as a literal command):
    rm -f /tmp/.spec-PROCESS_PID-TIMESTAMP.json
    ```
 
-The script prints the saved file path on stdout. Capture it as `SAVED_PATH`.
+The script rejects malformed digests before writing and prints the saved
+file path on stdout on success. Capture it as `SAVED_PATH`. On failure,
+repair the reference and repeat its Step 3 choice before trying to save again.
 
 **If the user picked "From a file" for env in Step 4** (single-service or
 per-service in stacks), merge the file values into the saved spec now. For
@@ -438,6 +481,31 @@ errors and leave the draft for repair; do not report it as ready to deploy. Capt
 file's bytes.
 
 ## Step 8 — Report
+
+Check the saved file again after any repairs or env merges. Set `SAVED_PATH`
+to its shell-quoted path in this Bash call:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/check-image-references.cjs" --spec-file "$SAVED_PATH"
+```
+
+For **every entry** in the checker's `images` array, show its exact `image`
+and the status below. A failed check means the draft needs repair; do not
+report it as ready to deploy.
+
+- `digest`: **User-supplied digest** — the digest syntax is valid and the reference is preserved; registry
+  contents and availability have not been verified. If the user replaced
+  a tag, also show the originally requested reference; do not describe the
+  replacement as an automatic resolution.
+- `tag`: **Mutable tag retained by choice; digest unresolved** — the provider may
+  pull different contents at deployment time.
+- `malformed-digest`: **Malformed digest; repair required** — never call
+  this a pin. Return to Step 3 for a corrected reference or cancel.
+
+Use full references, without abbreviating the digest. Report from the saved
+file so the recap reflects any repairs. An image changed during validation
+must go through Step 3's choice again unless the user already made that
+choice for the replacement. The manifest hash below does not pin a tag.
 
 Tell the user:
 

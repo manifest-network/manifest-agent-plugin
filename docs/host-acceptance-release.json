@@ -5,7 +5,7 @@
   "hosts": {
     "claude": {
       "interactive": {
-        "status": "complete",
+        "status": "pending",
         "hostVersion": "2.1.270 (Claude Code)",
         "recordedAt": "2026-09-14T15:47:31.514Z",
         "sourceCommit": "6d5a841107ec752a3967ba3461932efe6abdb3b6",
@@ -99,7 +99,7 @@
         "terminalRecordedAt": "2026-09-14T18:24:36.685Z"
       },
       "testnet": {
-        "status": "complete",
+        "status": "pending",
         "hostVersion": "2.1.270 (Claude Code)",
         "recordedAt": "2026-09-14T15:13:54.400Z",
         "sourceHashes": {
@@ -200,7 +200,7 @@
     },
     "codex": {
       "interactive": {
-        "status": "complete",
+        "status": "pending",
         "hostVersion": "codex-cli 0.154.0",
         "recordedAt": "2026-09-14T15:47:31.514Z",
         "sourceCommit": "6d5a841107ec752a3967ba3461932efe6abdb3b6",
@@ -294,7 +294,7 @@
         "terminalRecordedAt": "2026-09-14T18:24:27.322Z"
       },
       "testnet": {
-        "status": "complete",
+        "status": "pending",
         "hostVersion": "codex-cli 0.154.0",
         "recordedAt": "2026-09-14T15:13:54.400Z",
         "sourceHashes": {

@@ -34,12 +34,33 @@ async function probeCallbacks(dataDir) {
   const modulePath = (pkg, file = 'index.js') => pathToFileURL(join(dataDir, 'node_modules/@manifest-network', pkg, 'dist', file)).href;
   const { AgentMCPServer } = await import(modulePath('manifest-mcp-agent'));
   const { ManifestMCPError } = await import(modulePath('manifest-mcp-core'));
+  const { buildManifestPreview } = await import(modulePath('manifest-mcp-fred'));
   const { connectClientWithElicitation } = await import(modulePath('manifest-mcp-core', '__test-utils__/callToolWithElicitation.js'));
   const { LoggingMessageNotificationSchema } = await import(pathToFileURL(join(dataDir, 'node_modules/@modelcontextprotocol/sdk/dist/esm/types.js')).href);
   const cases = [];
   for (const scenario of ['no-elicitation', 'decline', 'cancel', 'complete', 'paid-partial', 'cancel-after-broadcast']) {
+    const spec = scenario === 'complete' ? {
+      size: 'small',
+      services: {
+        web: { image: `registry.example.com:5443/team/web:stable@sha256:${'a'.repeat(64)}` },
+        db: { image: `postgres@sha256:${'b'.repeat(64)}` },
+        worker: { image: 'busybox:latest' },
+      },
+    } : { image: 'fixture:v1', size: 'small' };
+    if (scenario === 'complete') {
+      // Exercise the published manifest builder before the real MCP boundary.
+      // Pins and explicit mutable choices must survive both; this does not
+      // claim registry resolution or exercise the injected deployer's upload.
+      const preview = await buildManifestPreview({ services: spec.services });
+      assert.equal(preview.validation.valid, true, JSON.stringify(preview.validation.errors));
+      const manifest = JSON.parse(preview.manifest_json);
+      for (const [name, service] of Object.entries(spec.services)) {
+        assert.equal(manifest.services[name].image, service.image);
+      }
+    }
     let writes = 0;
     let calls = 0;
+    let forwarded;
     const prompts = [];
     const progress = [];
     const logs = [];
@@ -50,6 +71,7 @@ async function probeCallbacks(dataDir) {
       walletProvider: { getAddress: async () => { throw new Error('No fixture wallet access allowed'); } },
       orchestrators: { deployApp: async (_spec, callbacks, options) => {
         calls++;
+        forwarded = structuredClone(_spec);
         callbacks.onProgress({ kind: 'deployment_plan_rendered', block: { text: 'Pinned-runtime fixture plan' } });
         const verdict = await callbacks.onPlan({ summary: {} });
         if (verdict !== 'confirm') throw new ManifestMCPError('OPERATION_CANCELLED', 'Fixture plan cancelled');
@@ -90,7 +112,7 @@ async function probeCallbacks(dataDir) {
       if (message.params.data?.kind === 'deploy_cancelled_after_broadcast') partialLogged();
     });
     try {
-      const pending = connection.client.callTool({ name: 'deploy_app_orchestrated', arguments: { spec: { image: 'fixture:v1', size: 'small' } } }, undefined, {
+      const pending = connection.client.callTool({ name: 'deploy_app_orchestrated', arguments: { spec } }, undefined, {
         signal: abort.signal, timeout: 5000,
         onprogress: (event) => {
           progress.push(event);
@@ -99,12 +121,14 @@ async function probeCallbacks(dataDir) {
       });
       if (scenario === 'cancel-after-broadcast') {
         await assert.rejects(pending);
+        if (calls > 0) assert.deepEqual(forwarded, spec, 'MCP must forward exact per-service image references');
         let timer;
         try { await Promise.race([logArrived, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Missing paid cancellation log')), 2000); })]); }
         finally { clearTimeout(timer); }
         assert.ok(logs.some((entry) => entry.data?.lease_uuid === LEASE));
       } else {
         const result = await pending;
+        if (calls > 0) assert.deepEqual(forwarded, spec, 'MCP must forward exact per-service image references');
         const value = JSON.parse(result.content[0].text);
         if (scenario === 'complete') assert.equal(value.leaseState, 'LEASE_STATE_ACTIVE');
         else {
