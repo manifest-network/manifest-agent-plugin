@@ -485,6 +485,9 @@ Review regressions cover validation-error lock release, Linux PID reuse, guarded
 stale-lock recovery, concurrent updates on the test temporary filesystem, and a
 single timed-out native helper attempt shared by automatic migration callers.
 The concurrency regression has also been run on btrfs; see the recorded plan.
+Set `MANIFEST_LOCK_TEST_ROOT` to an existing scratch directory on the filesystem
+being checked when running `tests/_credentials.test.cjs`; it defaults to the
+system temporary directory and does not detect the filesystem type.
 Damaged previous configs
 retain their exact bytes and report private repair/backup steps. Launchers reject
 config changes during migration, and failed storage identifies the retained
@@ -494,6 +497,10 @@ credential preservation across reinstall.
 
 Retry tests distinguish automatic startup pauses from immediate manual/config
 writer retries, and confirm validation errors retain their specific diagnostics.
+All five launcher paths are tested against one failed native helper attempt;
+disabling the launcher's cooldown makes that regression fail. Corrupt existing
+entries do not pause automatic retries, while fresh-store verification failures
+do. Dangling recovery-guard symlinks receive path-specific access diagnostics.
 Lock timeouts distinguish active contention from abandoned recovery without
 removing any guard. Writer tests preserve keyfiles and report the cause first,
 including failures before credential storage.
@@ -508,6 +515,10 @@ peer whose EOF handler would swallow TERM. PowerShell transport tests read a
 Unicode request under a simulated ASCII console without running Windows APIs.
 Reporter-process crashes, partial/invalid output, noisy Node wrappers and closed
 stdin retain the complete policy; successful report output remains valid JSON.
+CommonJS helper tests cover module-input `NODE_OPTIONS`, wrappers that drop extra
+descriptors, exit-time preload banners and relative plugin roots. Report validation
+tests reject extra keys, wrong event names, missing policy, invalid message types
+and oversized context/message strings before any report is published.
 Dispatch tests intercept `Add-Type` and prove ACL/invalid operations skip it,
 including mutations that incorrectly hoist compilation before validation.
 These are protocol and behavior tests, not a live RPC or desktop UI acceptance

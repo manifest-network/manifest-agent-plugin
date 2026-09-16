@@ -85,10 +85,21 @@ A non-underscore renderer composed by another renderer rather than directly by s
   fallback, verified retrieval, config locking and atomic legacy migration.
 - **`_wincred.ps1`** — Windows-only Credential Manager API helper; its secret
   payload travels through private stdin/stdout pipes.
+- **`session-hook.cjs`** — direct CommonJS entry point for `env`, `source`, and
+  `report <startup|skip|migration-failed|migration-invalid>`. `env` appends quoted
+  exports to `CLAUDE_ENV_FILE`; `source` reads the hook payload and returns 0 for
+  startup or 10 to skip. `report` reads the policy from stdin, validates the
+  formatter result, and atomically writes `MANIFEST_SESSION_REPORT_PATH` inside
+  an owned `.session-report.*` directory under `MANIFEST_PLUGIN_DATA`. Helper
+  stdout is diagnostic only; the shell publishes the completed report file and
+  cleans up the directory. Fixed failure phases and safe error classes appear on
+  stderr. This avoids inline JavaScript and inherited-descriptor requirements.
 - **`migrate-credentials.cjs`** — standalone idempotent migration, no stdout;
   records its nonsecret breadcrumb in config only after credential verification.
   No arguments means an immediate manual retry; internal `--automatic` honours
-  the shared pause after a native-store access failure.
+  the shared pause after a native-store access failure. In automatic mode, exit 2
+  identifies invalid config/credential data for the hook's repair guidance;
+  access failures use exit 1. Manual failures and usage errors retain exit 1.
 - **`session-identity.cjs`** — address, chain, gas denom and balance report using
   chain MCP `cosmos_query` bank/balance. Manual invocation accepts no arguments
   and writes only stderr; internal hook flags produce structured host JSON.

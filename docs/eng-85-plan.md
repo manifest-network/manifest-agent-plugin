@@ -145,3 +145,38 @@ complete public report. Pinned Codex 0.153.4 passed all eight host cases and
 validated all 68 current source hashes. These checks do not add live Windows or
 macOS credential-store coverage; closed-stdin behavior was exercised on Bash
 5.3.15, without a Bash 3.2 runtime available.
+
+## Hook compatibility follow-up
+
+The [third review](https://github.com/manifest-network/manifest-agent-plugin/pull/19#issuecomment-5703993623)
+confirmed the previous corrections and identified two rare hook-startup failures:
+module-input `NODE_OPTIONS` changed inline JavaScript semantics, and spawn-style
+Node wrappers dropped the private descriptor used for hook output. Both failures
+were reproduced through real Claude 2.1.270 with local fixture APIs.
+
+The hook now invokes one CommonJS helper as a file. It appends quoted exports
+directly, selects the startup path through an exit status, and atomically writes
+validated report output to an owned private temporary directory. Wrapper and
+preload stdout cannot become environment exports or a host report. Report
+failures preserve the complete policy with safe phase/class/status diagnostics.
+Tests cover the remaining schema-validation branches and attempted direct output
+that previously bypassed validation.
+
+Credential diagnostics now distinguish corrupt existing entries from failed
+verification of a new write, preserve recovery steps for invalid legacy
+references, and identify dangling recovery guards without changing them.
+Automatic migration classifies local validation separately so the hook supplies
+repair guidance instead of an unlock hint. A launcher regression verifies that
+all five servers share the automatic cooldown; disabling it makes the test fail.
+
+The final full suite passed all 737 tests on Node 24.15.0 with no skips. Package,
+syntax/JSON/version, executable-doc, policy and historical-provenance checks
+passed, as did both-host pinned runtime contracts with their committed deadlines.
+Seven actual Claude 2.1.270 scenarios passed: healthy startup, module-input options,
+a descriptor-closing wrapper, ordinary wrapper noise, reporter crash, spoofed
+error details, and preload load/exit noise. Each received the complete policy;
+the preload fixture safely reported an unavailable balance when its noise also
+corrupted the mock MCP stream. Environment exports stayed clean and temporary
+report directories were removed. Pinned Codex 0.153.4 passed eight host cases
+and validated all 69 source hashes, including the new helper. No live Windows
+or macOS credential-store validation was added.

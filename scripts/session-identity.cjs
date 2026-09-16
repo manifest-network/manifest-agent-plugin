@@ -216,11 +216,13 @@ async function reportSessionIdentity({ dataDir = process.env.MANIFEST_PLUGIN_DAT
 
 const REPORT_UNAVAILABLE = 'manifest-agent: Session balance check unavailable.';
 const MIGRATION_FAILED = 'manifest-agent: Credential migration failed; wallet startup is blocked. Unlock the OS credential store, then ask the agent to run node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs" in its configured tool shell and reconnect the MCP servers. For headless setup, explicitly choose MANIFEST_CREDENTIAL_STORE=file and ask the agent to rerun migration; this stores the password in a private local file.';
+const MIGRATION_INVALID = 'manifest-agent: Credential migration failed because the saved configuration or credential needs repair. Ask the agent to run node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs" in its configured tool shell for the exact recovery steps. Preserve the existing config.json and wallet files; repair the saved configuration or move it to a private backup before restoring the wallet, then reconnect the MCP servers.';
 
-async function reportHook({ policy, skipProbe = false, migrationFailed = false,
+async function reportHook({ policy, skipProbe = false, migrationFailed = false, migrationInvalid = false,
   stdout = process.stdout, ...identityOptions }) {
   const lines = [];
-  if (migrationFailed) lines.push(MIGRATION_FAILED);
+  if (migrationInvalid) lines.push(MIGRATION_INVALID);
+  else if (migrationFailed) lines.push(MIGRATION_FAILED);
   else if (!skipProbe) {
     try {
       await reportSessionIdentity({ ...identityOptions, stderr: { write: (line) => lines.push(line.trimEnd()) } });

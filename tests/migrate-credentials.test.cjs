@@ -109,7 +109,7 @@ test('manual and automatic migration report legacy shape recovery without mutati
     fs.writeFileSync(join(dir, 'config.json'), contents);
     for (const args of [[], ['--automatic']]) {
       const result = run(dir, args);
-      assert.equal(result.status, 1);
+      assert.equal(result.status, args.length ? 2 : 1);
       assert.ok(result.stderr.includes(join(dir, 'config.json')));
       assert.match(result.stderr, /Repair the previous config.*move it aside as a private backup/);
       assert.doesNotMatch(result.stderr, /TEST_ONLY_INVALID_LEGACY/);
@@ -117,4 +117,50 @@ test('manual and automatic migration report legacy shape recovery without mutati
       assert.equal(fs.existsSync(join(dir, '.credential-migration-failure.json')), false);
     }
   }
+});
+
+test('only automatic migration uses status 2 for local credential validation', (t) => {
+  const dir = fixture(t);
+  const id = `${'a'.repeat(24)}-00000000-0000-4000-8000-000000000000`;
+  const foreignBackend = process.platform === 'linux' ? 'keychain' : 'libsecret';
+  const cases = [
+    '{"agent":',
+    JSON.stringify({ agent: { keyFile: 'wallet.json', keyPassword: 'TEST_ONLY_SECRET', keyPasswordRef: null } }),
+    JSON.stringify({ agent: { keyFile: 'wallet.json', keyPassword: 'TEST_ONLY_SECRET', keyPasswordRef: { backend: foreignBackend, id } } }),
+    JSON.stringify({ agent: { keyFile: 'wallet.json', keyPassword: 'x'.repeat(9000) } }),
+  ];
+  for (const original of cases) {
+    fs.writeFileSync(join(dir, 'config.json'), original);
+    for (const args of [[], ['--automatic']]) {
+      const result = run(dir, args, { MANIFEST_CREDENTIAL_STORE: 'auto' });
+      assert.equal(result.status, args.length ? 2 : 1, result.stderr);
+      assert.doesNotMatch(result.stderr, /TEST_ONLY_SECRET/);
+      assert.equal(fs.readFileSync(join(dir, 'config.json'), 'utf8'), original);
+      assert.equal(fs.existsSync(join(dir, '.credential-migration-failure.json')), false);
+    }
+  }
+});
+
+test('automatic migration distinguishes corrupt existing native data from failed fresh verification', { skip: process.platform !== 'linux' }, (t) => {
+  const dir = fixture(t);
+  const bin = join(dir, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(join(bin, 'secret-tool'), `#!${process.execPath}\nprocess.stdout.write('invalid-native-payload!');`, { mode: 0o700 });
+  const ref = { backend: 'libsecret', id: `${'a'.repeat(24)}-00000000-0000-4000-8000-000000000000` };
+  const env = { PATH: bin, MANIFEST_CREDENTIAL_STORE: 'auto' };
+  const legacy = { agent: { keyFile: 'wallet.json', keyPassword: 'TEST_ONLY_SECRET', keyPasswordRef: ref } };
+  fs.writeFileSync(join(dir, 'config.json'), JSON.stringify(legacy));
+  for (const args of [[], ['--automatic']]) {
+    const result = run(dir, args, env);
+    assert.equal(result.status, args.length ? 2 : 1, result.stderr);
+    assert.match(result.stderr, /stored credential is invalid/);
+    assert.doesNotMatch(result.stderr, /Unlock|TEST_ONLY_SECRET/);
+    assert.equal(fs.existsSync(join(dir, '.credential-migration-failure.json')), false);
+  }
+  delete legacy.agent.keyPasswordRef;
+  fs.writeFileSync(join(dir, 'config.json'), JSON.stringify(legacy));
+  const fresh = run(dir, ['--automatic'], env);
+  assert.equal(fresh.status, 1);
+  assert.match(fresh.stderr, /Credential verification failed/);
+  assert.equal(fs.existsSync(join(dir, '.credential-migration-failure.json')), true);
 });

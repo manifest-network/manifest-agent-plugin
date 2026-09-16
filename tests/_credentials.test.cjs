@@ -158,7 +158,51 @@ test('malformed native payload is sanitized, including JSON parser diagnostics',
   for (const output of ['', 'not base64!', Buffer.from(SENTINEL).toString('base64'), Buffer.from('{"version":1,"password":null}').toString('base64')]) {
     assert.throws(() => storePassword(dir, 'wallet.json', SENTINEL, {
       platform: 'linux', env: {}, spawnSync: () => ({ status: 0, stdout: output }),
-    }), (error) => error.message.includes('read failed') && !error.message.includes(SENTINEL));
+    }), (error) => error.message.includes('verification failed') && !error.message.includes(SENTINEL));
+  }
+});
+
+test('a corrupt existing native entry retains repair guidance and never creates a migration cooldown', (t) => {
+  for (const payload of ['not base64!', Buffer.from(SENTINEL).toString('base64'), Buffer.from('{"version":1,"password":null}').toString('base64')]) {
+    const dir = fixture(t);
+    const legacy = config(dir);
+    const fake = nativeFixture('linux');
+    legacy.agent.keyPasswordRef = storePassword(dir, legacy.agent.keyFile, SENTINEL, fake.options);
+    fake.entries.set(legacy.agent.keyPasswordRef.id, payload);
+    const before = JSON.stringify(legacy);
+    fs.writeFileSync(join(dir, 'config.json'), before);
+    for (let i = 0; i < 2; i++) assert.throws(() => migrateConfig(dir, fake.options), (error) => {
+      assert.match(error.message, /stored credential is invalid.*Restore a valid credential/);
+      assert.doesNotMatch(error.message, /Unlock|paused/);
+      assert.equal(error.message.includes(SENTINEL), false);
+      assert.equal(error.storeAccess, false);
+      assert.equal(error.credentialValidation, true);
+      assert.equal(Object.getOwnPropertyDescriptor(error, 'credentialValidation').enumerable, false);
+      return true;
+    });
+    assert.equal(fake.calls.filter(({ args }) => args[0] === 'store').length, 1, 'existing references must not trigger replacement writes');
+    assert.equal(fs.existsSync(join(dir, '.credential-migration-failure.json')), false);
+    assert.equal(fs.readFileSync(join(dir, 'config.json'), 'utf8'), before);
+  }
+});
+
+test('corrupt fresh native readback is a store verification failure and preserves automatic cooldown', (t) => {
+  for (const payload of ['not base64!', Buffer.from(SENTINEL).toString('base64'), Buffer.from('{"version":1,"password":null}').toString('base64')]) {
+    const dir = fixture(t);
+    config(dir);
+    const before = fs.readFileSync(join(dir, 'config.json'));
+    let calls = 0;
+    const options = { platform: 'linux', env: {}, spawnSync() { calls++; return { status: 0, stdout: payload }; } };
+    assert.throws(() => migrateConfig(dir, options), (error) => {
+      assert.match(error.message, /Credential verification failed/);
+      assert.equal(error.storeAccess, true);
+      assert.equal(error.credentialValidation, undefined);
+      return true;
+    });
+    assert.throws(() => migrateConfig(dir, options), /retry is paused/);
+    assert.equal(calls, 2, 'only one fresh store/readback attempt during cooldown');
+    assert.equal(fs.existsSync(join(dir, '.credential-migration-failure.json')), true);
+    assert.deepEqual(fs.readFileSync(join(dir, 'config.json')), before);
   }
 });
 
@@ -552,6 +596,42 @@ test('an unreadable recovery record reports access trouble without claiming a cr
     return true;
   });
   assert.equal(fs.statSync(guard).isDirectory(), true);
+});
+
+test('a dangling recovery-guard symlink is diagnosed by its own path and remains untouched', { skip: process.platform === 'win32' }, (t) => {
+  const dir = fixture(t);
+  const guard = join(dir, '.config.lock.reclaim');
+  const missingTarget = join(dir, 'missing-guard-target');
+  fs.symlinkSync(missingTarget, guard);
+  assert.throws(() => withConfigLock(dir, () => assert.fail('dangling guard is not an absent guard'), { lockTimeoutMs: 0 }), (error) => {
+    assert.ok(error.message.includes(guard));
+    assert.match(error.message, /Unable to read its owner record.*permissions/);
+    assert.doesNotMatch(error.message, /Another process may be migrating credentials/);
+    return true;
+  });
+  assert.equal(fs.lstatSync(guard).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(guard), missingTarget);
+  assert.equal(fs.existsSync(missingTarget), false);
+});
+
+test('malformed legacy references get the same private config recovery path without touching a store', (t) => {
+  const dir = fixture(t);
+  const legacy = config(dir);
+  for (const ref of [null, 'TEST_ONLY_INVALID_REF', { backend: 'file', id: '../bad-id' }]) {
+    legacy.agent.keyPasswordRef = ref;
+    const before = JSON.stringify(legacy);
+    fs.writeFileSync(join(dir, 'config.json'), before);
+    assert.throws(() => migrateConfig(dir, { spawnSync: () => assert.fail('invalid reference') }), (error) => {
+      assert.match(error.message, /Invalid agent.keyPasswordRef/);
+      assert.ok(error.message.includes(join(dir, 'config.json')));
+      assert.match(error.message, /Repair the previous config.*move it aside as a private backup/);
+      assert.doesNotMatch(error.message, /TEST_ONLY_INVALID_REF/);
+      assert.equal(error.credentialValidation, true);
+      return true;
+    });
+    assert.equal(fs.existsSync(join(dir, '.credential-migration-failure.json')), false);
+    assert.equal(fs.readFileSync(join(dir, 'config.json'), 'utf8'), before);
+  }
 });
 
 test('legacy shape validation names private recovery before consulting a native failure marker', (t) => {

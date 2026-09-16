@@ -613,6 +613,32 @@ test('malformed config diagnostic never repeats source text containing a passwor
   });
 });
 
+test('all launchers honor the automatic migration pause after one native-store failure', { skip: process.platform !== 'linux' }, () => {
+  withData((data) => {
+    const configPath = join(data, 'config.json');
+    const original = readFileSync(configPath);
+    const helperDir = join(data, 'credential-bin');
+    const attempts = join(data, 'native-attempts');
+    mkdirSync(helperDir);
+    writeFileSync(join(helperDir, 'secret-tool'), `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(attempts)}, 'attempt\\n');
+process.stderr.write('TEST_ONLY_NATIVE_FAILURE_SECRET');
+process.exit(1);
+`, { mode: 0o700 });
+    const extraEnv = { PATH: `${helperDir}:${process.env.PATH}`, MANIFEST_CREDENTIAL_STORE: '' };
+    for (const [index, name] of ['chain', 'lease', 'fred', 'cosmwasm', 'agent'].entries()) {
+      const result = runWrapper(name, { data, extraEnv });
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, /Credential access failed \(libsecret\)/);
+      if (index > 0) assert.match(result.stderr, /retry is paused/);
+      assert.doesNotMatch(result.stderr, /TEST_ONLY_NATIVE_FAILURE_SECRET|fixture-password|Starting manifest-mcp/);
+      assert.deepEqual(readFileSync(configPath), original);
+    }
+    assert.equal(readFileSync(attempts, 'utf8'), 'attempt\n');
+  });
+});
+
 test('concurrent config changes after the first read stop startup before spawning a wallet', () => {
   for (const change of ['keyfile', 'reference', 'chain', 'deleted']) {
     withData((data) => {

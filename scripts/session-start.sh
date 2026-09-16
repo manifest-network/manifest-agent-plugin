@@ -39,7 +39,7 @@
 
 set -euo pipefail
 
-# With fd 0 closed, older Bash can reuse it for command substitution's pipe,
+# With fd 0 closed, Bash can reuse it for command substitution's pipe,
 # making `cat` read its own output forever. Normalize it before any capture.
 if ! ( exec 3<&0 ) 2>/dev/null; then exec </dev/null; fi
 
@@ -219,7 +219,11 @@ POLICY
 
 # Preserve the canonical policy if no structured result can be emitted.
 POLICY_EMITTED=false
-trap 'if [ "$POLICY_EMITTED" = false ]; then printf "%s\n" "$RUNTIME_POLICY"; fi' EXIT
+REPORT_DIR=""
+trap 'if [ -n "$REPORT_DIR" ]; then rm -rf -- "$REPORT_DIR" || true; fi; if [ "$POLICY_EMITTED" = false ]; then printf "%s\n" "$RUNTIME_POLICY"; fi' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   # Both hosts resolve root/data/NODE_PATH through the same dependency-free
@@ -228,13 +232,9 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
     printf 'manifest-agent: Node 22.19.0+ is required. Install Node and restart Claude Code.\n' >&2
     exit 1
   fi
-  # The adapter's exports have their own descriptor. A PATH wrapper or preload
-  # printing a Node banner must not put executable noise into the env file.
-  node -e '
-    const { writeSync } = require("node:fs");
-    process.stdout.write = value => { writeSync(3, value); return true; };
-    require(process.argv[1]).main(["claude", "--shell"]);
-  ' "${CLAUDE_PLUGIN_ROOT}/scripts/host-env.cjs" 3>> "$CLAUDE_ENV_FILE" >&2
+  # The helper appends only the pure adapter's exports using filesystem I/O.
+  # Wrapper/preload banners, including exit-time output, stay on stderr.
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.cjs" env >&2
 
   # Extract session_id from the captured hook payload. Use jq when
   # available, otherwise fall back to a tolerant grep+sed. Empty
@@ -280,55 +280,40 @@ if [ -n "${CLAUDE_PLUGIN_DATA:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/package.json"
   # A full MCP startup includes credential lookup and wallet decryption. Do it
   # only on initial startup, while policy and exports still run on every source.
   # Missing/malformed source preserves direct invocation and older-host behavior.
-  SESSION_SOURCE=$(printf '%s' "$HOOK_PAYLOAD" | node -e '
-    const { writeSync } = require("node:fs");
-    let input = ""; process.stdin.setEncoding("utf8");
-    process.stdin.on("data", chunk => { input += chunk; });
-    process.stdin.on("end", () => {
-      let source; try { source = JSON.parse(input).source; } catch {}
-      writeSync(3, typeof source !== "string" || !source || source === "startup" ? "startup" : "skip");
-    });
-  ' 3>&1 >&2) || SESSION_SOURCE=startup
+  SOURCE_STATUS=0
+  printf '%s' "$HOOK_PAYLOAD" | node "${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.cjs" source >&2 || SOURCE_STATUS=$?
   REPORT_MODE=skip
-  if [ "$SESSION_SOURCE" = startup ]; then
+  # Only the explicit skip status suppresses startup; a failed source helper
+  # preserves direct invocation/older-host startup behavior.
+  if [ "$SOURCE_STATUS" -ne 10 ]; then
     # Persist credentials before the query launcher reads them. Raw helper
     # output never enters the hook JSON: failure uses a fixed recovery message.
     REPORT_MODE=startup
-    if ! MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-credentials.cjs" --automatic >&2; then
-      REPORT_MODE=migration-failed
-    fi
+    MIGRATION_STATUS=0
+    MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-credentials.cjs" --automatic >&2 || MIGRATION_STATUS=$?
+    case "$MIGRATION_STATUS" in
+      0) ;;
+      2) REPORT_MODE=migration-invalid ;;
+      *) REPORT_MODE=migration-failed ;;
+    esac
   fi
 
-  # Buffer the formatter's output until the whole process succeeds. Raw stdout
-  # (including banners) goes to stderr, never to Claude. Validate the one JSON
-  # object and its complete policy before publishing through the private fd.
-  # A crash, signal, partial write, or malformed result remains optional: exit 0
-  # lets the EXIT fallback deliver the unchanged policy exactly once.
-  if REPORT_OUTPUT=$(printf '%s\n' "$RUNTIME_POLICY" | MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node -e '
-    (async () => {
-      const { readFileSync, writeSync } = require("node:fs");
-      const policy = readFileSync(0, "utf8").trimEnd();
-      let report = "";
-      await require(process.argv[1]).reportHook({ policy,
-        skipProbe: process.argv[2] === "skip", migrationFailed: process.argv[2] === "migration-failed",
-        stdout: { write: value => { report += value; } },
-      });
-      const output = JSON.parse(report);
-      const hook = output?.hookSpecificOutput;
-      const context = hook?.additionalContext;
-      if (!output || Object.keys(output).some(key => !["hookSpecificOutput", "systemMessage"].includes(key))
-        || !hook || Object.keys(hook).sort().join(",") !== "additionalContext,hookEventName"
-        || hook.hookEventName !== "SessionStart" || typeof context !== "string" || context.length > 10000
-        || !(context === policy || context.startsWith(policy + "\n\n"))
-        || (Object.hasOwn(output, "systemMessage") && (typeof output.systemMessage !== "string" || output.systemMessage.length > 10000))) {
-        throw new Error("Invalid session report");
-      }
-      writeSync(3, JSON.stringify(output));
-    })().catch(() => { process.exitCode = 1; });
-  ' "${CLAUDE_PLUGIN_ROOT}/scripts/session-identity.cjs" "$REPORT_MODE" 3>&1 >&2) && [ -n "$REPORT_OUTPUT" ]; then
-    printf '%s\n' "$REPORT_OUTPUT"
-    POLICY_EMITTED=true
-  else
-    printf 'manifest-agent: Session report unavailable; emitting the runtime policy as plain text.\n' >&2
+  # The formatter is buffered and validated before an atomic file write. No
+  # arbitrary helper stdout or nonstandard descriptor reaches hook output.
+  # Keep all temporary files in our own private directory so EXIT also cleans
+  # up a reporter killed during its write. Report failures remain optional.
+  REPORT_STATUS=1
+  if mkdir -p "${CLAUDE_PLUGIN_DATA}" && REPORT_DIR=$(mktemp -d "${CLAUDE_PLUGIN_DATA}/.session-report.XXXXXX"); then
+    REPORT_STATUS=0
+    printf '%s\n' "$RUNTIME_POLICY" | MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" \
+      MANIFEST_SESSION_REPORT_PATH="$REPORT_DIR/report.json" \
+      node "${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.cjs" report "$REPORT_MODE" >&2 || REPORT_STATUS=$?
+    if [ "$REPORT_STATUS" -eq 0 ] && [ -s "$REPORT_DIR/report.json" ] && REPORT_OUTPUT=$(cat "$REPORT_DIR/report.json"); then
+      printf '%s\n' "$REPORT_OUTPUT"
+      POLICY_EMITTED=true
+    fi
+  fi
+  if [ "$POLICY_EMITTED" = false ]; then
+    printf 'manifest-agent: Session report unavailable (reporter status %s); emitting the runtime policy as plain text.\n' "$REPORT_STATUS" >&2
   fi
 fi

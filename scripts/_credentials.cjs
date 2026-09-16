@@ -23,31 +23,39 @@ class CredentialError extends Error {
   constructor(message) { super(message); this.name = 'CredentialError'; }
 }
 
-function credentialError(backend, operation) {
+function validationError(message) {
+  const error = new CredentialError(message);
+  Object.defineProperty(error, 'credentialValidation', { value: true });
+  return error;
+}
+
+function credentialError(backend, operation, storeAccess = true) {
   const help = backend === 'file'
     ? 'Check the private credentials directory and restore the credential backup if needed.'
     : 'Unlock the OS credential store and retry. On headless systems, explicitly choose MANIFEST_CREDENTIAL_STORE=file for new credentials or legacy migration; existing references still require their original store.';
-  const error = new CredentialError(`Credential ${operation} failed (${backend}). ${help}`);
-  // Only failures from an actual store operation may suppress automatic
-  // retries. Validation and platform errors must retain their own guidance.
-  Object.defineProperty(error, 'storeAccess', { value: true });
+  const error = storeAccess
+    ? new CredentialError(`Credential ${operation} failed (${backend}). ${help}`)
+    : validationError(`Credential ${operation} failed (${backend}). The stored credential is invalid. Restore a valid credential or repair its reference before retrying.`);
+  // Access/write-verification failures may suppress automatic retries. An
+  // existing entry that was read successfully but is corrupt needs repair.
+  Object.defineProperty(error, 'storeAccess', { value: storeAccess });
   return error;
 }
 
 function selectBackend(options) {
   const selected = (options.env || process.env).MANIFEST_CREDENTIAL_STORE;
   if (selected && selected !== 'auto' && selected !== 'file') {
-    throw new CredentialError('MANIFEST_CREDENTIAL_STORE must be auto or file.');
+    throw validationError('MANIFEST_CREDENTIAL_STORE must be auto or file.');
   }
   if (selected === 'file') return 'file';
   const backend = { linux: 'libsecret', darwin: 'keychain', win32: 'wincred' }[options.platform || process.platform];
-  if (!backend) throw new CredentialError('No native credential store for this platform. Explicitly choose MANIFEST_CREDENTIAL_STORE=file to use private local storage.');
+  if (!backend) throw validationError('No native credential store for this platform. Explicitly choose MANIFEST_CREDENTIAL_STORE=file to use private local storage.');
   return backend;
 }
 
 function validateRef(ref) {
   if (!ref || typeof ref !== 'object' || Array.isArray(ref) || !BACKENDS.has(ref.backend) || typeof ref.id !== 'string' || !REF_ID.test(ref.id)) {
-    throw new CredentialError('Invalid agent.keyPasswordRef in config.json. Restore a valid credential reference.');
+    throw validationError('Invalid agent.keyPasswordRef in config.json. Restore a valid credential reference.');
   }
   return ref;
 }
@@ -77,7 +85,7 @@ function nativeCommand(ref, operation, payload, options) {
   const { backend, id } = ref;
   const actualPlatform = options.platform || process.platform;
   if ({ libsecret: 'linux', keychain: 'darwin', wincred: 'win32' }[backend] !== actualPlatform) {
-    throw new CredentialError('The credential reference belongs to a different operating system. Restore access on the original system before migrating this wallet.');
+    throw validationError('The credential reference belongs to a different operating system. Restore access on the original system before migrating this wallet.');
   }
   if (backend === 'libsecret') {
     const attrs = ['service', SERVICE, 'account', id];
@@ -91,7 +99,7 @@ function nativeCommand(ref, operation, payload, options) {
       // keeps arbitrary passwords, including newlines/empty strings, one token.
       // https://github.com/apple-oss-distributions/SecurityTool/blob/main/security.c
       const input = `add-generic-password -a ${id} -s ${SERVICE} -w ${payload}\n`;
-      if (Buffer.byteLength(input) >= 4096) throw new CredentialError('Password is too long for the macOS credential helper.');
+      if (Buffer.byteLength(input) >= 4096) throw validationError('Password is too long for the macOS credential helper.');
       return run('/usr/bin/security', ['-i', '-q'], input, backend, options);
     }
     return run('/usr/bin/security', ['find-generic-password', '-a', id, '-s', SERVICE, '-w'], undefined, backend, options);
@@ -110,6 +118,14 @@ function privateDirectory(dataDir, options) {
   return dir;
 }
 
+function decodeStored(raw, backend) {
+  try {
+    const value = JSON.parse(raw);
+    if (value.version !== 1 || typeof value.password !== 'string') throw new Error();
+    return value.password;
+  } catch { throw credentialError(backend, 'read', false); }
+}
+
 function readStored(ref, dataDir, options) {
   try {
     if (ref.backend === 'file') {
@@ -123,15 +139,11 @@ function readStored(ref, dataDir, options) {
         throw credentialError('file', 'read');
       }
       if ((options.platform || process.platform) === 'win32') windowsCommand({ operation: 'protect-file', target: path.resolve(target) }, options);
-      const value = JSON.parse(fs.readFileSync(target, 'utf8'));
-      if (value.version !== 1 || typeof value.password !== 'string') throw credentialError('file', 'read');
-      return value.password;
+      return decodeStored(fs.readFileSync(target, 'utf8'), 'file');
     }
     const encoded = nativeCommand(ref, 'read', undefined, options).trim();
-    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw credentialError(ref.backend, 'read');
-    const value = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
-    if (value.version !== 1 || typeof value.password !== 'string') throw credentialError(ref.backend, 'read');
-    return value.password;
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw credentialError(ref.backend, 'read', false);
+    return decodeStored(Buffer.from(encoded, 'base64').toString('utf8'), ref.backend);
   } catch (err) {
     if (err instanceof CredentialError) throw err;
     throw credentialError(ref.backend, 'read');
@@ -139,8 +151,8 @@ function readStored(ref, dataDir, options) {
 }
 
 function storePassword(dataDir, keyFile, password, options = {}) {
-  if (typeof password !== 'string') throw new CredentialError('Wallet password must be a string.');
-  if (typeof keyFile !== 'string' || !keyFile) throw new CredentialError('Wallet keyFile is required for credential storage.');
+  if (typeof password !== 'string') throw validationError('Wallet password must be a string.');
+  if (typeof keyFile !== 'string' || !keyFile) throw validationError('Wallet keyFile is required for credential storage.');
   const backend = selectBackend(options);
   const namespace = createHash('sha256').update(path.resolve(dataDir)).update('\0').update(path.resolve(dataDir, keyFile)).digest('hex').slice(0, 24);
   const ref = { backend, id: `${namespace}-${randomUUID()}` };
@@ -151,11 +163,19 @@ function storePassword(dataDir, keyFile, password, options = {}) {
       atomicWrite(path.join(dir, `${ref.id}.json`), serialized + '\n');
     } else {
       const payload = Buffer.from(serialized).toString('base64');
-      if (backend === 'libsecret' && Buffer.byteLength(payload) >= 8192) throw new CredentialError('Password is too long for the Linux credential helper.');
-      if (backend === 'wincred' && Buffer.byteLength(payload) > 2560) throw new CredentialError('Password is too long for Windows Credential Manager.');
+      if (backend === 'libsecret' && Buffer.byteLength(payload) >= 8192) throw validationError('Password is too long for the Linux credential helper.');
+      if (backend === 'wincred' && Buffer.byteLength(payload) > 2560) throw validationError('Password is too long for Windows Credential Manager.');
       nativeCommand(ref, 'store', payload, options);
     }
-    if (readStored(ref, dataDir, options) !== password) throw credentialError(backend, 'verification');
+    let readback;
+    try { readback = readStored(ref, dataDir, options); }
+    catch (err) {
+      // A just-written entry failing to decode is a failed store transaction;
+      // retain its cooldown so concurrent launchers do not repeat that write.
+      if (err instanceof CredentialError && err.storeAccess === false) throw credentialError(backend, 'verification');
+      throw err;
+    }
+    if (readback !== password) throw credentialError(backend, 'verification');
     return ref;
   } catch (err) {
     // A failed transaction can leave an unused, private entry. Never delete or
@@ -181,11 +201,16 @@ function readConfig(dataDir) {
     const config = JSON.parse(raw);
     if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error();
     return config;
-  } catch { throw new CredentialError('Invalid config.json: expected a JSON object.'); }
+  } catch { throw validationError('Invalid config.json: expected a JSON object.'); }
 }
 
 function sameLock(first, second) {
   return first.dev === second.dev && first.ino === second.ino && first.mtimeMs === second.mtimeMs;
+}
+
+function lockEntryExists(target) {
+  try { fs.lstatSync(target); return true; }
+  catch (err) { if (err.code === 'ENOENT') return false; throw err; }
 }
 
 function releaseLock(lockPath, owner, ownedStat) {
@@ -272,7 +297,12 @@ function withConfigLock(dataDir, callback, options = {}) {
           // record can belong to a live publisher, just like the main lock.
           try { abandonedGuard = Date.now() - fs.lstatSync(guardPath).mtimeMs > 1000; }
           catch (statError) { unreadableGuard = statError.code !== 'ENOENT'; }
-        } else unreadableGuard = err.code !== 'ENOENT';
+        } else if (err.code === 'ENOENT') {
+          // ENOENT from read can mean a dangling symlink rather than an absent
+          // guard. Inspect the entry itself without following or deleting it.
+          try { fs.lstatSync(guardPath); unreadableGuard = true; }
+          catch (statError) { unreadableGuard = statError.code !== 'ENOENT'; }
+        } else unreadableGuard = true;
       }
       if (unreadableGuard) throw new CredentialError(`Timed out waiting for configuration lock recovery (${guardPath}). Unable to read its owner record. Check this path and its permissions before retrying; do not remove it while configuration processes are active.`);
       if (abandonedGuard) throw new CredentialError(`Timed out waiting for configuration lock recovery (${guardPath}). If a recovery process crashed, stop all configuration writers and MCP launchers, verify none are running, then remove only this recovery guard and reconnect. Never remove it while a configuration process is active.`);
@@ -315,7 +345,7 @@ function withConfigLock(dataDir, callback, options = {}) {
       // A creator can be paused between exclusive open and owner publication.
       // Let any reaper finish before verifying that it did not reclaim that
       // formerly empty record. Never enter using an already-unlinked inode.
-      while (fs.existsSync(guardPath)) wait();
+      while (lockEntryExists(guardPath)) wait();
       try {
         if (!sameLock(ownedStat, fs.lstatSync(lockPath))) { ownedStat = undefined; continue; }
       } catch (err) { if (err.code !== 'ENOENT') throw err; ownedStat = undefined; continue; }
@@ -342,14 +372,18 @@ function migrateConfig(dataDir, options = {}) {
     if (!config || !config.agent || !Object.hasOwn(config.agent, 'keyPassword')) { clearFailure(); return config; }
     const password = config.agent.keyPassword;
     const recovery = `Repair the previous config at ${path.join(dataDir, 'config.json')} to preserve any legacy password, or move it aside as a private backup before re-running init-agent. Do not paste its contents into chat.`;
-    if (typeof password !== 'string') throw new CredentialError(`Invalid legacy agent.keyPassword: expected a string. ${recovery}`);
+    if (typeof password !== 'string') throw validationError(`Invalid legacy agent.keyPassword: expected a string. ${recovery}`);
     if (typeof config.agent.keyFile !== 'string' || !config.agent.keyFile.trim()) {
-      throw new CredentialError(`The previous config is missing a valid agent.keyFile. ${recovery}`);
+      throw validationError(`The previous config is missing a valid agent.keyFile. ${recovery}`);
     }
     // A partially transitioned file may contain both fields. Reuse a verified
     // reference only; a broken reference must never silently select a new store.
     const hasRef = Object.hasOwn(config.agent, 'keyPasswordRef');
-    const backend = hasRef ? validateRef(config.agent.keyPasswordRef).backend : selectBackend(options);
+    let backend;
+    if (hasRef) {
+      try { backend = validateRef(config.agent.keyPasswordRef).backend; }
+      catch (err) { throw validationError(`${err.message} ${recovery}`); }
+    } else backend = selectBackend(options);
     let fingerprint;
     if (backend !== 'file') {
       try { fingerprint = createHash('sha256').update(fs.readFileSync(path.join(dataDir, 'config.json'))).digest('hex'); }
@@ -364,7 +398,7 @@ function migrateConfig(dataDir, options = {}) {
     }
     try {
       if (hasRef) {
-        if (resolvePassword(config, dataDir, options) !== password) throw new CredentialError('Legacy password does not match its credential reference. Migration left config.json unchanged.');
+        if (resolvePassword(config, dataDir, options) !== password) throw validationError('Legacy password does not match its credential reference. Migration left config.json unchanged.');
       } else {
         config.agent.keyPasswordRef = storePassword(dataDir, config.agent.keyFile, password, options);
       }

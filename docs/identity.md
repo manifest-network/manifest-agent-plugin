@@ -83,6 +83,8 @@ reports ordinary contention. If the diagnostic identifies abandoned recovery,
 stop all configuration writers and MCP launchers, verify none remain running,
 then remove only `$MANIFEST_PLUGIN_DATA/.config.lock.reclaim` and reconnect.
 Never remove a recovery guard while a configuration process is active.
+Unreadable guards, including dangling symlinks, name the guard path and report
+access trouble; they are not mistaken for ordinary config-lock contention.
 An older development build may leave a `.config.lock/` directory with unknown
 files. The timeout names this directory and gives a separate manual recovery
 step; stop and verify all configuration processes have exited before moving the
@@ -100,6 +102,9 @@ existing references continue to require their original store. Successful
 migration removes the marker. File storage and local validation errors do not
 create a failure cache; invalid wallet fields, excessive password lengths and
 cross-platform references keep their specific diagnostics on repeated attempts.
+An existing credential entry whose contents are invalid also retains its repair
+diagnostic without a pause. Failure to verify a newly stored credential still
+pauses automatic attempts, so launchers cannot repeatedly create unusable entries.
 
 Atomic replacement removes the plaintext field from the current config; it
 cannot erase copies in backups, snapshots or filesystem history. Do not restore
@@ -138,11 +143,19 @@ address and denom. It does not send transactions or request faucet funds.
 An unavailable credential/launcher is distinguished from a failed chain query.
 Migration and report failures do not prevent the session policy from loading;
 migration failure guidance is included in the visible message and model context.
+Invalid saved configuration or credential data receives repair guidance;
+store-access failures receive unlock/retry guidance. The agent can run manual
+migration to obtain the exact safe recovery diagnostic without a startup pause.
 The hook buffers and validates the report before publishing it. If that process
 crashes or emits an invalid result, the hook succeeds with the complete policy
-as plain text and a debug diagnostic. Runtime setup/environment failures still
-fail the hook. Node wrapper banners stay out of the policy, report and exported
-tool-shell environment, and a closed stdin is treated as empty input.
+as plain text and a diagnostic with a safe failure class and exit status.
+Runtime setup/environment failures still fail the hook. A CommonJS helper writes
+quoted exports directly to the host environment file and stages a validated
+report in a private temporary directory, which the hook removes on exit. This
+supports `NODE_OPTIONS=--input-type=module` and wrappers that spawn Node without
+forwarding additional file descriptors. Node wrapper and preload banners stay
+out of the policy, report and exported tool-shell environment, and a closed stdin
+is treated as empty input.
 
 The pinned MCP requires wallet resolution and decryption even for a public
 balance query, so this probe adds a keychain lookup and server startup work.
@@ -164,8 +177,9 @@ loading its skill environment, the same report can be run manually:
 node "$MANIFEST_PLUGIN_ROOT/scripts/session-identity.cjs"
 ```
 
-The manual command writes its report to stderr and rejects additional arguments.
-Its hook-report flags are internal to the SessionStart integration.
+The documented manual command writes its report to stderr and takes no arguments.
+SessionStart calls the formatter through `session-hook.cjs`; the identity CLI's
+internal hook-report flags are retained for developer tests.
 
 ## Backup and recovery
 

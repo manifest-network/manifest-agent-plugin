@@ -97,10 +97,11 @@ policy and environment exports but skip the probe. Manual identity CLI output
 stays on stderr. Low testnet balance produces a hint, never a faucet call. See `docs/identity.md` for
 platform prerequisites, backup requirements and verification limits.
 
-The hook buffers and validates reporter output before publishing it. Optional
-reporter crashes or invalid output fall back to the complete plain policy with
-exit 0. Private descriptors keep Node wrapper noise out of reports and tool-shell
-exports. Runtime setup and environment failures still fail the hook.
+`session-hook.cjs` buffers and validates reporter output before publishing it.
+Optional reporter crashes or invalid output fall back to the complete plain
+policy with exit 0. Direct file writes keep Node wrapper/preload noise out of
+reports and tool-shell exports without requiring extra inherited descriptors or
+inline Node evaluation. Runtime setup and environment failures still fail the hook.
 
 ## Open question decisions (ENG-130 rewire)
 
@@ -183,6 +184,8 @@ Identity helpers added for ENG-85:
 - `scripts/_wincred.ps1` — Windows Credential Manager native API bridge; JSON
   requests and secret responses use stdin/stdout pipes owned by the adapter.
 - `scripts/migrate-credentials.cjs` — migration CLI; no stdout, sanitized stderr.
+- `scripts/session-hook.cjs` — CommonJS hook transport for environment exports,
+  source selection and validated report files; owns sanitized failure diagnostics.
 - `scripts/session-identity.cjs` — bounded chain MCP balance query and public
   identity/faucet advisory; manual stderr or internal structured hook output;
   safe no-op before initialization.
