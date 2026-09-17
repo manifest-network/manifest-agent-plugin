@@ -52,7 +52,17 @@ limitations remain documented. A separate
 reproduced the pre-created-file failure and verified the private-directory fix;
 it tests actual Write semantics in print mode, not full skill execution.
 
-Fresh live testnet acceptance and final cleanup are in progress. The
+The fresh [live testnet replay](live-testnet-acceptance-0.5.0.md) passed all
+11 checks per host. Both leases closed, domains were cleared, and local keys,
+profiles and caches were removed after the private-value scan. The replay
+required runtime bootstrap and native Claude reconnect recovery; one read-only
+Codex troubleshooting argument typo was corrected in a separate call.
+
+The strict source-matched release gate passed, including archived app-server
+provenance, current source equality, both hosts' release rows and Codex archive
+eligibility. The separate Codex release-status CLI reported `eligible=true`.
+This does not replace merging the PR, green CI on the commit to tag, or release
+artifact verification after publication. The
 [reviewed validation report](host-evidence/release-validation-0.5.0-reviewed.json)
 records 749 local test passes, three PowerShell skips, all five executable
 documentation examples, and installed contract checks. PR CI at `4bbd5af`
@@ -73,8 +83,8 @@ a live chain switch.
 - [x] Fresh Claude and Codex terminal reports reviewed with cleanup verified.
 - [x] Fresh Codex app-server fixture report verified against the final source.
 - [x] Current-install preservation, runtime repair and upgrade coverage recorded.
-- [ ] Both hosts' live testnet lifecycle completed and resources cleaned up.
-- [ ] Release rows reference the final runtime/workflow source and pass strict provenance checks; Codex archive is eligible.
+- [x] Both hosts' live testnet lifecycle completed and resources cleaned up.
+- [x] Release rows reference the final runtime/workflow source and pass strict provenance checks; Codex archive is eligible.
 - [x] Full local verification passed; required PR CI checks run on the reviewed commit.
 - [ ] Preparation PR merged and CI green on the commit to tag.
 - [ ] Tag published and expected release artifacts verified.

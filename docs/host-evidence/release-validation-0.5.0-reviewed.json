@@ -226,13 +226,13 @@
       "name": "changed-markdown-links-and-anchors",
       "passed": true,
       "markdownFiles": 44,
-      "localLinkOccurrences": 124,
-      "fileTargetLinks": 109,
+      "localLinkOccurrences": 127,
+      "fileTargetLinks": 112,
       "sameFileLinks": 15,
       "headingAnchorLinks": 20,
       "missingTargets": 0,
       "brokenAnchors": 0,
-      "provenance": "Independent reviewer inspected Markdown changed versus origin/main, excluding code fences and checking inline, reference-style and HTML links. Counts reflect this pre-final-narrative audit; final links are checked again before commit."
+      "provenance": "Independent reviewer checked Markdown changed versus origin/main after the final reviewed live narratives, including inline, reference-style and HTML links outside code fences. All local targets and heading anchors resolved."
     },
     {
       "name": "native-upgrade-reinstall-runtime-repair",
@@ -247,6 +247,67 @@
       "savedFileSnapshotsPerHost": 6,
       "readOnlyProbesPerHost": 3,
       "cleanupVerified": true
+    },
+    {
+      "name": "reviewed-live-testnet",
+      "passed": true,
+      "observedAt": "2026-09-17T15:54:32.335Z",
+      "sourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
+      "evidencePath": "docs/host-evidence/live-testnet-0.5.0-reviewed.json",
+      "evidenceSha256": "a5f762e32649b2495f81279e726b444e1a95209b2704a8d632f8856cdd400f67",
+      "hosts": {
+        "claude": {
+          "cases": 11,
+          "passed": true,
+          "leaseUuid": "01a0afe8-384f-7064-8ff1-a454b041360e"
+        },
+        "codex": {
+          "cases": 11,
+          "passed": true,
+          "leaseUuid": "01a0b000-9a19-7065-ac85-72d7ddd61b8f"
+        }
+      },
+      "includedTransactions": 10,
+      "allIncludedTransactionsSucceeded": true,
+      "receiptBalanceReconciliation": {
+        "verifiedAt": "2026-09-17T15:52:53.675Z",
+        "entries": [
+          {
+            "denom": "umfx",
+            "received": "10000000",
+            "funded": "0",
+            "fees": "1625765",
+            "settled": "0",
+            "expectedWallet": "8374235",
+            "observedWallet": "8374235",
+            "expectedCredit": "0",
+            "observedCredit": "0",
+            "matches": true
+          },
+          {
+            "denom": "factory/manifest1afk9zr2hn2jsac63h4hm60vl9z3e5u69gndzf7c99cqge3vzwjzsfmy9qj/upwr",
+            "received": "10000000",
+            "funded": "2500000",
+            "fees": "0",
+            "settled": "862500",
+            "expectedWallet": "7500000",
+            "observedWallet": "7500000",
+            "expectedCredit": "1637500",
+            "observedCredit": "1637500",
+            "matches": true
+          }
+        ]
+      },
+      "cleanup": {
+        "verifiedResources": true,
+        "activeLeases": 0,
+        "pendingLeases": 0,
+        "temporaryKeyMaterialRemoved": true,
+        "ownedHostProcessesStopped": true,
+        "localRemovedAt": "2026-09-17T15:55:54.358Z",
+        "secretScanPassed": true,
+        "finalArtifactRescanPassed": true
+      }
     }
   ],
   "preparationChecks": [
@@ -275,21 +336,47 @@
     "The three local skips are PowerShell parser, UTF-8 stdin transport and native-binding dispatch tests; pwsh is unavailable. Ubuntu CI runs these separately.",
     "Terminal and app-server suites use harmless marker-only MCP fixtures. Native Write uses harmless JSON. These checks create no live chain/provider resources and establish no autonomous model reasoning, GUI, native macOS Keychain or Windows Credential Manager/ACL acceptance.",
     "Late-cancellation terminal limitations remain: neither host showed the late warning or fixture lease identifier in its final interruption screen within two seconds. Claude received MCP cancellation and displayed phase progress; Codex did not observe MCP cancellation or phase progress in that window.",
-    "Fresh preservation and live testnet acceptance are separate requirements and are not asserted by this report."
+    "Native preservation and live testnet results are recorded in separate linked reports; harmless fixtures alone do not establish either requirement."
   ],
   "hostEvidence": [
     "docs/host-evidence/claude-terminal-0.5.0-reviewed.json",
     "docs/host-evidence/codex-terminal-0.5.0-reviewed.json",
     "docs/host-evidence/codex-app-server-0.5.0-reviewed.json",
-    "docs/host-evidence/claude-native-write-0.5.0-reviewed.json"
+    "docs/host-evidence/claude-native-write-0.5.0-reviewed.json",
+    "docs/host-evidence/current-install-preservation-0.5.0-reviewed.json",
+    "docs/host-evidence/live-testnet-0.5.0-reviewed.json"
   ],
   "releaseGate": {
-    "status": "pending",
-    "pending": [
-      "Fresh source-matched live testnet evidence and cleanup",
-      "Final strict release-gate validation"
+    "status": "passed",
+    "observedAt": "2026-09-17T15:56:21.846Z",
+    "pending": [],
+    "sourceHashScope": "70 core runtime/workflow files; terminal reports bind 88 files.",
+    "sourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
+    "sourceHashesMatchCurrentWorkspace": true,
+    "fixture": {
+      "evidencePath": "docs/host-evidence/codex-app-server-0.5.0-reviewed.json",
+      "sha256": "9820620887b92b7c1aeb898adf6632ef9ebc0764e1ea54b98b9cdb7994887b46",
+      "status": "historical",
+      "verification": "commit"
+    },
+    "releaseRowsSha256": "b51d13edb9b0549ab1e8ed78ef930fe6e6b3e56148074eabd903167b74e3ceb9",
+    "checks": [
+      "Archived Codex app-server fixture and all historical source bytes verified",
+      "Archived fixture source hashes equal current workspace source hashes",
+      "Both hosts interactive and testnet release rows pass validateRelease",
+      "Codex archive eligible"
     ],
-    "sourceHashScope": "70 core runtime/workflow files; terminal reports bind 88 files."
+    "eligible": true,
+    "validation": {
+      "method": "validateHostReport(reviewedArchivedReport, { requireHistory: true }); assert.deepEqual(reviewedArchivedReport.sourceHashes, sourceHashes()); validateRelease(releaseRows); codexReleaseEligible(releaseRows) === true",
+      "scope": "Strict historical provenance plus exact current source equality; archived reports are not relabeled as current.",
+      "operatorHelper": "dist/pr20-live/final-gate.cjs",
+      "operatorHelperSha256": "9c5e87b21482d514ee5710bb6b560f805dfda72bca7fc4fcba098faefa166c83",
+      "cliCommand": "node ci/host-acceptance.cjs --codex-release-status --fetch-history",
+      "cliOutput": "eligible=true",
+      "note": "The composed validation retains historical report status. It does not claim execution of the --release CLI, which requires a current fixture report. PR CI runs a fresh current fixture separately."
+    }
   },
-  "ci": "PR CI runs independently on each commit. Check the preparation PR results for the reviewed revision."
+  "ci": "PR CI runs independently on each commit. Check the preparation PR results for the reviewed revision.",
+  "updatedAt": "2026-09-17T16:00:27.765Z"
 }

@@ -30,7 +30,17 @@ manual recovery. The [earlier 0.5.0 preservation report](host-evidence/current-i
 retains its cold-start timeout and native Reconnect observation. Both runs
 used native remove/install under the same identity, not update-in-place.
 
-The reviewed live testnet lifecycle and full release gate are being refreshed.
+The [reviewed live testnet replay](live-testnet-acceptance-0.5.0.md) passed all
+11 checks in each host. Both leases are closed, domains are unclaimed, and
+local profiles, keys and caches were removed after a private-value scan. The
+run retains its runtime bootstrap/native Claude reconnect limitation and one
+corrected read-only Codex argument error.
+
+The strict source-matched release gate passed: archived app-server provenance,
+exact current source equality, both hosts' interactive and testnet rows, and
+Codex archive eligibility were verified. The separate Codex release-status CLI
+also reported `eligible=true`. This does not declare the PR merged or a tag
+published.
 The [release checklist](release-0.5.0.md) and
 [machine-readable gate](host-acceptance-release.json) track their status.
 The [reviewed validation report](host-evidence/release-validation-0.5.0-reviewed.json)
@@ -176,8 +186,8 @@ the 0.5.0 live rows, which use their own
 | Native reinstall and automatic runtime repair | Passed | Passed | Seven saved files plus credential bytes/modes preserved |
 | Original wallet and saved-record readers | Passed | Passed | Offline signatures, synthetic schema 2/3 wrappers and journal |
 | Read-only MCP before/after reinstall and repair | Passed | Passed | Published `list_modules`; disabled loopback chain endpoints |
-| Live testnet lifecycle and cleanup | In progress | In progress | Fresh reviewed-source replay; earlier observations retained |
-| Full local release gate | Pending | Pending | Requires completed reviewed-source live cleanup |
+| Live testnet lifecycle and cleanup | Passed | Passed | All 11 checks per host; resource and local cleanup verified |
+| Strict source-matched release gate | Passed | Passed | Archived provenance, current source equality and both-host release rows |
 | PR CI | See PR checks | See PR checks | Required on the reviewed commit before merge |
 
 ## Historical 0.4.0 matrix
@@ -205,8 +215,8 @@ public transaction receipts, terminal excerpts, costs and cleanup evidence in
 authoring and journal invocation were performed by the acceptance operator.
 
 Claude evidence and its precise limitations remain in
-[approval-validation.md](approval-validation.md). The fresh 0.5.0 Codex
-app-server result is [archived separately](host-evidence/codex-app-server-0.5.0.json).
+[approval-validation.md](approval-validation.md). The reviewed 0.5.0 Codex
+app-server result is [archived separately](host-evidence/codex-app-server-0.5.0-reviewed.json).
 Historical Codex evidence is recorded in
 [codex-app-server.json](host-evidence/codex-app-server.json). This older committed
 run is the artifact from [CI run 34865171417](https://github.com/manifest-network/manifest-agent-plugin/actions/runs/34865171417),
@@ -245,8 +255,9 @@ in the archive metadata.
 ## Release evidence
 
 Release evidence binds to the source being shipped. Changing any hashed file,
-or adding/removing a `scripts/*.cjs`, `scripts/*.ps1`, or `workflows/*.md` file, makes the current
-release rows stale even though archived reports remain valid for their recorded
+or adding/removing a `scripts/*.cjs`, `scripts/*.ps1`, `workflows/*.md`, or
+`workflows/fragments/*.md` file, makes the current release rows stale
+even though archived reports remain valid for their recorded
 commits. In that source-change PR, set each affected `interactive` and `testnet`
 row in [host-acceptance-release.json](host-acceptance-release.json) to
 `"status": "pending"`. The four current rows share the same core source scope,
