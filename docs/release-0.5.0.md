@@ -76,6 +76,10 @@ config helper still permits valid cached metadata when invoked directly.
 Regression fixtures cover these failure paths; acceptance does not exercise
 a live chain switch.
 
+The [review follow-ups](release-0.5.0-follow-ups.md) record deferred source
+changes, observed limitations, reproduction cases, and required regression
+coverage. They are not claimed fixed by this release preparation.
+
 ## Evidence and release checklist
 
 - [x] Version manifests and lockfile agree at 0.5.0.

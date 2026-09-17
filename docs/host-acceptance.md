@@ -24,6 +24,8 @@ and Node **24.15.0**:
   a pre-created unread file is rejected; a new file inside a private directory
   succeeds and preserves literal JSON. This isolated print-mode check proves
   host file semantics, not generated-workflow execution or terminal UI.
+  The [original driver and public report](host-evidence/source-artifacts/README.md)
+  retain the exact bytes identified by the observation's recorded hashes.
 
 The reviewed preservation run used a warmed npm cache and connected without
 manual recovery. The [earlier 0.5.0 preservation report](host-evidence/current-install-preservation-0.5.0.json)
@@ -217,6 +219,8 @@ authoring and journal invocation were performed by the acceptance operator.
 Claude evidence and its precise limitations remain in
 [approval-validation.md](approval-validation.md). The reviewed 0.5.0 Codex
 app-server result is [archived separately](host-evidence/codex-app-server-0.5.0-reviewed.json).
+The [initial 0.5.0 app-server report](host-evidence/codex-app-server-0.5.0.json)
+at `c6fcc565` remains unchanged historical evidence.
 Historical Codex evidence is recorded in
 [codex-app-server.json](host-evidence/codex-app-server.json). This older committed
 run is the artifact from [CI run 34865171417](https://github.com/manifest-network/manifest-agent-plugin/actions/runs/34865171417),

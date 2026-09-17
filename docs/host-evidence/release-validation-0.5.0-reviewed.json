@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "evidenceKind": "local-release-validation",
   "source_status": "historical",
-  "recordedAt": "2026-09-17T14:54:43.981Z",
+  "recordedAt": "2026-09-17T17:42:51.977Z",
   "head": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
   "sourceHashes": {
     "ci/build-packages.cjs": "ace8ab10d26482b5d441fc9cdd026e92453df5303c7a82100e21f36275ef1712",
@@ -179,7 +179,7 @@
       "hostVersion": "2.1.270 (Claude Code)",
       "cases": 2,
       "evidencePath": "docs/host-evidence/claude-native-write-0.5.0-reviewed.json",
-      "evidenceSha256": "5cba42fa300a14428b2a7e38d9efc47f956ca46602922ce4ca3caf7c163dd3ad",
+      "evidenceSha256": "eea1180ddd6b1d65ff5a1732ce686ec59a9a48024845e6f6d2dfd968881ab86a",
       "result": "Precreated unread file rejected; a new child under a private directory was created with literal JSON preserved. Host semantics in print mode, not generated-workflow or terminal-UI execution."
     },
     {
@@ -225,21 +225,21 @@
     {
       "name": "changed-markdown-links-and-anchors",
       "passed": true,
-      "markdownFiles": 44,
-      "localLinkOccurrences": 127,
-      "fileTargetLinks": 112,
+      "markdownFiles": 46,
+      "localLinkOccurrences": 145,
+      "fileTargetLinks": 130,
       "sameFileLinks": 15,
-      "headingAnchorLinks": 20,
+      "headingAnchorLinks": 21,
       "missingTargets": 0,
       "brokenAnchors": 0,
-      "provenance": "Independent reviewer checked Markdown changed versus origin/main after the final reviewed live narratives, including inline, reference-style and HTML links outside code fences. All local targets and heading anchors resolved."
+      "provenance": "Independent reviewer checked all Markdown changed versus origin/main, including the new follow-up and source-artifact documents, after the second-review edits. Inline, reference-style and HTML links outside code fences resolve to existing files and headings."
     },
     {
       "name": "native-upgrade-reinstall-runtime-repair",
       "passed": true,
       "sourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
       "evidencePath": "docs/host-evidence/current-install-preservation-0.5.0-reviewed.json",
-      "evidenceSha256": "6a2d9082ffc3f3925dff2469b18f806d1cebb446b3a20015d7a5bf527d9154fe",
+      "evidenceSha256": "484c5eb50263fffc4ac445f9ca9a8ccf45bc2fbcfaac144fb4656b5cddbdaa24",
       "hosts": [
         "claude",
         "codex"
@@ -308,6 +308,46 @@
         "secretScanPassed": true,
         "finalArtifactRescanPassed": true
       }
+    },
+    {
+      "name": "second-review-docs-and-builder-guards",
+      "passed": true,
+      "observedAt": "2026-09-17T17:41:43.348Z",
+      "coreSourceUnchanged": true,
+      "builderTests": {
+        "command": "node --test tests/build-packages.test.cjs",
+        "passed": 13,
+        "failed": 0,
+        "testFile": "tests/build-packages.test.cjs",
+        "testFileSha256": "26eff76b8631f64b18a8d5b24a3d92ba110b0873bcf9063f0e84610984a095ab",
+        "provenance": "Independent reviewer ran all 13 builder tests and separate scratch-copy guard deletions. Each deleted guard caused its new selected test to fail with Missing expected exception.",
+        "mutationChecks": [
+          {
+            "removedGuard": "Duplicate workflow token",
+            "selectedTest": "fragment names cannot override built-in host vocabulary",
+            "expectedFailureObserved": true
+          },
+          {
+            "removedGuard": "Unresolved fragment template token",
+            "selectedTest": "unused fragments reject malformed template delimiters before workflow insertion",
+            "expectedFailureObserved": true
+          }
+        ]
+      },
+      "documentationExamples": {
+        "command": "NODE_PATH=<complete-pinned-runtime>/node_modules DOCS_CI_RUN_NETWORK=1 npm run test:docs",
+        "ran": 5,
+        "skipped": 0,
+        "failed": 0,
+        "logSha256": "e1ab4bd0f653d6f3ad053a65965e365cb0806fa23fd9575393efdfa1bc49f93a",
+        "environmentSetup": "An initial invocation omitted NODE_PATH, and a second used an incomplete smoke runtime missing request-filtering-agent. Both environment errors were corrected by selecting the verified complete 0.22.0 runtime before this successful run."
+      },
+      "packageCheck": {
+        "command": "npm run test:packages",
+        "passed": true,
+        "skills": 14
+      },
+      "followUps": "docs/release-0.5.0-follow-ups.md"
     }
   ],
   "preparationChecks": [
@@ -375,8 +415,16 @@
       "cliCommand": "node ci/host-acceptance.cjs --codex-release-status --fetch-history",
       "cliOutput": "eligible=true",
       "note": "The composed validation retains historical report status. It does not claim execution of the --release CLI, which requires a current fixture report. PR CI runs a fresh current fixture separately."
-    }
+    },
+    "revalidatedAt": "2026-09-17T17:38:27.343Z"
   },
   "ci": "PR CI runs independently on each commit. Check the preparation PR results for the reviewed revision.",
-  "updatedAt": "2026-09-17T16:00:27.765Z"
+  "updatedAt": "2026-09-17T17:42:51.977Z",
+  "createdAt": "2026-09-17T14:54:43.981Z",
+  "timestampSemantics": "createdAt records initial report creation; recordedAt and updatedAt record this assembled revision. Each check retains its own actual observation time. Metadata edits do not repeat those observations.",
+  "evidenceAmendments": {
+    "scope": "Documentation and provenance metadata only; original native Write artifacts copied byte-for-byte, preservation limitation spacing corrected, linked report digests recomputed. Recorded runtime observations and all 70 frozen source hashes remain unchanged.",
+    "sourceArtifacts": "docs/host-evidence/source-artifacts/README.md",
+    "originalCreatedAt": "2026-09-17T14:54:43.981Z"
+  }
 }

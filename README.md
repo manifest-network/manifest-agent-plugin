@@ -45,6 +45,10 @@ systems; it is not part of the verified 0.5.0 platform scope.
 
 ## Installation
 
+Run the terminal examples in Bash. Assignments such as `NAME=$(...)` use POSIX
+shell syntax and do not work as written in fish. From fish, run `bash` first
+and stay in that Bash session through any temporary-file cleanup.
+
 ### Codex
 
 ```bash
@@ -91,6 +95,13 @@ This walks you through:
 3. Choosing **testnet** or **mainnet**
 4. Generating a new keypair, or importing an existing mnemonic
 5. Writing the agent configuration
+
+Reinitializing an existing agent currently resets a custom gas multiplier to
+the default `1.5`. To swap wallets while retaining gas settings, use
+`/manifest-agent:import-key`; it restores the previous multiplier after writing
+the new wallet config. If restoration fails, the new wallet is already
+configured and the operation remains partial: resolve the diagnostic and retry
+only the multiplier update, without importing the wallet again.
 
 After setup, **restart Claude Code** (or run `/mcp` and reconnect) so the five MCP servers can pick up the new config.
 
@@ -170,7 +181,7 @@ The orchestrated tool handles plan rendering, fee itemization, dual-tx broadcast
 
 ### Sensitive env values (file-pipe pattern)
 
-For secrets like database passwords, the env prompt in `/manifest-agent:author-manifest` offers a "From a file" option. Create a dotenv file in a separate terminal first:
+For secrets like database passwords, the env prompt in `/manifest-agent:author-manifest` offers a "From a file" option. Create a dotenv file in a separate Bash terminal first (run `bash` first if your usual shell is fish):
 
 ```bash
 umask 077

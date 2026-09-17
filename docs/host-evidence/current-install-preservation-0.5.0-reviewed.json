@@ -1800,10 +1800,10 @@
     "Actual native CLI terminals and published MCP packages were driven by operator-queued deterministic local model responses. This is not hosted-model reasoning, GUI or usability evidence.",
     "Fresh unfunded wallets signed offline only. RPC/REST used disabled loopback endpoints; no chain or provider resources were created.",
     "Minimal offline config omits converterAddress and faucetUrl; CosmWasm is unavailable and the faucet tool absent. Actual chain list_modules passed.",
-    "Saved schema2/3 manifests, draft and journal are synthetic fixtures. Live deployment records are separate evidence.",
-    "Legacy upgrade uses tagged0.4.0 and native remove/install under the same identity; marketplace update-in-place and other historical versions are untested.",
+    "Saved schema 2/3 manifests, draft and journal are synthetic fixtures. Live deployment records are separate evidence.",
+    "Legacy upgrade uses tagged 0.4.0 and native remove/install under the same identity; marketplace update-in-place and other historical versions are untested.",
     "Private-file credential migration does not establish native OS-store access, cross-machine portability or other operating systems.",
-    "This replay used a warmed private npm cache and connected without a native chain reconnect. It does not invalidate the earlier cold-start timeout reported in the initial0.5.0 run."
+    "This replay used a warmed private npm cache and connected without a native chain reconnect. It does not invalidate the earlier cold-start timeout reported in the initial 0.5.0 run."
   ],
   "cleanup": {
     "verified": true,

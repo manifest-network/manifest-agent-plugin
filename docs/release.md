@@ -90,17 +90,24 @@ The existing 0.4.0 host acceptance records remain historical; this bump does
 not make them evidence for 0.5.0 or publish a release. Fresh Linux
 [terminal and app-server reports](host-acceptance.md#050-preparation-status)
 and [native preservation evidence](current-install-acceptance-0.5.0.md) now bind
-the final source `c6fcc565`. Both hosts passed automatic 0.4.0 plaintext
-migration, native reinstall, offline wallet signing, saved-record checks,
-and automatic runtime repair. These runs explicitly selected file credentials.
-The first upgraded Claude session required native `/mcp` reconnect after a
-30-second connection timeout; the evidence records that limit. Native
-remove/install upgrade was tested, not marketplace update-in-place.
+reviewed source `4bbd5af14c504ac280fc6dc8c14383c6fff6c832`. Both hosts passed
+automatic 0.4.0 plaintext migration, native reinstall, offline wallet signing,
+saved-record checks, and automatic runtime repair. These runs explicitly
+selected file credentials.
+The reviewed preservation run used a warmed npm cache and needed no native
+chain reconnect. The [initial preservation run](host-evidence/current-install-preservation-0.5.0.json)
+at `c6fcc565` recorded a cold-start 30-second MCP timeout and native Claude
+Reconnect recovery. Native remove/install upgrade was tested, not marketplace
+update-in-place.
 
 Both hosts completed the [live testnet lifecycle](live-testnet-acceptance-0.5.0.md),
 including cleanup of temporary deployments, domains, hosts and wallet profiles.
+That reviewed live replay required operator-driven runtime bootstrap and
+native Claude reconnect recovery, separately from the warmed preservation run.
 The [0.5.0 checklist](release-0.5.0.md) tracks release-gate validation and the
 remaining publication steps; PR CI checks apply to the reviewed commit.
+The [initial 0.5.0 validation report](host-evidence/release-validation-0.5.0.json)
+at `c6fcc565` remains unchanged historical evidence.
 Native macOS Keychain and Windows Credential Manager/ACL acceptance remains
 unverified; Linux CLI evidence does not establish those platforms or GUI behavior.
 

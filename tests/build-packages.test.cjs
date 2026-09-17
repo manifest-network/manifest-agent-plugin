@@ -74,6 +74,45 @@ test('fragment expansion rejects unknown and nested fragments instead of silentl
   }
 });
 
+test('fragment names cannot override built-in host vocabulary', (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'manifest-fragment-vocabulary-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const directory = join(root, 'workflows', 'fragments');
+  fs.mkdirSync(directory, { recursive: true });
+  const source = '---\nname: probe\ndescription: test\n---\n\n{{host}} uses {{write_tool}}';
+  for (const [file, token] of [['host.md', 'host'], ['write-tool.md', 'write_tool']]) {
+    fs.writeFileSync(join(directory, file), 'unexpected vocabulary override');
+    for (const host of ['claude', 'codex']) {
+      assert.throws(() => renderSkill(source, host, { root, name: 'probe' }), {
+        message: `Duplicate workflow token: ${token}`,
+      });
+    }
+    fs.unlinkSync(join(directory, file));
+  }
+});
+
+test('unused fragments reject malformed template delimiters before workflow insertion', (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'manifest-fragment-delimiters-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const directory = join(root, 'workflows', 'fragments');
+  fs.mkdirSync(directory, { recursive: true });
+  // The workflow never inserts this fragment, so its own unresolved-token check
+  // cannot mask a missing fragment-level validation step.
+  const source = '---\nname: probe\ndescription: test\n---\n\n{{host}} uses {{write_tool}}';
+  for (const malformed of ['Unclosed {{write_tool', 'Unmatched closing }}']) {
+    fs.writeFileSync(join(directory, 'unused.md'), malformed);
+    for (const host of ['claude', 'codex']) {
+      assert.throws(() => renderSkill(source, host, { root, name: 'probe' }), {
+        message: 'Unresolved fragment template token: unused.md',
+      });
+    }
+  }
+  fs.writeFileSync(join(directory, 'unused.md'), 'Valid unused fragment using {{write_tool}}.');
+  for (const host of ['claude', 'codex']) {
+    assert.doesNotThrow(() => renderSkill(source, host, { root, name: 'probe' }));
+  }
+});
+
 test('the Claude generated-file check detects a stale file', (t) => {
   assert.equal(writeClaudeSkills({ check: true }).length, 14);
   const root = fs.mkdtempSync(join(tmpdir(), 'manifest-skill-drift-'));

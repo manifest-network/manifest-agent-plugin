@@ -54,18 +54,5 @@
   "cleanup": {
     "verified": true,
     "temporaryRootRemoved": true
-  },
-  "sourceReportSha256": "621db4f42d8fbc2ef09aad4eab3c5d44934f0c4e61b30dbf6f9b994d75c58d76",
-  "testedBehavior": [
-    "The actual Claude Code 2.1.270 Write tool rejected a precreated file that had not been read, without changing its bytes. The Claude process exited 0 while the individual Write result was an error.",
-    "With Read unavailable, the same host created a new file under a mode-0700 temporary directory. Its mode-0644 child preserved the harmless JSON bytes literally, including quotes, command-substitution syntax and backticks; no shell marker was created."
-  ],
-  "relationshipToSource": {
-    "reviewedSourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
-    "testedContract": "Supports the new-file-under-private-directory staging pattern used by the reviewed workflows and shared journal fragment.",
-    "scope": "This observation predates the source-freeze commit and directly tests host Write semantics in print mode with a deterministic local model and Write preallowed. It did not execute a generated skill or the journal fragment, and did not exercise terminal confirmation UI or autonomous model reasoning.",
-    "driver": "The original observation timestamp and operatorDriverSha256 are preserved. operatorDriverPath and sourceReportPath now archive the exact original bytes identified by operatorDriverSha256 and sourceReportSha256. This adds reproducibility artifacts without rerunning the observation."
-  },
-  "operatorDriverPath": "docs/host-evidence/source-artifacts/claude-native-write-driver.cjs",
-  "sourceReportPath": "docs/host-evidence/source-artifacts/claude-native-write-original.json"
+  }
 }

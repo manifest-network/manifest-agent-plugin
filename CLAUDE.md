@@ -61,13 +61,30 @@ Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
 
 **All scripts use CJS** — `require()`, async IIFE with `.catch(() => process.exit(1))`. Use `getDataDir()` from `_io.cjs` for the data directory path; never compose `homedir() + '.manifest-agent'` (the latter is the legacy pre-v0.5 path).
 
-**Secrets via stdin** — Mnemonics are piped via heredoc (`<<'EOF'`, single-quoted to prevent shell expansion), never as command-line args (visible in `/proc/*/cmdline`).
+**Secrets via stdin** — The user creates a fresh private mnemonic file in a
+separate terminal and supplies only its path. Redirect that file into
+`import-key.cjs` with `< 'MNEMONIC_FILE'`, then pipe its output directly to
+`write-config.cjs`. Do not read the mnemonic into model context or place it in
+a heredoc, command-line argument, or chat message.
+
+Terminal secret-file recipes use POSIX assignments such as
+`MNEMONIC_INPUT_PATH=$(mktemp)`. Ask fish users to start `bash` in their separate
+terminal before following the recipe and remain in that shell through cleanup;
+do not offer unverified fish translations.
 
 **Underscore-prefix helpers** — Scripts named `_<topic>.cjs` (`_io.cjs`, `_uuid.cjs`, `_gas-price.cjs`, `_spec.cjs`, `_https-json.cjs`, `_journal.cjs`) are sibling-only modules consumed via `require('./_X.cjs')`. Skills MUST NOT shell out to them. The post-ENG-130 `humanize-denom.cjs` is a documented exception because it's conceptually a renderer composed by another renderer (`render-balance.cjs`); see the "Renderer / structural summarizers" subsection of the inventory below.
 
 **MCP wrapper** (`start-server.cjs`) — Waits for concurrent SessionStart setup (2-second pre-lock grace, 25-second total bound) before spawning; failure diagnostics identify the missing/incomplete dependency. Reads `config.json`, builds env vars, spawns `$MANIFEST_PLUGIN_DATA/node_modules/.bin/manifest-mcp-<name>` directly (not npx — 30ms vs 800ms startup). Forwards SIGTERM/SIGINT/SIGHUP. Uses `stdio: 'inherit'` so MCP JSON-RPC passes through transparently.
 
 **Configuration precedence** — Config owns chain, gas-price/multiplier and wallet variables. The launcher removes inherited values before applying the selected config, including stale optional endpoints and mnemonic fallback. `agent.keyFile` must exist and `agent.keyPasswordRef` must resolve through `_credentials.cjs`; legacy `agent.keyPassword` is migrated before launching; an explicit empty password is preserved, although upstream 0.22.0 rejects empty-password encrypted wallets. The child runs from an owned empty temporary directory so dotenv cannot load a workspace `.env`, and `DOTENV_CONFIG_QUIET=true` keeps stdout protocol-only. The temporary directory is removed on exit; generic transport settings such as proxies remain inherited. `COSMOS_MAX_GAS` remains an explicit operator override of the upstream gas ceiling; it is not a config-owned field. Invalid values are rejected upstream.
+
+**Reinitialization limit** — `write-config.cjs` rebuilds config without retaining
+`gasMultiplier`. Re-running `init-agent` therefore resets a custom multiplier
+to the runtime default `1.5`. The standalone `import-key` workflow captures the
+safe status first and restores a non-null multiplier in a separate checked
+`update-config.cjs` call. If restoration fails, the new wallet is already
+configured: report a partial outcome and retry only the multiplier update
+after resolving the error. Do not rerun the import or claim completion.
 
 ## Credential storage and startup identity (ENG-85)
 
