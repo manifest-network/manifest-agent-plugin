@@ -175,6 +175,29 @@ command with a serialized record containing the same hostile SKU-name
 patterns. It verifies literal preservation, no shell execution, and no
 environment secret in the journal or command output.
 
+## Wallet gas-setting regressions (ENG-1009)
+
+`tests/workflow-config.test.cjs` executes both hosts' generated wallet pipelines,
+restoration/status commands and journal commands. Only the cryptographic key
+generation/import boundary is replaced with disposable wallet fixtures; config
+writes, file credentials and journals use the real scripts. Both `init-agent`
+paths and standalone `import-key` cover integer/fractional multipliers,
+absent/null defaults, restoration failure and recovery without another wallet.
+Initial setup is covered for both `init-agent` paths. An invalid lock entry
+forces restoration failure while final status stays readable; an unreadable
+config exercises unknown final-state reporting. Journal fixtures instantiate
+the shipped sketches for success, partial and recovered outcomes and check
+structured errors, actual settings and private staging cleanup.
+
+```bash
+node --test tests/workflow-config.test.cjs tests/write-config.test.cjs tests/update-config.test.cjs tests/build-packages.test.cjs
+```
+
+These offline Linux regressions verify the commands and journal data contract.
+The test driver supplies choices, recovery decisions and sketch values; it does
+not establish a model's prompt handling, outcome classification or final prose.
+Those still require fresh behavioral host acceptance before release.
+
 ## Registry metadata regressions (ENG-1008)
 
 `tests/_chain-registry.test.cjs` runs the full malformed-metadata matrix in

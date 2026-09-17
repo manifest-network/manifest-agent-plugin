@@ -27,24 +27,23 @@ include the advice alongside the commands the user is asked to type.
 
 ## Preserve reinitialization settings and clarify import recovery
 
-[init-agent](../workflows/init-agent.md) replaces configuration through
-[write-config.cjs](../scripts/write-config.cjs), which omits `gasMultiplier`.
-Reinitializing an existing configuration therefore resets a custom multiplier to
-the runtime default of 1.5. The README and developer guide now disclose this;
-record the previous value before reinitializing and set it again afterward.
+Status: implemented in [ENG-1009](eng-1009-plan.md). Release acceptance for
+the changed source is still pending; published v0.5.0 evidence stays unchanged.
 
-The follow-up should capture the previous multiplier and restore it after a
-successful reinitialization, with the same checked partial-result handling
-used by [import-key](../workflows/import-key.md). Test custom integer and
-fractional values, no explicit value, and restoration failure without a
-second wallet import or creation.
+The v0.5.0 [init-agent](../workflows/init-agent.md) workflow replaced config
+through [write-config.cjs](../scripts/write-config.cjs) without restoring a
+custom `gasMultiplier`, so reinitialization reverted to the runtime default
+`1.5`. Both wallet paths now capture the previous safe value and use the same
+checked restoration and final-status instructions as
+[import-key](../workflows/import-key.md).
 
-The import workflow already checks restoration, but its journal sketch
-still shows an unconditional `success` and empty `errors`. Update that
-sketch to represent both successful and partial outcomes, using structured
-errors with `class` and `message`. Clarify that a failed restoration retains
-the old value in memory for recovery, not in the newly written config; the
-completion report must describe the actual final settings.
+Both journal sketches distinguish successful and partial outcomes with
+structured `class`/`message` errors. Failed restoration retains the previous
+value only in workflow memory; reports and journals describe the actual saved
+settings, or unknown settings when status cannot be read. Recovery updates only
+gas settings and never creates or imports a second wallet. Generated-command
+regressions cover integers, fractions, absent/null values and failure/recovery
+on both hosts; they do not establish interactive model behavior.
 
 ## Reject unusable registry chain metadata before saving it
 

@@ -110,6 +110,12 @@ Run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
+On a successful status read, capture `gasMultiplier` as
+`PREVIOUS_GAS_MULTIPLIER` before either wallet path writes config. Preserve the
+exact integer or fractional value. If it is absent/null, or config is absent
+for first-time setup, use null so the default remains `1.5`. Keep this value in
+workflow memory for the checked restoration after the wallet/config pipeline.
+
 If the command succeeds and the JSON output has a non-null `address` field,
 warn the user:
 
@@ -196,13 +202,18 @@ and `activeChain`. Suggest the user delete their mnemonic file after success
 (e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
 created it).
 
+### After either successful wallet/config pipeline — Restore gas settings
+
+{{restore_gas_multiplier}}
+
 ## Step 6 — Report results
 
-Tell the user:
+Report `RUN_OUTCOME` and any recovery diagnostic. Tell the user:
 1. Their agent address
 2. The keyfile location
 3. Which chain is active
-4. The gas fee token in use
+4. The gas fee token and actual saved gas price and multiplier from
+   `FINAL_SETTINGS` (null means the default `1.5`; unknown means status failed)
 5. That MCP servers need to be restarted to use the new config — they can do
    this through their host's MCP controls or by restarting {{host}}
 6. Generated wallets do not display a mnemonic. Back up the config, encrypted
@@ -211,8 +222,9 @@ Tell the user:
 
 ## Step 7 — Offer testnet funding
 
-If the user chose testnet, suggest requesting faucet funds to the new address
-using the `{{tool:chain/request_faucet}}` tool if it is available.
+Only after a successful result, if the user chose testnet, suggest requesting
+faucet funds to the new address using the `{{tool:chain/request_faucet}}` tool
+if it is available.
 
 ## Step 8 — Record this run in the journal
 
@@ -234,26 +246,34 @@ as already serialized JSON.
 ```text
 {
   "skill": "init-agent",
-  "active_chain": "<chosen chain — testnet or mainnet>",
+  "active_chain": "<FINAL_SETTINGS.activeChain>",
   "signer_address": "<address parsed from write-config output>",
   "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
   "plan_summary": "init-agent (<generate|import>) on <chosen chain>, gas_token=<GAS_TOKEN>",
   "tool_calls": [],
-  "outcome": "success",
+  "outcome": "<RUN_OUTCOME>",
   "final_state": {
-    "address": "<address>",
-    "active_chain": "<chosen chain>",
-    "gas_token": "<GAS_TOKEN>"
+    "address": "<FINAL_SETTINGS.address>",
+    "active_chain": "<FINAL_SETTINGS.activeChain>",
+    "gas_price": "<FINAL_SETTINGS.gasPrice>",
+    "gas_multiplier": "<FINAL_SETTINGS.gasMultiplier>"
   },
-  "errors": [],
-  "recovery_actions": []
+  "errors": [{ "class": "<ERROR.class>", "message": "<ERROR.message>" }],
+  "recovery_actions": ["<recovery actions attempted or still needed>"]
 }
 ```
+
+Use `RUN_OUTCOME` (`success` or `partial`) from the checked restoration. Fill
+`errors` with the structured errors recorded there and `recovery_actions` with
+attempted or needed recovery; both arrays are empty when no failure occurred.
+Write the multiplier as a number, null for the observed default, or `"unknown"`
+if status failed. Never journal the previous value as though it were restored.
 
 {{journal_write}}
 
 If the user declined the existing-key warning in Step 4 or cancelled at
-any choice prompt, set `outcome` to `"cancelled"`. Do NOT mention the
+any choice prompt, set `outcome` to `"cancelled"` and use the last observed
+settings (or unknown), since no replacement took place. Do NOT mention the
 journal write in your reply to the user.
 
 ## Security notes

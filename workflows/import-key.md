@@ -99,35 +99,23 @@ After the user restores store access, the manual
 legacy migration immediately. Explicit config writes also bypass the brief pause
 used by automatic startup attempts.
 
-After the pipeline succeeds, if `PREVIOUS_GAS_MULTIPLIER` from Step 0 is
-non-null, restore it before reporting completion. Substitute that value as a
-properly shell-escaped literal:
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-multiplier 'PREVIOUS_GAS_MULTIPLIER'
-```
-
-Check the update's exit status and returned `gasMultiplier`. If restoration
-fails, the imported wallet is already configured: report the partial result
-and diagnostic, retain the previous multiplier, and retry only this
-`update-config.cjs` call after resolving the error. **Do not rerun the import**
-to restore gas settings. Do not claim success or write a success journal
-record until restoration succeeds. If it cannot be restored in this run,
-record a `partial` outcome in Step 4 with the restoration diagnostic and
-actual final settings, then stop.
-
-Suggest the user delete their mnemonic file after a successful import
+Once the wallet/config pipeline succeeds, suggest the user delete their mnemonic file
 (e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
-created it).
+created it), even if gas restoration is still pending.
+
+### After a successful wallet/config pipeline — Restore gas settings
+
+{{restore_gas_multiplier}}
 
 ## Step 3 — Report
 
-Tell the user:
+Report `RUN_OUTCOME` and any recovery diagnostic. Tell the user:
 1. Their imported agent address
 2. The keyfile location
 3. That MCP servers need to be restarted to pick up the new key
-4. The selected chain, gas price and any explicitly configured gas multiplier
-   were retained
+4. The actual saved chain, gas price and multiplier from `FINAL_SETTINGS`;
+   confirm retention only after verification. A null multiplier uses the
+   default `1.5`; unknown means status failed, not that settings were retained
 5. Backups require the config, encrypted keyfile and referenced credential;
    the original mnemonic is the independent recovery option
 
@@ -150,21 +138,28 @@ as already serialized JSON.
 ```text
 {
   "skill": "import-key",
-  "active_chain": "<activeChain from Step 0>",
+  "active_chain": "<FINAL_SETTINGS.activeChain>",
   "signer_address": "<address parsed from write-config output>",
   "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
   "plan_summary": "imported key on <activeChain>",
   "tool_calls": [],
-  "outcome": "success",
+  "outcome": "<RUN_OUTCOME>",
   "final_state": {
-    "address": "<address>",
-    "active_chain": "<activeChain>",
-    "gas_multiplier": "<restored previous multiplier, or null when the default applies>"
+    "address": "<FINAL_SETTINGS.address>",
+    "active_chain": "<FINAL_SETTINGS.activeChain>",
+    "gas_price": "<FINAL_SETTINGS.gasPrice>",
+    "gas_multiplier": "<FINAL_SETTINGS.gasMultiplier>"
   },
-  "errors": [],
-  "recovery_actions": []
+  "errors": [{ "class": "<ERROR.class>", "message": "<ERROR.message>" }],
+  "recovery_actions": ["<recovery actions attempted or still needed>"]
 }
 ```
+
+Use `RUN_OUTCOME` (`success` or `partial`) from the checked restoration. Fill
+`errors` with the structured errors recorded there and `recovery_actions` with
+attempted or needed recovery; both arrays are empty when no failure occurred.
+Write the multiplier as a number, null for the observed default, or `"unknown"`
+if status failed. Never journal the previous value as though it were restored.
 
 {{journal_write}}
 
