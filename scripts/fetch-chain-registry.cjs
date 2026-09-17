@@ -9,6 +9,7 @@
  * Writes to <data-dir>/chains/{mainnet,testnet}.json and updates .last-registry-fetch
  * when at least one network is saved. Stdout contains only successfully saved
  * networks. Partial success exits 0 with a stderr warning; zero success exits 1.
+ * Invalid chain metadata fails that network before any cached file is replaced.
  */
 
 const major = parseInt(process.versions.node, 10);
@@ -90,7 +91,23 @@ function buildDenomSymbolMap(assetList) {
 }
 
 function extractChainData(chainRaw, assetList) {
-  const rpc = chainRaw.apis?.rpc?.[0]?.address;
+  if (!chainRaw || typeof chainRaw !== 'object' || Array.isArray(chainRaw)) {
+    throw new Error('chain.json must be a JSON object.');
+  }
+  if (typeof chainRaw.chain_id !== 'string' || !chainRaw.chain_id.trim()) {
+    throw new Error('chain_id must be a nonempty string.');
+  }
+  const rpc = Array.isArray(chainRaw.apis?.rpc) ? chainRaw.apis.rpc[0]?.address : undefined;
+  let rpcUrl;
+  if (typeof rpc === 'string') {
+    try { rpcUrl = new URL(rpc); } catch { /* Use the field diagnostic below. */ }
+  }
+  // URL parsing alone repairs missing slashes, whitespace and backslashes.
+  // Require an explicit authority and preserve the validated registry value.
+  if (!rpcUrl || !['http:', 'https:'].includes(rpcUrl.protocol) || !rpcUrl.hostname
+    || !/^https?:\/\/[^/\s\\]/i.test(rpc) || /[\s\\]/.test(rpc)) {
+    throw new Error('apis.rpc[0].address must be an absolute HTTP(S) URL with a hostname and no whitespace or backslashes.');
+  }
   const rest = chainRaw.apis?.rest?.[0]?.address;
   const symbolMap = buildDenomSymbolMap(assetList);
   const feeTokens = (chainRaw.fees?.fee_tokens || []).map((t) => ({
@@ -139,6 +156,7 @@ function extractChainData(chainRaw, assetList) {
       }
       const chainRaw = chainRes.value;
       const assetList = assetRes.status === 'fulfilled' ? assetRes.value : null;
+      phase = 'validating';
       const data = extractChainData(chainRaw, assetList);
       if (urls.converterAddress) data.converterAddress = urls.converterAddress;
       if (urls.faucetUrl) data.faucetUrl = urls.faucetUrl;

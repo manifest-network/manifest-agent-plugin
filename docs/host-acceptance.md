@@ -5,6 +5,11 @@ is measured at three layers: deterministic local fixtures, the real host
 protocol, and actual interactive/live workflows. A pass in one layer does
 not fill another layer's missing evidence.
 
+The post-release [ENG-1008 registry fix](eng-1008-plan.md) changes the shared
+source covered by all four release-evidence rows. Those rows are pending
+fresh acceptance before the next release; the v0.5.0 observations below
+remain unchanged evidence for their recorded source.
+
 ## 0.5.0 preparation status
 
 The reviewed Linux observations recorded on **2026-09-17** use source

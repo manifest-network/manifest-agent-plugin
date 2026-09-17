@@ -175,6 +175,31 @@ command with a serialized record containing the same hostile SKU-name
 patterns. It verifies literal preservation, no shell execution, and no
 environment secret in the journal or command output.
 
+## Registry metadata regressions (ENG-1008)
+
+`tests/fetch-chain-registry.test.cjs` replaces only the HTTPS boundary; JSON
+parsing, chain extraction, validation and atomic writes run normally. Its
+malformed-response matrix covers object/array/primitive/null bodies,
+missing/wrong-type/blank chain IDs, malformed RPC lists, and missing,
+wrong-type, invalid or unsupported RPC URLs. Each case fails mainnet,
+testnet, and both networks in turn. Assertions check stdout contains exactly
+the saved networks, exit status, network/field diagnostics, unchanged failed
+cache bytes, saved files, and timestamp advancement or preservation.
+
+Valid controls cover full and minimal metadata, HTTP and HTTPS, ports,
+IPv6, paths and queries, and preservation of the first RPC value. Existing
+transport/write failures and optional asset-fetch failures remain covered;
+timestamp-write failure must leave stdout empty and retain saved chain files.
+Run the matrix offline with no chain transactions:
+
+```bash
+node --test tests/fetch-chain-registry.test.cjs
+```
+
+These Linux checks do not replace source-bound host acceptance or establish
+native macOS/Windows compatibility. See [the plan](eng-1008-plan.md) and
+[release evidence requirements](host-acceptance.md#release-evidence).
+
 ## Exercising scripts manually
 
 Useful for debugging without standing up a full Claude session.

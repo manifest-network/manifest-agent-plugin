@@ -51,7 +51,10 @@ Parse the JSON output: each present network key (`mainnet` / `testnet`)
 identifies chain data successfully fetched and saved. A partial result exits
 0 with a diagnostic; no successful networks emits `{}` and exits 1. Omitted keys
 mean that network was not refreshed, and any older file remains. Preserve
-stderr diagnostics. If neither network succeeded, report failure and
+stderr diagnostics. Invalid chain response shapes, blank or non-string chain
+IDs, and invalid HTTP(S) RPC addresses fail validation before replacing the
+cached file; report the named network and field from the diagnostic.
+If neither network succeeded, report failure and
 skip the config update. If only one succeeded, report the partial refresh;
 do not claim both networks are current. Asset-list failures can also leave
 denom labels as raw denoms. The fetch timestamp alone is not proof of
