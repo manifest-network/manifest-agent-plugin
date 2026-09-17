@@ -11,17 +11,36 @@
  * substitutes the symbol — this helper makes that mistake unrepresentable.
  */
 
+const { isValidGasDenom } = require('./_chain-config.cjs');
+
+function decimalAmount(value) {
+  const [mantissa, exponent] = String(value).split('e');
+  if (exponent === undefined) return mantissa;
+  const [whole, fraction = ''] = mantissa.split('.');
+  const digits = whole + fraction;
+  const point = whole.length + Number(exponent);
+  if (point <= 0) return `0.${'0'.repeat(-point)}${digits}`;
+  if (point >= digits.length) return digits + '0'.repeat(point - digits.length);
+  return `${digits.slice(0, point)}.${digits.slice(point)}`;
+}
+
 function composeGasPrice(chainData, symbol) {
   const feeTokens = Array.isArray(chainData?.feeTokens) ? chainData.feeTokens : [];
   const token = feeTokens.find((t) => t && t.symbol === symbol);
   if (!token) {
-    const available = feeTokens.map((t) => t.symbol).filter(Boolean).join(', ') || '(none)';
+    const available = feeTokens.map((t) => t?.symbol).filter(Boolean).join(', ') || '(none)';
     throw new Error(`No fee token with symbol "${symbol}" on this chain. Available: ${available}`);
   }
   if (typeof token.denom !== 'string' || token.fixedMinGasPrice === undefined) {
     throw new Error(`Fee token "${symbol}" is missing denom or fixedMinGasPrice in chain data`);
   }
-  return `${token.fixedMinGasPrice}${token.denom}`;
+  if (typeof token.fixedMinGasPrice !== 'number' || !Number.isFinite(token.fixedMinGasPrice) || token.fixedMinGasPrice < 0) {
+    throw new Error(`Fee token "${symbol}" fixedMinGasPrice must be a finite nonnegative number`);
+  }
+  if (!isValidGasDenom(token.denom)) {
+    throw new Error(`Fee token "${symbol}" denom must be a valid gas denomination of 3 to 128 characters`);
+  }
+  return `${decimalAmount(token.fixedMinGasPrice)}${token.denom}`;
 }
 
 module.exports = { composeGasPrice };

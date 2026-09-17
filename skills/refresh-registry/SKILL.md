@@ -51,7 +51,13 @@ Parse the JSON output: each present network key (`mainnet` / `testnet`)
 identifies chain data successfully fetched and saved. A partial result exits
 0 with a diagnostic; no successful networks emits `{}` and exits 1. Omitted keys
 mean that network was not refreshed, and any older file remains. Preserve
-stderr diagnostics. If neither network succeeded, report failure and
+stderr diagnostics. Invalid chain response shapes, chain IDs, RPC/REST
+endpoints, or fee-token data fail validation before replacing the cached file;
+report the named network and field from the diagnostic. Endpoints require
+HTTPS, with HTTP allowed only for localhost; their schemes are saved lowercase
+so the runtime uses HTTP transport. A listed fee token must have a valid
+denomination and a finite nonnegative minimum gas price.
+If neither network succeeded, report failure and
 skip the config update. If only one succeeded, report the partial refresh;
 do not claim both networks are current. Asset-list failures can also leave
 denom labels as raw denoms. The fetch timestamp alone is not proof of

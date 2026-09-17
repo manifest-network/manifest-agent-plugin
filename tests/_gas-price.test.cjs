@@ -44,3 +44,27 @@ test('composeGasPrice: throws when token is missing denom', () => {
   const broken = { feeTokens: [{ symbol: 'MFX', fixedMinGasPrice: 1 }] };
   assert.throws(() => composeGasPrice(broken, 'MFX'), /missing denom or fixedMinGasPrice/);
 });
+
+test('composeGasPrice: rejects unusable cached prices rather than composing nullumfx', () => {
+  for (const fixedMinGasPrice of [null, NaN, Infinity, -1, false, '', '1', {}, []]) {
+    const chain = { feeTokens: [{ symbol: 'MFX', denom: 'umfx', fixedMinGasPrice }] };
+    assert.throws(() => composeGasPrice(chain, 'MFX'), /fixedMinGasPrice must be a finite nonnegative number/);
+  }
+});
+
+test('composeGasPrice: rejects denominations outside the pinned runtime grammar', () => {
+  for (const denom of ['', 'xy', '9mfx', 'umfx\n', 'u/m/f/', 'u'.repeat(129)]) {
+    assert.throws(() => composeGasPrice({ feeTokens: [{ symbol: 'MFX', denom, fixedMinGasPrice: 1 }] }, 'MFX'), /denom must be a valid gas denomination/);
+  }
+});
+
+test('composeGasPrice: emits decimal strings for zero and numeric exponent boundaries', () => {
+  for (const [fixedMinGasPrice, expected] of [[0, '0'], [1e-7, '0.0000001'], [1.25e-7, '0.000000125'],
+    [1e21, '1000000000000000000000'], [1.25e21, '1250000000000000000000']]) {
+    assert.equal(composeGasPrice({ feeTokens: [{ symbol: 'MFX', denom: 'umfx', fixedMinGasPrice }] }, 'MFX'), expected + 'umfx');
+  }
+});
+
+test('composeGasPrice: a null legacy token does not hide the available-token diagnostic', () => {
+  assert.throws(() => composeGasPrice({ feeTokens: [null] }, 'MFX'), /No fee token.*Available: \(none\)/);
+});

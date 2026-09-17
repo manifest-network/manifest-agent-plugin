@@ -9,6 +9,7 @@
  * Writes to <data-dir>/chains/{mainnet,testnet}.json and updates .last-registry-fetch
  * when at least one network is saved. Stdout contains only successfully saved
  * networks. Partial success exits 0 with a stderr warning; zero success exits 1.
+ * Invalid chain metadata fails that network before any cached file is replaced.
  */
 
 const major = parseInt(process.versions.node, 10);
@@ -22,6 +23,7 @@ const { join } = require('node:path');
 const { URL } = require('node:url');
 const { atomicWrite, getDataDir } = require('./_io.cjs');
 const { httpsGet } = require('./_https-json.cjs');
+const { extractChainData } = require('./_chain-registry.cjs');
 
 // SSRF guard, request timeout, and body-size cap all live in
 // `_https-json.cjs` now — see that file for the rationale on the shared
@@ -79,39 +81,6 @@ function parseArgs(argv) {
   return args;
 }
 
-function buildDenomSymbolMap(assetList) {
-  const map = {};
-  for (const asset of assetList?.assets || []) {
-    if (asset.base && asset.symbol) {
-      map[asset.base] = asset.symbol;
-    }
-  }
-  return map;
-}
-
-function extractChainData(chainRaw, assetList) {
-  const rpc = chainRaw.apis?.rpc?.[0]?.address;
-  const rest = chainRaw.apis?.rest?.[0]?.address;
-  const symbolMap = buildDenomSymbolMap(assetList);
-  const feeTokens = (chainRaw.fees?.fee_tokens || []).map((t) => ({
-    denom: t.denom,
-    symbol: symbolMap[t.denom] || t.denom,
-    fixedMinGasPrice: Number(t.fixed_min_gas_price),
-    lowGasPrice: Number(t.low_gas_price),
-    averageGasPrice: Number(t.average_gas_price),
-    highGasPrice: Number(t.high_gas_price),
-  }));
-  const explorerUrl = chainRaw.explorers?.[0]?.url;
-
-  return {
-    chainId: chainRaw.chain_id,
-    rpcUrl: rpc,
-    restUrl: rest,
-    feeTokens,
-    explorerUrl,
-  };
-}
-
 (async () => {
   const args = parseArgs(process.argv);
   const dataDir = args.dataDir || getDataDir();
@@ -139,6 +108,7 @@ function extractChainData(chainRaw, assetList) {
       }
       const chainRaw = chainRes.value;
       const assetList = assetRes.status === 'fulfilled' ? assetRes.value : null;
+      phase = 'validating';
       const data = extractChainData(chainRaw, assetList);
       if (urls.converterAddress) data.converterAddress = urls.converterAddress;
       if (urls.faucetUrl) data.faucetUrl = urls.faucetUrl;
