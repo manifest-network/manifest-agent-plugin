@@ -60,8 +60,14 @@ The release workflow then:
 There's no fixed cadence. Cut a release when:
 
 - A user-visible feature has shipped to `main` and you want it discoverable in Claude Code's marketplace UI.
-- A bug fix needs to roll out to existing installs (marketplace installs pull the latest tagged release, not `main`).
+- A bug fix needs to roll out to existing installs; publish a version bump and update the marketplace source/ref as applicable.
 - A `manifest-mcp-node` bump shipped — these change the MCP tool surface and should be tagged so users know to reconnect.
+
+A GitHub Release does not select a marketplace's installed revision. Claude
+Git sources use the repository's default branch unless the marketplace pins
+a branch, tag, or commit. Check the distributing marketplace's source and
+update its pin when publishing a new version. See the
+[Claude marketplace source reference](https://code.claude.com/docs/en/plugin-marketplaces#github-repositories).
 
 ## Pre-release checklist
 
@@ -81,11 +87,22 @@ headless installs without a keychain must explicitly select the file fallback.
 Legacy config migration verifies storage before removing plaintext. See
 [identity setup and recovery](identity.md) and the [implementation plan](eng-85-plan.md).
 The existing 0.4.0 host acceptance records remain historical; this bump does
-not make them evidence for 0.5.0 or publish a release. Refresh the Linux
-interactive, reinstall/repair and live-testnet records against the final
-0.5.0 sources before attaching its Codex archive. Native macOS and Windows
-credential validation is unavailable for this release preparation and must
-remain an explicit limitation in the published notes.
+not make them evidence for 0.5.0 or publish a release. Fresh Linux
+[terminal and app-server reports](host-acceptance.md#050-preparation-status)
+and [native preservation evidence](current-install-acceptance-0.5.0.md) now bind
+the final source `c6fcc565`. Both hosts passed automatic 0.4.0 plaintext
+migration, native reinstall, offline wallet signing, saved-record checks,
+and automatic runtime repair. These runs explicitly selected file credentials.
+The first upgraded Claude session required native `/mcp` reconnect after a
+30-second connection timeout; the evidence records that limit. Native
+remove/install upgrade was tested, not marketplace update-in-place.
+
+Both hosts completed the [live testnet lifecycle](live-testnet-acceptance-0.5.0.md),
+including cleanup of temporary deployments, domains, hosts and wallet profiles.
+The [0.5.0 checklist](release-0.5.0.md) tracks release-gate validation and the
+remaining publication steps; PR CI checks apply to the reviewed commit.
+Native macOS Keychain and Windows Credential Manager/ACL acceptance remains
+unverified; Linux CLI evidence does not establish those platforms or GUI behavior.
 
 ## Native Codex compatibility release (ENG-894)
 

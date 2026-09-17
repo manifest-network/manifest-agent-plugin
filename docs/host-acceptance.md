@@ -1,9 +1,46 @@
-# Host acceptance for ENG-894
+# Host acceptance
 
 The implementation plan is in [eng-894-plan.md](eng-894-plan.md). Compatibility
 is measured at three layers: deterministic local fixtures, the real host
 protocol, and actual interactive/live workflows. A pass in one layer does
 not fill another layer's missing evidence.
+
+## 0.5.0 preparation status
+
+The Linux observations recorded on **2026-09-17** use source
+`c6fcc5656349edb8599febae9f20df988d503df8`, plugin **0.5.0**, MCP **0.22.0**,
+and Node **24.15.0**:
+
+- [Claude Code 2.1.270 terminal](host-evidence/claude-terminal-0.5.0.json) and
+  [Codex CLI 0.154.0 terminal](host-evidence/codex-terminal-0.5.0.json): all nine
+  harmless fixture cases, with per-case and suite cleanup verified.
+- [Codex CLI 0.153.4 app-server](host-evidence/codex-app-server-0.5.0.json):
+  eight marker-fixture cases; no model turn, live signer, or terminal UI.
+- [Native upgrade, reinstall and repair](current-install-acceptance-0.5.0.md):
+  both hosts migrated a legacy 0.4.0 plaintext credential automatically,
+  preserved seven saved files and the new credential file, retained offline
+  wallet signing, and passed actual read-only MCP probes. The explicit file
+  credential backend was used; no legacy-user exemption was taken.
+
+The first upgraded Claude session exceeded the host's 30-second MCP connection
+timeout during runtime installation. Restart retained the failed connection;
+`/mcp` → `manifest-chain` → `Reconnect` restored it. Later reinstall and repair
+chain probes passed without another reconnect. The version transition used
+native remove/install with the same plugin identity, not update-in-place.
+
+Both hosts completed all eleven [live testnet checks](live-testnet-acceptance-0.5.0.md).
+Both leases are closed, domain claims cleared, host processes stopped, and
+temporary keys/profiles removed after the public archive passed its secret
+scan. The full local release gate passed and the Codex archive is eligible.
+The [release checklist](release-0.5.0.md) and
+[machine-readable gate](host-acceptance-release.json) track validation
+and the remaining publication steps. The
+[local validation report](host-evidence/release-validation-0.5.0.json) records
+734 passing tests, three local PowerShell skips, all five executable doc
+examples, and the installed policy/contract/transport checks.
+Linux file-storage runs do not establish native macOS Keychain, Windows
+Credential Manager/ACL, or GUI compatibility. The older reports below remain
+historical 0.4.0 evidence.
 
 ## Reproduce the automated checks
 
@@ -83,24 +120,27 @@ outer prompt proves that the plugin's hook still requests permission.
 Terminal results use a scripted summary of the actual returned tool output;
 they do not validate model reasoning or the full deployment workflow.
 Reinstall and saved-record preservation have their own
-[current-install evidence](current-install-acceptance.md). A stopped tool can
+[0.5.0 preservation evidence](current-install-acceptance-0.5.0.md). A stopped tool can
 lose its late result or warning in the host UI; inspect the captured cancellation screen as well as the
 fixture event log before claiming that a partial deployment was visible.
 
-The recorded [Claude terminal run](host-evidence/claude-terminal.json) and
-[Codex terminal run](host-evidence/codex-terminal.json) each cover all nine
-cases. The reports are historical snapshots of their full source commit;
+The recorded [0.5.0 Claude terminal run](host-evidence/claude-terminal-0.5.0.json) and
+[0.5.0 Codex terminal run](host-evidence/codex-terminal-0.5.0.json) each cover all
+nine cases at `c6fcc565`, with verified cleanup. They reproduced the
+progress/cancellation observations below. Archived reports retain their full source commit;
 `--check <report> --require-history` verifies those bytes when the commit is
 available. Without that commit, validation explicitly reports metadata-only
 verification. A partial `--case` report cannot pass full-matrix validation.
 
-The [reviewed Claude run](host-evidence/claude-terminal-reviewed.json) and
+The historical original [Claude](host-evidence/claude-terminal.json) and
+[Codex](host-evidence/codex-terminal.json) reports remain unchanged.
+The historical [reviewed Claude run](host-evidence/claude-terminal-reviewed.json) and
 [reviewed Codex run](host-evidence/codex-terminal-reviewed.json) repeat all nine
 cases with the corrected harness at `ba19d43`. These version 2 reports verify
-process exit and directory removal for every case and now supply the release
+process exit and directory removal for every case and supplied the 0.4.0 release
 rows' terminal coverage. The original reports remain historical observations;
 their cleanup strings do not prove that their temporary directories stayed
-removed. The new runs reproduced the progress/cancellation observations below.
+removed. Those reviewed runs also reproduced the progress/cancellation observations below.
 
 | Observed behavior | Claude Code 2.1.270 | Codex CLI 0.154.0 |
 | --- | --- | --- |
@@ -116,10 +156,31 @@ Neither host retained the fixture lease ID on its final interruption screen.
 These observations leave post-broadcast outcomes uncertain from the terminal
 alone. Preserve identifiers and inspect existing records before retrying an
 interrupted deployment. The interactive release rows combine these terminal
-observations with the current-install evidence. The live workflow is recorded
-separately in [live-testnet-acceptance.md](live-testnet-acceptance.md).
+observations with the version-matched preservation evidence. The historical
+0.4.0 live workflow is recorded separately in
+[live-testnet-acceptance.md](live-testnet-acceptance.md); it does not complete
+the 0.5.0 live rows, which use their own
+[fresh live report](live-testnet-acceptance-0.5.0.md).
 
-## Matrix
+## 0.5.0 matrix
+
+| Scenario | Claude Code 2.1.270 | Codex CLI 0.154.0 | Scope |
+| --- | --- | --- | --- |
+| Discovery, 14 skills and 5 servers | Passed | Passed | Harmless terminal fixture |
+| Permission, confirmation and pre-mutation decline/cancel | Passed | Passed | Zero markers on denial; one on acceptance |
+| Paid partial and post-broadcast cancellation | Observed | Observed | UI limitations in the table above |
+| Native 0.4.0 → 0.5.0 migration | Passed with initial connection recovery | Passed | Explicit file credentials; same original wallet |
+| Native reinstall and automatic runtime repair | Passed | Passed | Seven saved files plus credential bytes/modes preserved |
+| Original wallet and saved-record readers | Passed | Passed | Offline signatures, synthetic schema 2/3 wrappers and journal |
+| Read-only MCP before/after reinstall and repair | Passed | Passed | Published `list_modules`; disabled loopback chain endpoints |
+| Live testnet lifecycle and cleanup | Passed | Passed | Eleven cases per host; remote and local cleanup verified |
+| Full local release gate | Passed | Passed | Version, source, coverage and cleanup checks; Codex archive eligible |
+| PR CI | See PR checks | See PR checks | Required on the reviewed commit before merge |
+
+## Historical 0.4.0 matrix
+
+The following matrix describes the earlier ENG-894 observations. Its passed
+live rows and legacy-upgrade exemption apply to that release only.
 
 | Scenario | Local CI | Real Claude host | Real Codex host | Live testnet |
 | --- | --- | --- | --- | --- |
@@ -141,8 +202,10 @@ public transaction receipts, terminal excerpts, costs and cleanup evidence in
 authoring and journal invocation were performed by the acceptance operator.
 
 Claude evidence and its precise limitations remain in
-[approval-validation.md](approval-validation.md). Codex evidence is recorded
-in [codex-app-server.json](host-evidence/codex-app-server.json). This committed
+[approval-validation.md](approval-validation.md). The fresh 0.5.0 Codex
+app-server result is [archived separately](host-evidence/codex-app-server-0.5.0.json).
+Historical Codex evidence is recorded in
+[codex-app-server.json](host-evidence/codex-app-server.json). This older committed
 run is the artifact from [CI run 34865171417](https://github.com/manifest-network/manifest-agent-plugin/actions/runs/34865171417),
 with its checkout log recording temporary PR merge commit `5c47db6`. The
 archive's `head` uses durable branch commit `d3ffb46`: both commits have the
@@ -179,7 +242,7 @@ in the archive metadata.
 ## Release evidence
 
 Release evidence binds to the source being shipped. Changing any hashed file,
-or adding/removing a `scripts/*.cjs` or `workflows/*.md` file, makes the current
+or adding/removing a `scripts/*.cjs`, `scripts/*.ps1`, or `workflows/*.md` file, makes the current
 release rows stale even though archived reports remain valid for their recorded
 commits. In that source-change PR, set each affected `interactive` and `testnet`
 row in [host-acceptance-release.json](host-acceptance-release.json) to
@@ -227,18 +290,21 @@ passwords, mnemonics, private keys and application secret values.
    verification results and final cleanup state (including any residue).
 
 Record completed UI/live runs in repository evidence files and reference them
-from [host-acceptance-release.json](host-acceptance-release.json). Both testnet
-rows now reference the completed live lifecycle run. Their cleanup declaration
+from [host-acceptance-release.json](host-acceptance-release.json).
+For historical 0.4.0, both testnet rows referenced the completed live lifecycle
+run. Their cleanup declaration
 covers temporary resources and local account data; the separately recorded
-unused testnet billing credit was accepted by the user. Both interactive rows
-are also complete for the CLI scope: current-version reinstall and runtime
+unused testnet billing credit was accepted by the user. Its interactive rows
+were also complete for the CLI scope: current-version reinstall and runtime
 repair preserved config, encrypted wallets, drafts, schema 2/3 saved manifests
 and historical journals. The owner excluded legacy-version migration because
-there are no existing users of the old plugin. Each interactive row declares
-`legacyUpgradeExemption: "no-existing-users"`; validation then requires
+there were no existing users of the old plugin. Each 0.4.0 interactive row declared
+`legacyUpgradeExemption: "no-existing-users"`; validation therefore required
 `reinstall` and `runtime-repair` coverage in place of `upgrade`. Records without
-that explicit exemption still require upgrade evidence. No GUI or
-version-to-version migration is claimed.
+that explicit exemption still require upgrade evidence. The historical 0.4.0
+run claimed neither GUI behavior nor version-to-version migration. The fresh
+0.5.0 preservation report includes actual legacy migration and uses no exemption;
+its live and full-gate status remains tracked separately above.
 
 Tagged releases create the existing GitHub release first. A separate Codex
 artifact job uses `--codex-release-status`: pending
