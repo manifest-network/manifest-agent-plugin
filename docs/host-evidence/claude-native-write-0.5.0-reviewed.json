@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "actual-claude-native-write-local-model",
+  "recordedAt": "2026-09-17T14:38:27.867Z",
+  "hostVersion": "2.1.270 (Claude Code)",
+  "nodeVersion": "v24.15.0",
+  "operatorDriverSha256": "e312d2892e68878e90f148375a9d4bf2a9d6f064e80e8938b55d0f57653cae52",
+  "cases": [
+    {
+      "name": "precreated-file-without-read",
+      "exitCode": 0,
+      "readToolAvailable": false,
+      "directoryMode": "700",
+      "writeResults": [
+        {
+          "type": "tool_result",
+          "content": "<tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>\n\n<system-reminder>\n<total_tokens>14999980 tokens left</total_tokens>\n</system-reminder>",
+          "is_error": true,
+          "tool_use_id": "write_fixture",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      ],
+      "stderr": "",
+      "toolUseCount": 1,
+      "rejectedWithoutChangingFile": true
+    },
+    {
+      "name": "new-file-in-private-directory",
+      "exitCode": 0,
+      "readToolAvailable": false,
+      "directoryMode": "700",
+      "writeResults": [
+        {
+          "tool_use_id": "write_fixture",
+          "type": "tool_result",
+          "content": "File created successfully at: <fixture>/private-parent/input.json (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999980 tokens left</total_tokens>\n</system-reminder>",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      ],
+      "stderr": "",
+      "toolUseCount": 1,
+      "fileMode": "644",
+      "literalJsonBytesPreserved": true
+    }
+  ],
+  "limitations": [
+    "Actual Claude Write tool under a deterministic loopback model in print mode with Write preallowed; this tests file semantics, not terminal confirmation UI.",
+    "Harmless literal JSON only; no wallet, MCP mutation or real API credentials."
+  ],
+  "cleanup": {
+    "verified": true,
+    "temporaryRootRemoved": true
+  },
+  "sourceReportSha256": "621db4f42d8fbc2ef09aad4eab3c5d44934f0c4e61b30dbf6f9b994d75c58d76",
+  "testedBehavior": [
+    "The actual Claude Code 2.1.270 Write tool rejected a precreated file that had not been read, without changing its bytes. The Claude process exited 0 while the individual Write result was an error.",
+    "With Read unavailable, the same host created a new file under a mode-0700 temporary directory. Its mode-0644 child preserved the harmless JSON bytes literally, including quotes, command-substitution syntax and backticks; no shell marker was created."
+  ],
+  "relationshipToSource": {
+    "reviewedSourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
+    "testedContract": "Supports the new-file-under-private-directory staging pattern used by the reviewed workflows and shared journal fragment.",
+    "scope": "This observation predates the source-freeze commit and directly tests host Write semantics in print mode with a deterministic local model and Write preallowed. It did not execute a generated skill or the journal fragment, and did not exercise terminal confirmation UI or autonomous model reasoning.",
+    "driver": "The original observation timestamp and operatorDriverSha256 are preserved. The original public report is retained unchanged; sourceReportSha256 identifies its bytes."
+  }
+}

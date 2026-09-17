@@ -22,6 +22,13 @@ tag is pushed as described in [release.md](release.md).
   contract tracked by [ENG-954](https://linear.app/liftedinit/issue/ENG-954).
 - Documentation has been reviewed against the shipped helpers, shared
   workflows, pinned MCP contracts, CI and release configuration.
+- Host Write staging uses new files inside private temporary directories.
+  All journal-writing workflows share that sequence, preserving literal JSON
+  and the journal writer's failure status through cleanup.
+- Registry output reports only successfully saved networks. Setup and chain
+  switching require fresh metadata for the chosen network, and config updates
+  reject an active chain without metadata. Key import preserves a previously
+  configured gas multiplier and reports restoration failures as partial results.
 
 Node 22.19.0 or later is required. The MCP runtime remains pinned to 0.22.0.
 Native macOS Keychain and Windows Credential Manager/ACL acceptance is
@@ -30,30 +37,34 @@ not establish GUI behavior or native acceptance on other operating systems.
 
 Fresh Linux [terminal and app-server reports](host-acceptance.md) and
 [native upgrade/preservation checks](current-install-acceptance-0.5.0.md) bind
-source `c6fcc5656349edb8599febae9f20df988d503df8`. Both hosts migrated legacy
-0.4.0 plaintext credentials using the explicit file backend, retained the
-original encrypted wallets and saved records, and passed native reinstall
-and automatic dependency repair. This is a native remove/install version
-transition, not marketplace update-in-place or cross-machine migration.
+reviewed source `4bbd5af14c504ac280fc6dc8c14383c6fff6c832`. Both hosts
+migrated legacy 0.4.0 plaintext credentials using the explicit file backend,
+retained the original encrypted wallets and saved records, and passed native
+reinstall and automatic dependency repair. Version transition used native
+remove/install under the same plugin identity, not marketplace update-in-place
+or cross-machine migration.
 
-The first upgraded Claude session exceeded the native 30-second MCP
-connection timeout. After setup finished, a fresh session still needed
-`/mcp` → `manifest-chain` → `Reconnect`; the read-only probe then passed.
-The report retains this cold-start limitation and the existing terminal
-progress/cancellation limitations. Both hosts also completed all eleven
-[live testnet checks](live-testnet-acceptance-0.5.0.md). Temporary leases and
-domains were cleaned up, hosts stopped, and isolated wallet/profile data
-removed after the archive passed its secret scan. The
-[local validation report](host-evidence/release-validation-0.5.0.json) records
-734 passing tests and all five passing executable documentation examples.
+The reviewed preservation run used a warmed npm cache and needed no manual
+chain reconnect. The earlier 0.5.0 report retains its cold-start MCP timeout
+and native Reconnect observation. Both hosts' terminal progress/cancellation
+limitations remain documented. A separate
+[native Claude Write check](host-evidence/claude-native-write-0.5.0-reviewed.json)
+reproduced the pre-created-file failure and verified the private-directory fix;
+it tests actual Write semantics in print mode, not full skill execution.
 
-Known follow-up: `switch-chain` attempts a registry refresh, but a failed or
-partial fetch can leave cached target-chain metadata in place and does not
-always abort the switch. Inspect the fetch diagnostic and the target chain's
-metadata before switching after a fetch failure. The
-[refresh-registry workflow](../workflows/refresh-registry.md) describes partial
-refresh handling; aligning `switch-chain` with those checks remains follow-up
-work. This release acceptance did not exercise a live chain switch.
+Fresh live testnet acceptance and final cleanup are in progress. The
+[reviewed validation report](host-evidence/release-validation-0.5.0-reviewed.json)
+records 749 local test passes, three PowerShell skips, all five executable
+documentation examples, and installed contract checks. PR CI at `4bbd5af`
+passed all 752 tests with zero skips on Node 22.19.0 and Node 24.
+
+The reviewed [switch-chain workflow](../workflows/switch-chain.md) stops if the
+chosen network is missing from the fresh registry result. Partial registry
+success explicitly reports saved and failed networks; zero successful saves
+exits nonzero and preserves the previous fetch timestamp. The lower-level
+config helper still permits valid cached metadata when invoked directly.
+Regression fixtures cover these failure paths; acceptance does not exercise
+a live chain switch.
 
 ## Evidence and release checklist
 
@@ -62,8 +73,8 @@ work. This release acceptance did not exercise a live chain switch.
 - [x] Fresh Claude and Codex terminal reports reviewed with cleanup verified.
 - [x] Fresh Codex app-server fixture report verified against the final source.
 - [x] Current-install preservation, runtime repair and upgrade coverage recorded.
-- [x] Both hosts' live testnet lifecycle completed and resources cleaned up.
-- [x] Release rows reference the final runtime/workflow source and pass strict provenance checks; Codex archive is eligible.
+- [ ] Both hosts' live testnet lifecycle completed and resources cleaned up.
+- [ ] Release rows reference the final runtime/workflow source and pass strict provenance checks; Codex archive is eligible.
 - [x] Full local verification passed; required PR CI checks run on the reviewed commit.
 - [ ] Preparation PR merged and CI green on the commit to tag.
 - [ ] Tag published and expected release artifacts verified.

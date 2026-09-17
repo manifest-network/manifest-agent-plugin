@@ -5,13 +5,13 @@
   "hosts": {
     "claude": {
       "interactive": {
-        "status": "pending",
+        "status": "complete",
         "hostVersion": "2.1.270 (Claude Code)",
-        "recordedAt": "2026-09-17T12:56:36.098Z",
-        "sourceCommit": "c6fcc5656349edb8599febae9f20df988d503df8",
+        "recordedAt": "2026-09-17T15:04:01.463Z",
+        "sourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
         "sourceHashes": {
-          "ci/build-packages.cjs": "9c23f5c9590ba0b922240afb056f7bd2ce6f3f33eabd75572b97e75059e6df79",
-          "ci/codex-host-smoke.cjs": "0cb3c25e07d60ec7dc685b1f130b0ca9391104ba18d227feb4905ad59703a4db",
+          "ci/build-packages.cjs": "ace8ab10d26482b5d441fc9cdd026e92453df5303c7a82100e21f36275ef1712",
+          "ci/codex-host-smoke.cjs": "2e6b218c7fa32f91bacd11695da7f98e2b338776ae97ddcfef47ff4ad36a9bdd",
           "docs/codex.md": "9e1f6297b58ba5afb587431e759c320a4015cfb2f8aebfe897a94778c8de8e3e",
           "docs/identity.md": "f32d698de5b233ee5f97106f8c1694f60eb0c9ec90431a428a719d3bb13f5da5",
           "hooks/hooks.json": "81aea5599bbdde695da2f45bf1c40e64f5b15c2f172a569868a770e451510822",
@@ -39,7 +39,7 @@
           "scripts/check-storage-selection.cjs": "6c806576c56d1bdd547428e4676d82e9ef540b5556b7d6647bddbd04484d2cc0",
           "scripts/codex-server.cjs": "d6175981d5dc3e34894189171cdb0c7861189ba101f15160659e44bc372143f4",
           "scripts/decode-lease-state.cjs": "47f5c454a7492034374085c2e392571a8f480cec4c97dc292efba2c6ca54b511",
-          "scripts/fetch-chain-registry.cjs": "f00186858a1cc14ba2c7f95c9ed5ba52e18dd4c1e7fd5ef3dadc9675a33a6c0b",
+          "scripts/fetch-chain-registry.cjs": "7a0c80bf3fd133c69bcbe48657f4f68e422bd3c9ad68013e1d5fe068e7098aac",
           "scripts/gen-agent-key.cjs": "eefe8c734d2bb6e1d3fb08faa8b08f1c010bbb69c64cd8ed584c8f46449c1dac",
           "scripts/host-env.cjs": "cb506ae0ac34b25bf0ff914e8ed1b606dea12f6bffee37d9dd5f1b24592d64db",
           "scripts/humanize-denom.cjs": "c1533b0952b8603570380a3bdc06ab24edd0c914cca7268bf7a121361adb25ce",
@@ -61,24 +61,25 @@
           "scripts/setup-runtime.cjs": "bc9979a96da195042e637d7f9ed8715094020203faacb0116de12e86353ac6ed",
           "scripts/start-server.cjs": "6b335990ce8ddf36fb7f1faa6f2cf3bd9f71aa97e85578b463b7031bd9047fc3",
           "scripts/summarize-manifest.cjs": "3dedef40d45aa9e8ad98ef49441a975f21e41fa70f35f5e044edc1d60cb47fd2",
-          "scripts/update-config.cjs": "b5ae8fa54489dcd224fbc11cf28eac45dc948629cfb34c111057c40c485178fc",
+          "scripts/update-config.cjs": "d0d92346f8926606fd950eaea09090fa0cc57370b7f346d25e07205086295205",
           "scripts/write-config.cjs": "bd5e4f8faaea11833fbdb8f73bdfe85d575e51822609146ff38dc40895e82dff",
           "tests/fixtures/json-rpc-peer.cjs": "f10549f9697cc42a2c905831caaddad063716cb9ff087694f3429c62209d01c3",
           "tests/fixtures/native-host-fixture.cjs": "dddab5d597ebb4d37700223a0803eb8f1fbe4229959199af85a0a809a3e88e50",
-          "workflows/author-manifest.md": "f733686cb0b2bff5322a63d9e030b5a52e2be22eb6cb3b09d9faa3521dcfc436",
-          "workflows/balance.md": "8f212d1b99e297443e4d3bddda3c31d28aa61569ab4c8a830dc1fc1601252240",
-          "workflows/deploy-app.md": "aeccd2ddd4b62c0494c05cae2c324b4f819de0c5f6fbb91449737c0194631b3f",
-          "workflows/import-key.md": "5a561103569a89d2af9df79ae67beab2a8c79dda3c69cdd840b62a81bd6d761a",
-          "workflows/init-agent.md": "7f5235eb88c307d71bbf91b5dd9be139dea52815ef80bf314009170c958d81fd",
+          "workflows/author-manifest.md": "29d50989ea88d40baa8d9646569e61fb79eefc47b405834a76e199436e7306e8",
+          "workflows/balance.md": "603e27d5a819043607074a12f4f0f201f2bdaf9f1d66d0454423030f12e8507b",
+          "workflows/deploy-app.md": "2679614df74165b7cc646b4fba91f468ba5cce840eda300451432f033d82bd2a",
+          "workflows/fragments/journal-write.md": "efc0752dcbf357abf82f92803578d892b3adce615c8463fe2158abb74255cb47",
+          "workflows/import-key.md": "d59ae67efc3a051a23e8ca0a974106d7ab7be3959ec28e8cb3d8e8faf140d132",
+          "workflows/init-agent.md": "14ba6b650b0b82a618c4fccebb0c68a04b9ad213f44aff558c3757939400650f",
           "workflows/journal.md": "8ee82286846c1dab3b2de55ee9911a3a56d13f9a84be2ace990dfdb7f84ead1e",
-          "workflows/list-providers.md": "77bf1d31c46634c07d9dcd673b063c199103308caa952a4881958da4f87f72ef",
-          "workflows/list-releases.md": "a7bd3408a09c76b18de5069bafbad5b3558e2f444265faec35ce68c422bd4b88",
-          "workflows/manage-domain.md": "d65b1886b1e8cbe1887cc17073c0414031c1418ae21ba9af74b9ea13595081c6",
-          "workflows/refresh-registry.md": "305e32853a2e77a0e2f169eceab3de88c703a925ecf88dd4d1a485a0c598684d",
-          "workflows/restart-app.md": "d6ddffdaf3afba9084bea89c489036caf1d45ce94dac25b2d5d4562e80c40b24",
-          "workflows/set-gas-price.md": "15d481041b760c497d8999d5ac42a27e90b8b6c851c16876d5f473fa2062cf12",
-          "workflows/switch-chain.md": "64bb5a9b457f12661f87bd557fba86a3e37684c07de18fc4676a44a92b1c9200",
-          "workflows/troubleshoot-deployment.md": "baaf6ca387ba535c255d0467e82635e9332e8dfdb4877153fb92fb2ca7f65826"
+          "workflows/list-providers.md": "b7094a821ba1187437fec45f011e91b32c45a2d22eb3851ca926397fb77d60eb",
+          "workflows/list-releases.md": "34df9afd7ba2066f79f7603e44d5dd3bebc8d45fc43e6e8214ae51a2e62d0288",
+          "workflows/manage-domain.md": "08fd1ec36e2edbc0bfffa19650b6e21584f9f8e277a26d70e3531354b9345444",
+          "workflows/refresh-registry.md": "bf6a493e3329239aacc7f2810e25547f863038f9f8b33bac8447f4c38e36d6f0",
+          "workflows/restart-app.md": "95f4afb22668a2e13b884d6231ef9b0e1c26e10d40b92df97616452ba92ffb64",
+          "workflows/set-gas-price.md": "727d469a8dcb6d373f1947767f2cb79a2719a88f4a99ddb8d74211f1e2b09565",
+          "workflows/switch-chain.md": "f2634abb464712df0ce409fe0d1548bc1d8f70ed8b3f2cd0fc03cd7ff1bf4701",
+          "workflows/troubleshoot-deployment.md": "365562dc3fc1d5c0986d58669cdb9230b06202ffd58ee83967452c2cc1f28f18"
         },
         "cases": [
           "install",
@@ -90,12 +91,12 @@
           "paid-partial",
           "progress"
         ],
-        "evidencePath": "docs/host-evidence/current-install-preservation-0.5.0.json",
-        "terminalEvidencePath": "docs/host-evidence/claude-terminal-0.5.0.json",
+        "evidencePath": "docs/host-evidence/current-install-preservation-0.5.0-reviewed.json",
+        "terminalEvidencePath": "docs/host-evidence/claude-terminal-0.5.0-reviewed.json",
         "limitations": [
           "Actual native 0.4-to-0.5 remove/install migration, reinstall and runtime repair in isolated profiles; no update-in-place claim.",
           "Explicit file credential backend on Linux; macOS/Windows acceptance unavailable.",
-          "Initial cold upgrade hit MCP timeout and required native reconnect; subsequent probes passed."
+          "Reviewed run used a warmed npm cache and connected without manual recovery; the earlier cold-run timeout remains historical evidence."
         ]
       },
       "testnet": {
@@ -219,13 +220,13 @@
     },
     "codex": {
       "interactive": {
-        "status": "pending",
+        "status": "complete",
         "hostVersion": "codex-cli 0.154.0",
-        "recordedAt": "2026-09-17T12:56:36.098Z",
-        "sourceCommit": "c6fcc5656349edb8599febae9f20df988d503df8",
+        "recordedAt": "2026-09-17T15:04:01.463Z",
+        "sourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
         "sourceHashes": {
-          "ci/build-packages.cjs": "9c23f5c9590ba0b922240afb056f7bd2ce6f3f33eabd75572b97e75059e6df79",
-          "ci/codex-host-smoke.cjs": "0cb3c25e07d60ec7dc685b1f130b0ca9391104ba18d227feb4905ad59703a4db",
+          "ci/build-packages.cjs": "ace8ab10d26482b5d441fc9cdd026e92453df5303c7a82100e21f36275ef1712",
+          "ci/codex-host-smoke.cjs": "2e6b218c7fa32f91bacd11695da7f98e2b338776ae97ddcfef47ff4ad36a9bdd",
           "docs/codex.md": "9e1f6297b58ba5afb587431e759c320a4015cfb2f8aebfe897a94778c8de8e3e",
           "docs/identity.md": "f32d698de5b233ee5f97106f8c1694f60eb0c9ec90431a428a719d3bb13f5da5",
           "hooks/hooks.json": "81aea5599bbdde695da2f45bf1c40e64f5b15c2f172a569868a770e451510822",
@@ -253,7 +254,7 @@
           "scripts/check-storage-selection.cjs": "6c806576c56d1bdd547428e4676d82e9ef540b5556b7d6647bddbd04484d2cc0",
           "scripts/codex-server.cjs": "d6175981d5dc3e34894189171cdb0c7861189ba101f15160659e44bc372143f4",
           "scripts/decode-lease-state.cjs": "47f5c454a7492034374085c2e392571a8f480cec4c97dc292efba2c6ca54b511",
-          "scripts/fetch-chain-registry.cjs": "f00186858a1cc14ba2c7f95c9ed5ba52e18dd4c1e7fd5ef3dadc9675a33a6c0b",
+          "scripts/fetch-chain-registry.cjs": "7a0c80bf3fd133c69bcbe48657f4f68e422bd3c9ad68013e1d5fe068e7098aac",
           "scripts/gen-agent-key.cjs": "eefe8c734d2bb6e1d3fb08faa8b08f1c010bbb69c64cd8ed584c8f46449c1dac",
           "scripts/host-env.cjs": "cb506ae0ac34b25bf0ff914e8ed1b606dea12f6bffee37d9dd5f1b24592d64db",
           "scripts/humanize-denom.cjs": "c1533b0952b8603570380a3bdc06ab24edd0c914cca7268bf7a121361adb25ce",
@@ -275,24 +276,25 @@
           "scripts/setup-runtime.cjs": "bc9979a96da195042e637d7f9ed8715094020203faacb0116de12e86353ac6ed",
           "scripts/start-server.cjs": "6b335990ce8ddf36fb7f1faa6f2cf3bd9f71aa97e85578b463b7031bd9047fc3",
           "scripts/summarize-manifest.cjs": "3dedef40d45aa9e8ad98ef49441a975f21e41fa70f35f5e044edc1d60cb47fd2",
-          "scripts/update-config.cjs": "b5ae8fa54489dcd224fbc11cf28eac45dc948629cfb34c111057c40c485178fc",
+          "scripts/update-config.cjs": "d0d92346f8926606fd950eaea09090fa0cc57370b7f346d25e07205086295205",
           "scripts/write-config.cjs": "bd5e4f8faaea11833fbdb8f73bdfe85d575e51822609146ff38dc40895e82dff",
           "tests/fixtures/json-rpc-peer.cjs": "f10549f9697cc42a2c905831caaddad063716cb9ff087694f3429c62209d01c3",
           "tests/fixtures/native-host-fixture.cjs": "dddab5d597ebb4d37700223a0803eb8f1fbe4229959199af85a0a809a3e88e50",
-          "workflows/author-manifest.md": "f733686cb0b2bff5322a63d9e030b5a52e2be22eb6cb3b09d9faa3521dcfc436",
-          "workflows/balance.md": "8f212d1b99e297443e4d3bddda3c31d28aa61569ab4c8a830dc1fc1601252240",
-          "workflows/deploy-app.md": "aeccd2ddd4b62c0494c05cae2c324b4f819de0c5f6fbb91449737c0194631b3f",
-          "workflows/import-key.md": "5a561103569a89d2af9df79ae67beab2a8c79dda3c69cdd840b62a81bd6d761a",
-          "workflows/init-agent.md": "7f5235eb88c307d71bbf91b5dd9be139dea52815ef80bf314009170c958d81fd",
+          "workflows/author-manifest.md": "29d50989ea88d40baa8d9646569e61fb79eefc47b405834a76e199436e7306e8",
+          "workflows/balance.md": "603e27d5a819043607074a12f4f0f201f2bdaf9f1d66d0454423030f12e8507b",
+          "workflows/deploy-app.md": "2679614df74165b7cc646b4fba91f468ba5cce840eda300451432f033d82bd2a",
+          "workflows/fragments/journal-write.md": "efc0752dcbf357abf82f92803578d892b3adce615c8463fe2158abb74255cb47",
+          "workflows/import-key.md": "d59ae67efc3a051a23e8ca0a974106d7ab7be3959ec28e8cb3d8e8faf140d132",
+          "workflows/init-agent.md": "14ba6b650b0b82a618c4fccebb0c68a04b9ad213f44aff558c3757939400650f",
           "workflows/journal.md": "8ee82286846c1dab3b2de55ee9911a3a56d13f9a84be2ace990dfdb7f84ead1e",
-          "workflows/list-providers.md": "77bf1d31c46634c07d9dcd673b063c199103308caa952a4881958da4f87f72ef",
-          "workflows/list-releases.md": "a7bd3408a09c76b18de5069bafbad5b3558e2f444265faec35ce68c422bd4b88",
-          "workflows/manage-domain.md": "d65b1886b1e8cbe1887cc17073c0414031c1418ae21ba9af74b9ea13595081c6",
-          "workflows/refresh-registry.md": "305e32853a2e77a0e2f169eceab3de88c703a925ecf88dd4d1a485a0c598684d",
-          "workflows/restart-app.md": "d6ddffdaf3afba9084bea89c489036caf1d45ce94dac25b2d5d4562e80c40b24",
-          "workflows/set-gas-price.md": "15d481041b760c497d8999d5ac42a27e90b8b6c851c16876d5f473fa2062cf12",
-          "workflows/switch-chain.md": "64bb5a9b457f12661f87bd557fba86a3e37684c07de18fc4676a44a92b1c9200",
-          "workflows/troubleshoot-deployment.md": "baaf6ca387ba535c255d0467e82635e9332e8dfdb4877153fb92fb2ca7f65826"
+          "workflows/list-providers.md": "b7094a821ba1187437fec45f011e91b32c45a2d22eb3851ca926397fb77d60eb",
+          "workflows/list-releases.md": "34df9afd7ba2066f79f7603e44d5dd3bebc8d45fc43e6e8214ae51a2e62d0288",
+          "workflows/manage-domain.md": "08fd1ec36e2edbc0bfffa19650b6e21584f9f8e277a26d70e3531354b9345444",
+          "workflows/refresh-registry.md": "bf6a493e3329239aacc7f2810e25547f863038f9f8b33bac8447f4c38e36d6f0",
+          "workflows/restart-app.md": "95f4afb22668a2e13b884d6231ef9b0e1c26e10d40b92df97616452ba92ffb64",
+          "workflows/set-gas-price.md": "727d469a8dcb6d373f1947767f2cb79a2719a88f4a99ddb8d74211f1e2b09565",
+          "workflows/switch-chain.md": "f2634abb464712df0ce409fe0d1548bc1d8f70ed8b3f2cd0fc03cd7ff1bf4701",
+          "workflows/troubleshoot-deployment.md": "365562dc3fc1d5c0986d58669cdb9230b06202ffd58ee83967452c2cc1f28f18"
         },
         "cases": [
           "install",
@@ -304,11 +306,12 @@
           "paid-partial",
           "progress"
         ],
-        "evidencePath": "docs/host-evidence/current-install-preservation-0.5.0.json",
-        "terminalEvidencePath": "docs/host-evidence/codex-terminal-0.5.0.json",
+        "evidencePath": "docs/host-evidence/current-install-preservation-0.5.0-reviewed.json",
+        "terminalEvidencePath": "docs/host-evidence/codex-terminal-0.5.0-reviewed.json",
         "limitations": [
           "Actual native 0.4-to-0.5 remove/install migration, reinstall and runtime repair in isolated profiles; no update-in-place claim.",
-          "Explicit file credential backend on Linux; macOS/Windows acceptance unavailable."
+          "Explicit file credential backend on Linux; macOS/Windows acceptance unavailable.",
+          "Reviewed run used a warmed npm cache and connected without manual recovery; the earlier cold-run timeout remains historical evidence."
         ]
       },
       "testnet": {

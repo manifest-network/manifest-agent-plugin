@@ -7,40 +7,40 @@ not fill another layer's missing evidence.
 
 ## 0.5.0 preparation status
 
-The Linux observations recorded on **2026-09-17** use source
-`c6fcc5656349edb8599febae9f20df988d503df8`, plugin **0.5.0**, MCP **0.22.0**,
+The reviewed Linux observations recorded on **2026-09-17** use source
+`4bbd5af14c504ac280fc6dc8c14383c6fff6c832`, plugin **0.5.0**, MCP **0.22.0**,
 and Node **24.15.0**:
 
-- [Claude Code 2.1.270 terminal](host-evidence/claude-terminal-0.5.0.json) and
-  [Codex CLI 0.154.0 terminal](host-evidence/codex-terminal-0.5.0.json): all nine
-  harmless fixture cases, with per-case and suite cleanup verified.
-- [Codex CLI 0.153.4 app-server](host-evidence/codex-app-server-0.5.0.json):
+- [Claude Code 2.1.270 terminal](host-evidence/claude-terminal-0.5.0-reviewed.json)
+  and [Codex CLI 0.154.0 terminal](host-evidence/codex-terminal-0.5.0-reviewed.json):
+  all nine harmless fixture cases per host, with per-case and suite cleanup.
+- [Codex CLI 0.153.4 app-server](host-evidence/codex-app-server-0.5.0-reviewed.json):
   eight marker-fixture cases; no model turn, live signer, or terminal UI.
 - [Native upgrade, reinstall and repair](current-install-acceptance-0.5.0.md):
-  both hosts migrated a legacy 0.4.0 plaintext credential automatically,
-  preserved seven saved files and the new credential file, retained offline
-  wallet signing, and passed actual read-only MCP probes. The explicit file
-  credential backend was used; no legacy-user exemption was taken.
+  both hosts migrated a legacy 0.4.0 plaintext credential, preserved seven
+  saved files and the new credential file, retained offline wallet signing,
+  and passed actual read-only MCP probes. No legacy-user exemption was used.
+- [Native Claude Write regression](host-evidence/claude-native-write-0.5.0-reviewed.json):
+  a pre-created unread file is rejected; a new file inside a private directory
+  succeeds and preserves literal JSON. This isolated print-mode check proves
+  host file semantics, not generated-workflow execution or terminal UI.
 
-The first upgraded Claude session exceeded the host's 30-second MCP connection
-timeout during runtime installation. Restart retained the failed connection;
-`/mcp` → `manifest-chain` → `Reconnect` restored it. Later reinstall and repair
-chain probes passed without another reconnect. The version transition used
-native remove/install with the same plugin identity, not update-in-place.
+The reviewed preservation run used a warmed npm cache and connected without
+manual recovery. The [earlier 0.5.0 preservation report](host-evidence/current-install-preservation-0.5.0.json)
+retains its cold-start timeout and native Reconnect observation. Both runs
+used native remove/install under the same identity, not update-in-place.
 
-Both hosts completed all eleven [live testnet checks](live-testnet-acceptance-0.5.0.md).
-Both leases are closed, domain claims cleared, host processes stopped, and
-temporary keys/profiles removed after the public archive passed its secret
-scan. The full local release gate passed and the Codex archive is eligible.
+The reviewed live testnet lifecycle and full release gate are being refreshed.
 The [release checklist](release-0.5.0.md) and
-[machine-readable gate](host-acceptance-release.json) track validation
-and the remaining publication steps. The
-[local validation report](host-evidence/release-validation-0.5.0.json) records
-734 passing tests, three local PowerShell skips, all five executable doc
-examples, and the installed policy/contract/transport checks.
+[machine-readable gate](host-acceptance-release.json) track their status.
+The [reviewed validation report](host-evidence/release-validation-0.5.0-reviewed.json)
+records 749 passing local tests, three local PowerShell skips, all five
+executable documentation examples, and installed contract checks. PR CI at
+`4bbd5af` passed all 752 tests with zero skips on Node 22.19.0 and Node 24.
+
 Linux file-storage runs do not establish native macOS Keychain, Windows
-Credential Manager/ACL, or GUI compatibility. The older reports below remain
-historical 0.4.0 evidence.
+Credential Manager/ACL, or GUI compatibility. Earlier 0.5.0 and 0.4.0 reports
+remain unchanged historical observations.
 
 ## Reproduce the automated checks
 
@@ -124,15 +124,18 @@ Reinstall and saved-record preservation have their own
 lose its late result or warning in the host UI; inspect the captured cancellation screen as well as the
 fixture event log before claiming that a partial deployment was visible.
 
-The recorded [0.5.0 Claude terminal run](host-evidence/claude-terminal-0.5.0.json) and
-[0.5.0 Codex terminal run](host-evidence/codex-terminal-0.5.0.json) each cover all
-nine cases at `c6fcc565`, with verified cleanup. They reproduced the
+The reviewed [0.5.0 Claude terminal run](host-evidence/claude-terminal-0.5.0-reviewed.json) and
+[0.5.0 Codex terminal run](host-evidence/codex-terminal-0.5.0-reviewed.json) each cover all
+nine cases at `4bbd5af`, with verified cleanup. Their 88 source hashes include
+the new shared journal fragment. They reproduced the
 progress/cancellation observations below. Archived reports retain their full source commit;
 `--check <report> --require-history` verifies those bytes when the commit is
 available. Without that commit, validation explicitly reports metadata-only
 verification. A partial `--case` report cannot pass full-matrix validation.
 
-The historical original [Claude](host-evidence/claude-terminal.json) and
+The earlier 0.5.0 [Claude](host-evidence/claude-terminal-0.5.0.json) and
+[Codex](host-evidence/codex-terminal-0.5.0.json) observations at `c6fcc565`
+remain unchanged. The historical original [Claude](host-evidence/claude-terminal.json) and
 [Codex](host-evidence/codex-terminal.json) reports remain unchanged.
 The historical [reviewed Claude run](host-evidence/claude-terminal-reviewed.json) and
 [reviewed Codex run](host-evidence/codex-terminal-reviewed.json) repeat all nine
@@ -169,12 +172,12 @@ the 0.5.0 live rows, which use their own
 | Discovery, 14 skills and 5 servers | Passed | Passed | Harmless terminal fixture |
 | Permission, confirmation and pre-mutation decline/cancel | Passed | Passed | Zero markers on denial; one on acceptance |
 | Paid partial and post-broadcast cancellation | Observed | Observed | UI limitations in the table above |
-| Native 0.4.0 → 0.5.0 migration | Passed with initial connection recovery | Passed | Explicit file credentials; same original wallet |
+| Native 0.4.0 → 0.5.0 migration | Passed | Passed | Explicit file credentials; warmed cache; same original wallet |
 | Native reinstall and automatic runtime repair | Passed | Passed | Seven saved files plus credential bytes/modes preserved |
 | Original wallet and saved-record readers | Passed | Passed | Offline signatures, synthetic schema 2/3 wrappers and journal |
 | Read-only MCP before/after reinstall and repair | Passed | Passed | Published `list_modules`; disabled loopback chain endpoints |
-| Live testnet lifecycle and cleanup | Passed | Passed | Eleven cases per host; remote and local cleanup verified |
-| Full local release gate | Passed | Passed | Version, source, coverage and cleanup checks; Codex archive eligible |
+| Live testnet lifecycle and cleanup | In progress | In progress | Fresh reviewed-source replay; earlier observations retained |
+| Full local release gate | Pending | Pending | Requires completed reviewed-source live cleanup |
 | PR CI | See PR checks | See PR checks | Required on the reviewed commit before merge |
 
 ## Historical 0.4.0 matrix
