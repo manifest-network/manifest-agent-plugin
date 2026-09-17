@@ -40,7 +40,7 @@ If it fails, tell the user to run `/manifest-agent:init-agent` first and stop. O
 - Gas multiplier (if set, otherwise "default: 1.5")
 - Active chain
 
-**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains the key password.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password.
 
 ## Step 1 — What to change
 

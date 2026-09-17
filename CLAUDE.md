@@ -37,11 +37,12 @@ call; it locates `host-env.cjs` without pre-existing root exports. See
 
 ```
 Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
-├── scripts/*.cjs                ├── config.json                  (0600, has key password)
+├── scripts/*.cjs                ├── config.json                  (0600, credential reference)
 ├── skills/*/SKILL.md            ├── keys/agent-*.json            (0600, encrypted wallets)
 ├── hooks/hooks.json             ├── chains/{mainnet,testnet}.json
 ├── .mcp.json                    ├── manifests/<lease-uuid>.json  (0600, post-deploy records)
 ├── package.json                 ├── manifests-drafts/*.json      (0600, user-managed drafts)
+                                 ├── credentials/*.json           (0600, explicit file fallback only)
                                  ├── journal/<YYYY-MM-DD>.jsonl   (0600, append-only audit trail)
                                  ├── node_modules/                (deps installed here)
 └── package-lock.json            ├── package.json + package-lock.json (copied)
@@ -66,7 +67,41 @@ Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
 
 **MCP wrapper** (`start-server.cjs`) — Waits for concurrent SessionStart setup (2-second pre-lock grace, 25-second total bound) before spawning; failure diagnostics identify the missing/incomplete dependency. Reads `config.json`, builds env vars, spawns `$MANIFEST_PLUGIN_DATA/node_modules/.bin/manifest-mcp-<name>` directly (not npx — 30ms vs 800ms startup). Forwards SIGTERM/SIGINT/SIGHUP. Uses `stdio: 'inherit'` so MCP JSON-RPC passes through transparently.
 
-**Configuration precedence** — Config owns chain, gas-price/multiplier and wallet variables. The launcher removes inherited values before applying the selected config, including stale optional endpoints and mnemonic fallback. `agent.keyFile` must exist and `agent.keyPassword` must be a string; an explicit empty password is preserved, although upstream 0.22.0 rejects empty-password encrypted wallets. The child runs from an owned empty temporary directory so dotenv cannot load a workspace `.env`, and `DOTENV_CONFIG_QUIET=true` keeps stdout protocol-only. The temporary directory is removed on exit; generic transport settings such as proxies remain inherited. `COSMOS_MAX_GAS` remains an explicit operator override of the upstream gas ceiling; it is not a config-owned field. Invalid values are rejected upstream.
+**Configuration precedence** — Config owns chain, gas-price/multiplier and wallet variables. The launcher removes inherited values before applying the selected config, including stale optional endpoints and mnemonic fallback. `agent.keyFile` must exist and `agent.keyPasswordRef` must resolve through `_credentials.cjs`; legacy `agent.keyPassword` is migrated before launching; an explicit empty password is preserved, although upstream 0.22.0 rejects empty-password encrypted wallets. The child runs from an owned empty temporary directory so dotenv cannot load a workspace `.env`, and `DOTENV_CONFIG_QUIET=true` keeps stdout protocol-only. The temporary directory is removed on exit; generic transport settings such as proxies remain inherited. `COSMOS_MAX_GAS` remains an explicit operator override of the upstream gas ceiling; it is not a config-owned field. Invalid values are rejected upstream.
+
+## Credential storage and startup identity (ENG-85)
+
+`_credentials.cjs` owns native credential access, the explicit
+`MANIFEST_CREDENTIAL_STORE=file` fallback, secret-safe config reading and the
+exclusive `.config.lock` file shared by migration and config writers. Ownership
+uses a token and Linux PID start time; acquisition waits at most 20 seconds.
+The exclusive `.config.lock.reclaim` guard serializes stale recovery. A crashed
+reaper requires manual guard removal only after all configuration writers and
+MCP launchers have stopped; the timeout diagnostic names the recovery path.
+Native store-access failures share a secret-free 30-second retry marker keyed by
+backend and config hash for automatic hook/launcher attempts. Manual migration
+and config writes retry immediately; file storage and local validation failures
+do not create the marker. A new credential uses a
+unique ID and must round-trip before config references it. Migration atomically
+removes the plaintext field and records `credentialMigration`; failed storage
+preserves the previous config. `update-config --status` remains read-only.
+All launchers migrate/resolve, including Codex without a lifecycle hook.
+
+Claude SessionStart runs migration and `session-identity.cjs` after setup on
+new sessions only. The
+identity query invokes only chain MCP `cosmos_query` bank/balance for the gas
+coin, and bounds its lifetime and protocol size. Structured hook JSON supplies
+the complete runtime policy and public report through `additionalContext`, with
+the report also in `systemMessage`. Resume, clear, compact and fork still receive
+policy and environment exports but skip the probe. Manual identity CLI output
+stays on stderr. Low testnet balance produces a hint, never a faucet call. See `docs/identity.md` for
+platform prerequisites, backup requirements and verification limits.
+
+`session-hook.cjs` buffers and validates reporter output before publishing it.
+Optional reporter crashes or invalid output fall back to the complete plain
+policy with exit 0. Direct file writes keep Node wrapper/preload noise out of
+reports and tool-shell exports without requiring extra inherited descriptors or
+inline Node evaluation. Runtime setup and environment failures still fail the hook.
 
 ## Open question decisions (ENG-130 rewire)
 
@@ -142,6 +177,19 @@ The enumeration above is illustrative; see "Scripts inventory" below for the ful
 
 ## Scripts inventory
 
+Identity helpers added for ENG-85:
+
+- `scripts/_credentials.cjs` — synchronous store/readback/resolve, sanitized config
+  reader, shared config lock and idempotent plaintext migration.
+- `scripts/_wincred.ps1` — Windows Credential Manager native API bridge; JSON
+  requests and secret responses use stdin/stdout pipes owned by the adapter.
+- `scripts/migrate-credentials.cjs` — migration CLI; no stdout, sanitized stderr.
+- `scripts/session-hook.cjs` — CommonJS hook transport for environment exports,
+  source selection and validated report files; owns sanitized failure diagnostics.
+- `scripts/session-identity.cjs` — bounded chain MCP balance query and public
+  identity/faucet advisory; manual stderr or internal structured hook output;
+  safe no-op before initialization.
+
 The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.cjs` helpers, hook scripts) lives in [`docs/scripts.md`](docs/scripts.md). Read that file when you need to know a specific script's flags, stdin contract, or call site rules. The conventions that apply to the catalog as a whole:
 
 - Underscore-prefixed files are sibling-only modules consumed via `require('./_X.cjs')` — skills MUST NOT shell out to them.
@@ -158,6 +206,7 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
   draft saver enforces the same check before writing. Syntax validity does
   not establish registry availability or validate the full repository grammar.
 - `ci/evidence-check.cjs` checks current host-report source hashes and distinguishes historical commit evidence; CI runs it alongside policy completeness. See `docs/approval-validation.md` for rerun and history requirements.
+- `ci/check-powershell.ps1` parses the shipped PowerShell scripts without running Windows APIs. Tests verify syntax-error rejection, Unicode stdin, and that ACL/invalid operations skip native compilation.
 - `ci/terminal-host-smoke.cjs` drives the actual Claude and Codex terminal UIs through a private tmux socket, a loopback model fixture, and marker-only MCP tools. It records rendered prompts, input keys, progress, results and mutation counts. See `docs/host-acceptance.md` for the pinned CLI versions and scope.
 - `ci/lease-state-parity.cjs --data-dir <runtime-dir>` compares the plugin's numeric `STATES` table with the installed manifestjs `LeaseState` enum, excluding the SDK's `UNRECOGNIZED = -1` sentinel. CI runs it after runtime installation; its unit tests use fixtures and require no runtime packages.
 - Use `rg -n '<script>.cjs' skills/ scripts/` to locate callers — the call graph drifts and isn't worth restating in prose.
@@ -176,7 +225,7 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 | `gasPrice` | `COSMOS_GAS_PRICE` | yes |
 | `gasMultiplier` | `COSMOS_GAS_MULTIPLIER` | no (omit if falsy, default 1.5) |
 | `agent.keyFile` | `MANIFEST_KEY_FILE` | yes (existing file) |
-| `agent.keyPassword` | `MANIFEST_KEY_PASSWORD` | yes (string, including empty) |
+| `agent.keyPasswordRef` → credential store | `MANIFEST_KEY_PASSWORD` | yes (resolved string, including empty; legacy plaintext migrated first) |
 
 **Agent-server-only env vars** (set unconditionally when `serverName === 'agent'`, see `start-server.cjs`):
 

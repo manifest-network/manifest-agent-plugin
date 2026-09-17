@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SessionStart hook for the manifest-agent plugin.
 #
-# Four responsibilities:
+# Five responsibilities:
 #   1. Emit the runtime transaction policy on stdout so it is injected
 #      into every Claude session that uses the plugin. Plugin CLAUDE.md
 #      files are developer docs and do NOT reach runtime sessions — this
@@ -21,11 +21,16 @@
 #      dependencies in persistent data. The same command serves setup
 #      skills and recovery; a completion record detects interrupted or
 #      incomplete installs even when package.json has not changed.
+#   5. On startup, migrate legacy wallet credentials, then deliver the
+#      public identity and bounded read-only gas balance check to Claude
+#      and the user through structured hook output.
 #
-# Ordering is deliberate: stdin is captured first (gated on
-# CLAUDE_ENV_FILE since that's the only consumer), then policy
-# injection writes to stdout, then env-file writes happen, then locked
-# dependency setup. `set -euo pipefail` means a failed write produces a non-
+# Ordering is deliberate: capture stdin and the canonical policy, export
+# the environment, repair dependencies, then migrate and report on startup.
+# Completed reports emit a single JSON object. A reporter failure falls back
+# to the plain policy with exit 0 so Claude still loads it. Environment and
+# setup failures retain their nonzero status and plain diagnostic policy.
+# `set -euo pipefail` means a failed write produces a non-
 # zero exit Claude Code can surface, rather than silently leaving the
 # session in a half-enforced state.
 #
@@ -34,20 +39,18 @@
 
 set -euo pipefail
 
-# HOOK_PAYLOAD is only used later inside the `if [ -n
-# "${CLAUDE_ENV_FILE:-}" ]` block to extract `session_id` for the
-# MANIFEST_SESSION_ID export. Gate the stdin read on the same condition
-# so we don't `cat` stdin in invocations that won't consume the payload
-# anyway (CI policy-syntax checks, ad-hoc shell test runs) — and so an
-# open-but-unflushed pipe in an unusual stdin setup can't hang the
-# hook before the policy heredoc emits. `cat || true` is belt-and-
-# suspenders against `set -e` propagating a closed-pipe error.
+# With fd 0 closed, Bash can reuse it for command substitution's pipe,
+# making `cat` read its own output forever. Normalize it before any capture.
+if ! ( exec 3<&0 ) 2>/dev/null; then exec </dev/null; fi
+
+# Only real hook invocations need stdin (session_id and startup source).
+# Policy-only CI/ad-hoc invocations must not wait on an unflushed pipe.
 HOOK_PAYLOAD=""
-if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ ! -t 0 ]; then
+if { [ -n "${CLAUDE_ENV_FILE:-}" ] || [ -f "${CLAUDE_PLUGIN_ROOT:-}/package.json" ]; } && [ ! -t 0 ]; then
   HOOK_PAYLOAD=$(cat || true)
 fi
 
-cat <<'POLICY'
+RUNTIME_POLICY=$(cat <<'POLICY'
 # manifest-agent runtime transaction policy
 
 The manifest-agent plugin exposes MCP tools that broadcast Cosmos SDK
@@ -212,6 +215,15 @@ host version and configuration. Do not disable hooks or use unattended
 permission bypasses as a substitute for the user's confirmation.
 
 POLICY
+)
+
+# Preserve the canonical policy if no structured result can be emitted.
+POLICY_EMITTED=false
+REPORT_DIR=""
+trap 'if [ -n "$REPORT_DIR" ]; then rm -rf -- "$REPORT_DIR" || true; fi; if [ "$POLICY_EMITTED" = false ]; then printf "%s\n" "$RUNTIME_POLICY"; fi' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   # Both hosts resolve root/data/NODE_PATH through the same dependency-free
@@ -220,7 +232,9 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
     printf 'manifest-agent: Node 22.19.0+ is required. Install Node and restart Claude Code.\n' >&2
     exit 1
   fi
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/host-env.cjs" claude --shell >> "$CLAUDE_ENV_FILE"
+  # The helper appends only the pure adapter's exports using filesystem I/O.
+  # Wrapper/preload banners, including exit-time output, stay on stderr.
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.cjs" env >&2
 
   # Extract session_id from the captured hook payload. Use jq when
   # available, otherwise fall back to a tolerant grep+sed. Empty
@@ -234,11 +248,11 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
       # `|| true` is required because `set -o pipefail` is active above:
       # if the payload doesn't contain `session_id`, grep exits 1, the
       # pipeline exits 1, and `set -e` would abort the hook. By the time
-      # we reach this block, the policy heredoc has already been emitted
-      # to stdout, so the failure mode is aborting the env-file writes
+      # we reach this block, the policy has already been captured, so
+      # the failure mode is aborting the env-file writes
       # (MANIFEST_PLUGIN_ROOT/DATA/NODE_PATH/SESSION_ID) and the npm
       # bootstrap that follow — leaving the session with the runtime
-      # policy injected but no env vars exported, which is a degraded
+      # policy emitted but no env vars exported, which is a degraded
       # state. Failing soft (empty SESSION_ID) is the right posture:
       # the journal records will simply carry `session_id: null` for
       # that session and the rest of the hook completes normally.
@@ -261,5 +275,45 @@ if [ -n "${CLAUDE_PLUGIN_DATA:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/package.json"
     printf 'manifest-agent: Node 22.19.0+ is required. Install Node and restart Claude Code.\n' >&2
     exit 1
   fi
-  MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/setup-runtime.cjs"
+  MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/setup-runtime.cjs" >&2
+
+  # A full MCP startup includes credential lookup and wallet decryption. Do it
+  # only on initial startup, while policy and exports still run on every source.
+  # Missing/malformed source preserves direct invocation and older-host behavior.
+  SOURCE_STATUS=0
+  printf '%s' "$HOOK_PAYLOAD" | node "${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.cjs" source >&2 || SOURCE_STATUS=$?
+  REPORT_MODE=skip
+  # Only the explicit skip status suppresses startup; a failed source helper
+  # preserves direct invocation/older-host startup behavior.
+  if [ "$SOURCE_STATUS" -ne 10 ]; then
+    # Persist credentials before the query launcher reads them. Raw helper
+    # output never enters the hook JSON: failure uses a fixed recovery message.
+    REPORT_MODE=startup
+    MIGRATION_STATUS=0
+    MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-credentials.cjs" --automatic >&2 || MIGRATION_STATUS=$?
+    case "$MIGRATION_STATUS" in
+      0) ;;
+      2) REPORT_MODE=migration-invalid ;;
+      *) REPORT_MODE=migration-failed ;;
+    esac
+  fi
+
+  # The formatter is buffered and validated before an atomic file write. No
+  # arbitrary helper stdout or nonstandard descriptor reaches hook output.
+  # Keep all temporary files in our own private directory so EXIT also cleans
+  # up a reporter killed during its write. Report failures remain optional.
+  REPORT_STATUS=1
+  if mkdir -p "${CLAUDE_PLUGIN_DATA}" && REPORT_DIR=$(mktemp -d "${CLAUDE_PLUGIN_DATA}/.session-report.XXXXXX"); then
+    REPORT_STATUS=0
+    printf '%s\n' "$RUNTIME_POLICY" | MANIFEST_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" \
+      MANIFEST_SESSION_REPORT_PATH="$REPORT_DIR/report.json" \
+      node "${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.cjs" report "$REPORT_MODE" >&2 || REPORT_STATUS=$?
+    if [ "$REPORT_STATUS" -eq 0 ] && [ -s "$REPORT_DIR/report.json" ] && REPORT_OUTPUT=$(cat "$REPORT_DIR/report.json"); then
+      printf '%s\n' "$REPORT_OUTPUT"
+      POLICY_EMITTED=true
+    fi
+  fi
+  if [ "$POLICY_EMITTED" = false ]; then
+    printf 'manifest-agent: Session report unavailable (reporter status %s); emitting the runtime policy as plain text.\n' "$REPORT_STATUS" >&2
+  fi
 fi

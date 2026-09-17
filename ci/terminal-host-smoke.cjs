@@ -285,7 +285,7 @@ async function runCase(host, test, onProgress) {
     api = createServer(modelHandler({ host, test, modelRequests, onError: (error) => { apiError = error; } }));
     await new Promise((ready) => api.listen(0, '127.0.0.1', ready));
     const baseUrl = `http://127.0.0.1:${api.address().port}`;
-    const env = { PATH: process.env.PATH, HOME: join(temp, 'home'), TERM: 'xterm-256color', LANG: 'C.UTF-8',
+    const env = { PATH: process.env.PATH, HOME: join(temp, 'home'), TERM: 'xterm-256color', LANG: 'C.UTF-8', MANIFEST_CREDENTIAL_STORE: 'file',
       npm_config_registry: 'http://127.0.0.1:1', npm_config_offline: 'true' };
     let args;
     if (host === 'codex') {

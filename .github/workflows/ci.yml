@@ -39,6 +39,10 @@ jobs:
             bash -n "$f"
           done
 
+      - name: Parse PowerShell scripts without running Windows APIs
+        shell: pwsh
+        run: ./ci/check-powershell.ps1
+
       - name: Validate JSON manifests
         run: |
           mapfile -t files < <(git ls-files '*.json')

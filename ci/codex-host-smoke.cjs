@@ -19,8 +19,8 @@ const ROOT = resolve(__dirname, '..');
 function sourceHashes(root = ROOT) {
   const files = ['ci/build-packages.cjs', 'ci/codex-host-smoke.cjs', 'tests/fixtures/native-host-fixture.cjs', 'tests/fixtures/json-rpc-peer.cjs',
     'hosts/codex/manifest-agent/.mcp.json', 'hosts/codex/manifest-agent/.codex-plugin/plugin.json',
-    ...fs.readdirSync(join(root, 'scripts')).filter((name) => name.endsWith('.cjs')).map((name) => `scripts/${name}`),
-    'scripts/session-start.sh', 'scripts/pre-tool-use.sh', 'hooks/hooks.json', 'package.json', 'package-lock.json', 'docs/codex.md',
+    ...fs.readdirSync(join(root, 'scripts')).filter((name) => /\.(cjs|ps1)$/.test(name)).map((name) => `scripts/${name}`),
+    'scripts/session-start.sh', 'scripts/pre-tool-use.sh', 'hooks/hooks.json', 'package.json', 'package-lock.json', 'docs/codex.md', 'docs/identity.md',
     ...workflowFiles(root).map((name) => `workflows/${name}`), 'hosts/codex/env.sh', 'hosts/codex/restart-confirmation.md', 'hosts/claude/restart-confirmation.md'];
   return Object.fromEntries(files.sort().map((name) => [name, createHash('sha256').update(fs.readFileSync(join(root, name))).digest('hex')]));
 }
@@ -32,7 +32,13 @@ async function runHost({ codex = 'codex' } = {}) {
   const dataDir = join(temp, 'persistent-data');
   const hostHome = join(temp, 'codex-home');
   fs.mkdirSync(hostHome);
-  const env = { PATH: process.env.PATH, HOME: process.env.HOME, LANG: 'C.UTF-8', CODEX_HOME: hostHome, MANIFEST_CODEX_DATA: dataDir };
+  const credentialEnvironment = { MANIFEST_CREDENTIAL_STORE: 'file',
+    DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(temp, 'unused-fixture-bus')}`,
+    XDG_RUNTIME_DIR: join(temp, 'runtime'), SystemRoot: process.env.SystemRoot || 'C:\\FixtureWindows' };
+  const env = { PATH: process.env.PATH, HOME: join(temp, 'home'), LANG: 'C.UTF-8', CODEX_HOME: hostHome, MANIFEST_CODEX_DATA: dataDir,
+    ...credentialEnvironment };
+  fs.mkdirSync(env.HOME);
+  fs.mkdirSync(env.XDG_RUNTIME_DIR, { mode: 0o700 });
   let client;
   const command = (args) => {
     const result = spawnSync(codex, args, { cwd: temp, env, encoding: 'utf8', timeout: 30000 });
@@ -41,7 +47,10 @@ async function runHost({ codex = 'codex' } = {}) {
   };
   try {
     const hostVersion = command(['--version']);
-    await prepareFixture({ pluginRoot, dataDir });
+    await prepareFixture({ pluginRoot, dataDir, legacyCredential: true });
+    const legacyConfig = JSON.parse(fs.readFileSync(join(dataDir, 'config.json'), 'utf8'));
+    assert.equal(legacyConfig.agent.keyPassword, 'public-fixture');
+    assert.equal(fs.existsSync(join(dataDir, 'credentials')), false);
     command(['plugin', 'marketplace', 'add', out, '--json']);
     command(['plugin', 'add', 'manifest-agent@manifest', '--json']);
     const child = spawn(codex, ['app-server', '--stdio'], { cwd: temp, env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -95,12 +104,29 @@ async function runHost({ codex = 'codex' } = {}) {
     const servers = status.data.filter((server) => server.name.startsWith('manifest-'));
     assert.equal(servers.length, 5);
     for (const server of servers) assert.ok(Object.keys(server.tools).length, `${server.name} tools not discovered`);
+    const started = events().filter((event) => event.kind === 'started');
+    // Discovery and thread startup may each launch a server. Every launch must
+    // receive the same credential context, including a restart after migration.
+    assert.deepEqual([...new Set(started.map((event) => `manifest-${event.server}`))].sort(), servers.map((server) => server.name).sort());
+    for (const event of started) assert.deepEqual(event.credentialEnvironment, credentialEnvironment, `${event.server} credential environment`);
+    const migrated = JSON.parse(fs.readFileSync(join(dataDir, 'config.json'), 'utf8'));
+    assert.equal(Object.hasOwn(migrated.agent, 'keyPassword'), false);
+    assert.equal(migrated.agent.keyPasswordRef.backend, 'file');
+    assert.equal(migrated.agent.keyFile, legacyConfig.agent.keyFile);
+    assert.deepEqual(migrated.chains, legacyConfig.chains);
+    assert.deepEqual(fs.readdirSync(join(dataDir, 'credentials')), [`${migrated.agent.keyPasswordRef.id}.json`]);
+    assert.equal(require('../scripts/_credentials.cjs').resolvePassword(migrated, dataDir), 'public-fixture');
     await client.close();
     client = null;
     const before = fs.readFileSync(join(dataDir, 'config.json'));
+    const credentialPath = join(dataDir, 'credentials', `${migrated.agent.keyPasswordRef.id}.json`);
+    const beforeCredential = fs.readFileSync(credentialPath);
+    const beforeWallet = fs.readFileSync(join(dataDir, 'fixture-wallet.json'));
     command(['plugin', 'remove', 'manifest-agent@manifest', '--json']);
     command(['plugin', 'add', 'manifest-agent@manifest', '--json']);
     assert.deepEqual(fs.readFileSync(join(dataDir, 'config.json')), before);
+    assert.deepEqual(fs.readFileSync(credentialPath), beforeCredential);
+    assert.deepEqual(fs.readFileSync(join(dataDir, 'fixture-wallet.json')), beforeWallet);
     cases.push({ name: 'reinstall-preserves-config', passed: true, mutationMarkers: 0 });
     return { schemaVersion: 1, source_status: 'current', evidenceKind: 'codex-app-server-local-fixture', observedAt: new Date().toISOString(), hostVersion,
       nodeVersion: process.version, pluginVersion: require('../package.json').version, upstreamPin: require('../package.json').dependencies['@manifest-network/manifest-mcp-node'],

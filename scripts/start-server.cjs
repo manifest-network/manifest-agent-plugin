@@ -22,7 +22,9 @@ const { existsSync, mkdtempSync, readFileSync, rmSync } = require('node:fs');
 const { join, resolve } = require('node:path');
 const { tmpdir, constants: { signals, errno } } = require('node:os');
 const { spawn } = require('node:child_process');
+const { isDeepStrictEqual } = require('node:util');
 const { getDataDir } = require('./_io.cjs');
+const { migrateConfig, resolvePassword, CredentialError } = require('./_credentials.cjs');
 
 const skillCommand = (name) => `${process.env.MANIFEST_PLUGIN_HOST === 'codex' ? '$' : '/'}manifest-agent:${name}`;
 const VALID_SERVERS = ['chain', 'lease', 'fred', 'cosmwasm', 'agent'];
@@ -34,6 +36,8 @@ try {
   process.exit(1);
 }
 const CONFIG_PATH = join(AGENT_DIR, 'config.json');
+const configRecovery = () => `Repair ${CONFIG_PATH} to preserve any legacy password, or move it aside as a private backup before running ${skillCommand('init-agent')}. Do not paste its contents into chat.`;
+const omit = (value, keys) => Object.fromEntries(Object.entries(value ?? {}).filter(([key]) => !keys.includes(key)));
 
 // --- Validate server name ---
 const serverName = process.argv[2];
@@ -86,14 +90,14 @@ async function startServer() {
     if (!(error instanceof SyntaxError)) throw error;
     // JSON parser messages can include the invalid source text, including a
     // wallet password. Report only the file to repair.
-    console.error(`Failed to parse ${CONFIG_PATH}. Repair the JSON or re-run ${skillCommand('init-agent')}.`);
+    console.error(`Failed to parse ${CONFIG_PATH}. ${configRecovery()}`);
     process.exit(1);
   }
 
   // --- Validate config fields ---
   startupPhase = 'validating config.json';
   if (config === null || typeof config !== 'object' || Array.isArray(config)) {
-    console.error(`Invalid config: config.json must contain a JSON object. Re-run ${skillCommand('init-agent')}.`);
+    console.error(`Invalid config: config.json must contain a JSON object. ${configRecovery()}`);
     process.exit(1);
   }
   const { activeChain, gasPrice, gasMultiplier, chains, agent } = config;
@@ -117,8 +121,8 @@ async function startServer() {
   // The plugin owns wallet selection. Never fall back to an unrelated shell
   // mnemonic or the upstream binary's default ~/.manifest/key.json wallet.
   if (typeof agent?.keyFile !== 'string' || !agent.keyFile.trim()
-    || typeof agent.keyPassword !== 'string') {
-    console.error(`Invalid config: agent.keyFile and agent.keyPassword are required. Re-run ${skillCommand('init-agent')}.`);
+    || (typeof agent.keyPassword !== 'string' && !agent.keyPasswordRef)) {
+    console.error(`Invalid config: agent.keyFile and agent.keyPasswordRef (or legacy agent.keyPassword) are required. ${configRecovery()}`);
     process.exit(1);
   }
   const keyFile = resolve(AGENT_DIR, agent.keyFile);
@@ -127,6 +131,21 @@ async function startServer() {
     console.error(`Run ${skillCommand('import-key')} to restore the configured wallet.`);
     process.exit(1);
   }
+
+  startupPhase = 'resolving wallet credentials';
+  // All hosts share this path, including Codex without a SessionStart hook.
+  const migrated = migrateConfig(AGENT_DIR);
+  // A concurrent wallet/config change requires a reconnect; never combine
+  // one wallet's file/chain snapshot with another wallet's password.
+  const passwordFields = ['keyPassword', 'keyPasswordRef'];
+  const identityFields = ['agent', 'credentialMigration'];
+  if (!isDeepStrictEqual(omit(agent, passwordFields), omit(migrated?.agent, passwordFields))
+    || !isDeepStrictEqual(omit(config, identityFields), omit(migrated, identityFields))
+    || (agent.keyPasswordRef && !isDeepStrictEqual(agent.keyPasswordRef, migrated?.agent?.keyPasswordRef))) {
+    console.error('Manifest configuration changed during startup. Reconnect the MCP server.');
+    process.exit(1);
+  }
+  const keyPassword = resolvePassword(migrated, AGENT_DIR);
 
   // --- Pre-flight: runtime setup may still be starting in SessionStart ---
   startupPhase = 'checking runtime dependencies';
@@ -160,7 +179,7 @@ async function startServer() {
     MANIFEST_KEY_FILE: keyFile,
     // Preserve the configured bytes, including empty strings. Upstream decides
     // which passwords its wallet formats support; never substitute shell input.
-    MANIFEST_KEY_PASSWORD: agent.keyPassword,
+    MANIFEST_KEY_PASSWORD: keyPassword,
     // dotenv 17 logs to stdout by default, which corrupts MCP JSON-RPC framing.
     DOTENV_CONFIG_QUIET: 'true',
   });
@@ -250,6 +269,12 @@ async function startServer() {
 }
 
 startServer().catch((error) => {
+  if (startupPhase === 'resolving wallet credentials' && error instanceof CredentialError) {
+    console.error(`Manifest MCP startup failed: ${error.message}`);
+    console.error('See the credential setup and recovery guide: https://github.com/manifest-network/manifest-agent-plugin/blob/main/docs/identity.md');
+    process.exitCode = 1;
+    return;
+  }
   // Inspect an own data property rather than invoking an arbitrary getter.
   const code = error && typeof error === 'object'
     ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
@@ -259,6 +284,8 @@ startServer().catch((error) => {
     guidance = `Check runtime data at ${AGENT_DIR}, including ${LOCK_FILE}, and the plugin package.json/package-lock.json`;
   } else if (startupPhase === 'creating the MCP working directory') {
     guidance = 'Check the system temporary directory';
+  } else if (startupPhase === 'resolving wallet credentials') {
+    guidance = 'Check credential setup and data-directory permissions';
   }
   console.error(`Manifest MCP startup failed while ${startupPhase}${detail}. ${guidance}, then reconnect the server.`);
   process.exitCode = 1;

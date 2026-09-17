@@ -85,7 +85,7 @@ shell's wallet by accident.
 The supported arrangement isolates all mutable data by host. Do not point
 both hosts at the same directory: the installer lock protects dependencies,
 but it does not serialize chain selection or wallet changes in two hosts.
-There is no automatic migration, wallet import or chain selection. To reuse
+There is no automatic migration between host data directories, wallet import or chain selection. To reuse
 a spec, explicitly copy that draft to the other host and revalidate its
 provider/SKU selection. To reuse a wallet, explicitly run the import workflow
 and select the chain; importing a wallet does not duplicate its chain funds.
@@ -172,3 +172,19 @@ Configuration controls chain, gas price and wallet. The launcher clears stale
 config-owned environment values and prevents workspace `.env` files from
 changing the signer. `COSMOS_MAX_GAS`, elicitation timeout and proxy variables
 are explicit operator overrides forwarded by the native MCP configuration.
+
+## Wallet credentials
+
+Version 0.5.0 uses the shared OS credential adapter. Each launcher migrates an
+existing plaintext password before starting its MCP server; config retains only
+a credential reference. Linux requires `secret-tool` and an unlocked Secret
+Service session. For headless use, explicitly set `MANIFEST_CREDENTIAL_STORE=file`
+in the environment launching Codex and in setup shells. That fallback keeps a
+recoverable password in private files and never replaces an existing keychain
+reference automatically. Backups must include the referenced credential store.
+See [identity setup and recovery](identity.md).
+
+Codex has no SessionStart hook. To request the same public balance/faucet advisory,
+source a skill's `env.sh` and run
+`node "$MANIFEST_PLUGIN_ROOT/scripts/session-identity.cjs"`. Output goes to stderr;
+no faucet request or transaction is sent.

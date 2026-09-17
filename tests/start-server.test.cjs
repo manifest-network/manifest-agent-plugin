@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  mkdtempSync, rmSync, writeFileSync, readFileSync, copyFileSync, mkdirSync, chmodSync, existsSync, symlinkSync,
+  mkdtempSync, rmSync, writeFileSync, readFileSync, copyFileSync, mkdirSync, chmodSync, existsSync, symlinkSync, statSync,
 } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
@@ -36,10 +36,10 @@ function buildPluginData({ activeChain = 'testnet', faucetUrl, gasPrice = '0.025
   const data = mkdtempSync(join(tmpdir(), 'start-server-data-'));
   const plugin = join(data, '.fixture-plugin');
   mkdirSync(join(plugin, 'scripts'), { recursive: true });
-  // Copy the actual launcher and its two dependency-free helpers. A minimal
+  // Copy the actual launcher and its dependency-free helpers. A minimal
   // locked package makes corruption checks realistic without installing the
   // full published runtime separately for each subprocess test.
-  for (const name of ['start-server.cjs', '_runtime.cjs', '_io.cjs']) {
+  for (const name of ['start-server.cjs', '_runtime.cjs', '_io.cjs', '_credentials.cjs', '_wincred.ps1']) {
     copyFileSync(join(__dirname, '..', 'scripts', name), join(plugin, 'scripts', name));
   }
   const dependencies = { '@manifest-network/manifest-mcp-node': 'fixture' };
@@ -102,6 +102,7 @@ function runWrapper(serverName, { data, extraEnv = {}, cwd } = {}) {
     PATH: process.env.PATH,
     HOME: process.env.HOME || '/tmp',
     MANIFEST_PLUGIN_DATA: data,
+    MANIFEST_CREDENTIAL_STORE: 'file',
     ...extraEnv,
   };
   const script = join(data, '.fixture-plugin', 'scripts', 'start-server.cjs');
@@ -371,6 +372,112 @@ test('explicit empty and whitespace passwords reach the child byte-for-byte', ()
   }
 });
 
+test('launcher migrates a legacy password to a private credential reference and reuses it on reconnect', () => {
+  withData((data) => {
+    const path = join(data, 'config.json');
+    const original = JSON.parse(readFileSync(path, 'utf8'));
+    const first = runWrapper('agent', { data });
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(parseEnvLines(first.stdout).MANIFEST_KEY_PASSWORD, 'fixture-password');
+    const saved = readFileSync(path, 'utf8');
+    const migrated = JSON.parse(saved);
+    assert.equal(Object.hasOwn(migrated.agent, 'keyPassword'), false);
+    assert.doesNotMatch(saved, /fixture-password/);
+    assert.equal(migrated.agent.keyFile, original.agent.keyFile);
+    assert.deepEqual(migrated.chains, original.chains);
+    assert.equal(migrated.agent.keyPasswordRef.backend, 'file');
+    assert.equal(migrated.credentialMigration.version, 1);
+    const credentialPath = join(data, 'credentials', `${migrated.agent.keyPasswordRef.id}.json`);
+    assert.equal(JSON.parse(readFileSync(credentialPath, 'utf8')).password, 'fixture-password');
+    assert.equal(statSync(path).mode & 0o777, 0o600);
+    assert.equal(statSync(credentialPath).mode & 0o777, 0o600);
+    assert.equal(statSync(join(data, 'credentials')).mode & 0o777, 0o700);
+    const second = runWrapper('chain', { data, extraEnv: { MANIFEST_KEY_PASSWORD: 'unrelated shell password' } });
+    assert.equal(second.status, 0, second.stderr);
+    assert.equal(parseEnvLines(second.stdout).MANIFEST_KEY_PASSWORD, 'fixture-password');
+    assert.equal(readFileSync(path, 'utf8'), saved, 'reconnect must preserve the completed migration');
+    assert.doesNotMatch(first.stderr + second.stderr, /fixture-password|unrelated shell password/);
+  });
+});
+
+test('launcher resolves an existing reference without a plaintext password in config', () => {
+  withData((data) => {
+    const { storePassword } = require('../scripts/_credentials.cjs');
+    const path = join(data, 'config.json');
+    const config = JSON.parse(readFileSync(path, 'utf8'));
+    config.agent.keyPasswordRef = storePassword(data, config.agent.keyFile, '  persisted password é  ', {
+      env: { MANIFEST_CREDENTIAL_STORE: 'file' },
+    });
+    delete config.agent.keyPassword;
+    writeFileSync(path, JSON.stringify(config), { mode: 0o600 });
+    const r = runWrapper('agent', { data, extraEnv: {
+      MANIFEST_KEY_PASSWORD: 'ambient-password', COSMOS_MNEMONIC: 'ambient-mnemonic',
+    } });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(parseEnvLines(r.stdout).MANIFEST_KEY_PASSWORD, '  persisted password é  ');
+    assert.equal(parseEnvLines(r.stdout).COSMOS_MNEMONIC, undefined);
+    assert.doesNotMatch(r.stderr, /persisted password|ambient-password|ambient-mnemonic/);
+  });
+});
+
+test('missing persisted credential refuses inherited password and mnemonic fallback', () => {
+  withData((data) => {
+    const { storePassword } = require('../scripts/_credentials.cjs');
+    const path = join(data, 'config.json');
+    const config = JSON.parse(readFileSync(path, 'utf8'));
+    config.agent.keyPasswordRef = storePassword(data, config.agent.keyFile, 'fixture-password', {
+      env: { MANIFEST_CREDENTIAL_STORE: 'file' },
+    });
+    delete config.agent.keyPassword;
+    writeFileSync(path, JSON.stringify(config));
+    rmSync(join(data, 'credentials', `${config.agent.keyPasswordRef.id}.json`));
+    const r = runWrapper('agent', { data, extraEnv: {
+      MANIFEST_KEY_PASSWORD: 'ambient-password', COSMOS_MNEMONIC: 'ambient-mnemonic',
+    } });
+    assert.equal(r.status, 1);
+    assert.equal(r.stdout, '');
+    assert.match(r.stderr, /credential/i);
+    assert.doesNotMatch(r.stderr, /fixture-password|ambient-password|ambient-mnemonic/);
+    assert.equal(Object.hasOwn(JSON.parse(readFileSync(path, 'utf8')).agent, 'keyPassword'), false);
+  });
+});
+
+test('unavailable OS credential store fails without using file or inherited wallet fallbacks', () => {
+  withData((data) => {
+    const { storePassword } = require('../scripts/_credentials.cjs');
+    const path = join(data, 'config.json');
+    const config = JSON.parse(readFileSync(path, 'utf8'));
+    // Retain a matching file credential to catch a silent fallback from the
+    // configured OS backend, even though the test explicitly selects file for
+    // new writes. The persisted reference must own credential resolution.
+    config.agent.keyPasswordRef = storePassword(data, config.agent.keyFile, 'fixture-password', {
+      env: { MANIFEST_CREDENTIAL_STORE: 'file' },
+    });
+    config.agent.keyPasswordRef.backend = { darwin: 'keychain', linux: 'libsecret', win32: 'wincred' }[process.platform];
+    delete config.agent.keyPassword;
+    writeFileSync(path, JSON.stringify(config));
+    const saved = readFileSync(path, 'utf8');
+    const preload = join(data, 'unavailable-credential-store.cjs');
+    const attempted = join(data, 'credential-lookup-attempted');
+    writeFileSync(preload, `
+      require('node:child_process').spawnSync = () => {
+        require('node:fs').writeFileSync(${JSON.stringify(attempted)}, 'attempted');
+        return { status: 1, stdout: '', stderr: 'BACKEND_SECRET_MUST_NOT_LEAK' };
+      };
+    `);
+    const r = runWrapper('agent', { data, extraEnv: {
+      NODE_OPTIONS: `--require=${JSON.stringify(preload)}`,
+      MANIFEST_KEY_PASSWORD: 'ambient-password', COSMOS_MNEMONIC: 'ambient-mnemonic',
+    } });
+    assert.equal(r.status, 1);
+    assert.equal(r.stdout, '');
+    assert.equal(existsSync(attempted), true, 'OS backend command must be isolated by the test preload');
+    assert.match(r.stderr, /credential/i);
+    assert.doesNotMatch(r.stderr, /BACKEND_SECRET_MUST_NOT_LEAK|fixture-password|ambient-password|ambient-mnemonic/);
+    assert.equal(readFileSync(path, 'utf8'), saved, 'failed lookup must preserve the configured reference');
+  });
+});
+
 test('incomplete wallet configuration fails before any inherited wallet can be used', () => {
   for (const agent of [{}, { keyFile: '/missing' }, { keyFile: '', keyPassword: '' },
     { keyFile: '/missing', keyPassword: null }]) {
@@ -384,7 +491,7 @@ test('incomplete wallet configuration fails before any inherited wallet can be u
       } });
       assert.equal(r.status, 1);
       assert.equal(r.stdout, '');
-      assert.match(r.stderr, /agent\.keyFile and agent\.keyPassword/);
+      assert.match(r.stderr, /agent\.keyFile and agent\.keyPasswordRef/);
       assert.doesNotMatch(r.stderr, /old password secret|stale mnemonic secret/);
     });
   }
@@ -504,6 +611,65 @@ test('malformed config diagnostic never repeats source text containing a passwor
     assert.match(r.stderr, /Failed to parse .*config\.json/);
     assert.doesNotMatch(r.stderr, /CONFIG_PASSWORD_SECRET|INVALID/);
   });
+});
+
+test('all launchers honor the automatic migration pause after one native-store failure', { skip: process.platform !== 'linux' }, () => {
+  withData((data) => {
+    const configPath = join(data, 'config.json');
+    const original = readFileSync(configPath);
+    const helperDir = join(data, 'credential-bin');
+    const attempts = join(data, 'native-attempts');
+    mkdirSync(helperDir);
+    writeFileSync(join(helperDir, 'secret-tool'), `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(attempts)}, 'attempt\\n');
+process.stderr.write('TEST_ONLY_NATIVE_FAILURE_SECRET');
+process.exit(1);
+`, { mode: 0o700 });
+    const extraEnv = { PATH: `${helperDir}:${process.env.PATH}`, MANIFEST_CREDENTIAL_STORE: '' };
+    for (const [index, name] of ['chain', 'lease', 'fred', 'cosmwasm', 'agent'].entries()) {
+      const result = runWrapper(name, { data, extraEnv });
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, /Credential access failed \(libsecret\)/);
+      if (index > 0) assert.match(result.stderr, /retry is paused/);
+      assert.doesNotMatch(result.stderr, /TEST_ONLY_NATIVE_FAILURE_SECRET|fixture-password|Starting manifest-mcp/);
+      assert.deepEqual(readFileSync(configPath), original);
+    }
+    assert.equal(readFileSync(attempts, 'utf8'), 'attempt\n');
+  });
+});
+
+test('concurrent config changes after the first read stop startup before spawning a wallet', () => {
+  for (const change of ['keyfile', 'reference', 'chain', 'deleted']) {
+    withData((data) => {
+      // Use a migrated starting config so a reference swap cannot hide behind
+      // the permitted legacy-password-to-reference transition.
+      const { migrateConfig } = require('../scripts/_credentials.cjs');
+      migrateConfig(data, { env: { MANIFEST_CREDENTIAL_STORE: 'file' }, log: () => {} });
+      const helper = join(data, '.fixture-plugin', 'scripts', '_credentials.cjs');
+      const preload = join(data, 'concurrent-config-change.cjs');
+      writeFileSync(preload, `
+        const fs = require('node:fs');
+        const credentials = require(${JSON.stringify(helper)});
+        const migrate = credentials.migrateConfig;
+        credentials.migrateConfig = (...args) => {
+          const config = migrate(...args);
+          const change = ${JSON.stringify(change)};
+          if (change === 'keyfile') config.agent.keyFile = 'replacement-wallet.json';
+          if (change === 'reference') config.agent.keyPasswordRef.id = 'different-fixture-reference';
+          if (change === 'chain') config.activeChain = 'mainnet';
+          if (change === 'deleted') { fs.unlinkSync(${JSON.stringify(join(data, 'config.json'))}); return null; }
+          fs.writeFileSync(${JSON.stringify(join(data, 'config.json'))}, JSON.stringify(config));
+          return config;
+        };
+      `);
+      const result = runWrapper('chain', { data, extraEnv: { NODE_OPTIONS: `--require=${JSON.stringify(preload)}` } });
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, /configuration changed during startup/i);
+      assert.doesNotMatch(result.stderr, /fixture-password|Starting manifest-mcp/);
+    });
+  }
 });
 
 test('non-object config JSON reports the invalid root shape without exposing its contents', () => {
@@ -668,7 +834,7 @@ test('configured relative wallet path resolves within plugin data rather than th
 
 function launchAsync(data, serverName = 'agent') {
   const child = spawn(process.execPath, [join(data, '.fixture-plugin/scripts/start-server.cjs'), serverName], {
-    env: { PATH: process.env.PATH, MANIFEST_PLUGIN_DATA: data }, stdio: ['pipe', 'pipe', 'pipe'],
+    env: { PATH: process.env.PATH, MANIFEST_PLUGIN_DATA: data, MANIFEST_CREDENTIAL_STORE: 'file' }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   let stdout = '', stderr = '';
   let waitingResolve;

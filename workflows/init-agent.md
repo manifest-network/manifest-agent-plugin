@@ -42,12 +42,27 @@ It preserves configuration, keys, drafts, and saved deployments. If it fails,
 report its diagnostic and stop; fix Node (22.19.0+) or the installation failure
 before continuing. Re-keying is not a dependency repair.
 
+Wallet passwords use the OS credential store: Linux needs `secret-tool` (libsecret)
+and an unlocked Secret Service session; macOS uses Keychain; Windows uses Credential
+Manager through Windows PowerShell. In a headless environment without that service,
+explain that `MANIFEST_CREDENTIAL_STORE=file` stores a recoverable secret in private
+files under the data directory. Use this fallback only if the user chooses it;
+set it in the environment launching the host and in each setup shell. Never silently
+switch backends after a keychain error, or put passwords into config or command args.
+If credential setup fails, report the diagnostic and stop before claiming success.
+After the user restores credential-store access, run
+`node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs"` to retry any legacy
+migration immediately. Automatic startup attempts pause briefly after a store
+failure; this manual command and explicit config writes bypass that pause.
+
 For a repair-only request, run `update-config.cjs --status` after setup. If
 an existing agent is configured, report that dependencies are repaired and
 ask the user to reconnect the MCP servers or restart {{host}}, then stop.
 Do not continue into chain selection or key generation. If config is absent
 or invalid, explain that separately and continue onboarding only when the
-user's request includes initial setup or configuration repair.
+user's request includes initial setup or configuration repair. An existing invalid
+config must first be repaired privately or moved aside as a private backup; it may
+still hold a recoverable legacy password. Do not treat that file as absent.
 
 ## Step 1 — Fetch chain registry data
 
@@ -86,22 +101,28 @@ denom resolution and gas-price string composition; do NOT compose it inline.
 
 Run:
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status 2>/dev/null
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
 If the command succeeds and the JSON output has a non-null `address` field,
 warn the user:
 
 > An agent key already exists with address `<address>`.
-> Proceeding will generate a new key. The old key's password will be lost
-> (the old keyfile stays on disk but becomes unrecoverable without the password).
+> Proceeding will replace the active wallet. Back up its config, encrypted
+> keyfile and OS credential store (or the explicitly selected credential files)
+> first if you need to restore this identity later. Existing funds stay at the old address.
 
 Confirm via `{{ask}}` (Yes / No) before continuing. Stop on No.
 
-If the command fails (no config.json yet), that's fine — skip the warning and
-proceed.
+If the command fails, check whether `$MANIFEST_PLUGIN_DATA/config.json` exists
+without reading its contents. If it is absent, proceed with initial setup. If it
+exists, show the sanitized diagnostic and stop before generating a key. The user
+can repair the JSON privately to retain a legacy password, or move it aside as a
+private backup before starting initialization again. Do not delete it or ask the
+user to paste its contents. A successful status with no address also needs this
+configuration-repair check before replacing the file.
 
-**IMPORTANT**: Do NOT read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains
+**IMPORTANT**: Do NOT read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain
 the key password. Always use `update-config.cjs --status` to read safe fields.
 
 ## Step 5 — Generate or import key and write config
@@ -124,6 +145,11 @@ Replace `CHOSEN_CHAIN` with the user's choice from Step 2 and `GAS_TOKEN`
 with the symbol they chose in Step 3 (e.g., `MFX`).
 
 Parse the JSON output from stdout to get `address` and `activeChain`.
+
+If the pipeline fails, stop and show the sanitized diagnostic. A credential-store
+failure can leave a new encrypted keyfile without selecting it in config; the
+writer identifies the retained path. Do not delete that file automatically or
+generate another key until the credential/config problem has been resolved.
 
 ### If importing an existing mnemonic:
 
@@ -213,6 +239,7 @@ journal write in your reply to the user.
 - The key password NEVER appears in this conversation. It flows directly from
   the key script to write-config via pipe.
 - Never display the mnemonic or password in conversation output.
-- The keyfile is encrypted; the password is stored only in config.json (0600).
+- The keyfile is encrypted; config stores only a credential reference. The password
+  is stored in the OS keychain, or separate private files after explicit headless opt-in.
 - Never log or display the mnemonic. Only the address and keyfile path are safe
   to show.

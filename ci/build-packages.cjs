@@ -203,8 +203,9 @@ function buildCodex({ root = ROOT, out = join(root, 'dist', 'codex') } = {}) {
   for (const entry of ['.codex-plugin', '.mcp.json']) fs.cpSync(join(root, 'hosts/codex/manifest-agent', entry), join(plugin, entry), { recursive: true });
   for (const file of ['package.json', 'package-lock.json']) fs.copyFileSync(join(root, file), join(plugin, file));
   fs.copyFileSync(join(root, 'docs/codex.md'), join(plugin, 'README.md'));
+  fs.copyFileSync(join(root, 'docs/identity.md'), join(plugin, 'identity.md'));
   fs.mkdirSync(join(plugin, 'scripts'), { recursive: true });
-  for (const script of fs.readdirSync(join(root, 'scripts')).filter((name) => name.endsWith('.cjs') && name !== 'pre-tool-use.cjs')) {
+  for (const script of fs.readdirSync(join(root, 'scripts')).filter((name) => /\.(cjs|ps1)$/.test(name) && name !== 'pre-tool-use.cjs')) {
     fs.copyFileSync(join(root, 'scripts', script), join(plugin, 'scripts', script));
   }
   fs.writeFileSync(join(plugin, 'mcp-policy.json'), JSON.stringify(mutationPolicy(root), null, 2) + '\n');

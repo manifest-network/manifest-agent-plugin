@@ -18,7 +18,7 @@ async function withRuntime(behavior, run) {
     mkdirSync(join(dataDir, 'node_modules', '@cosmjs', 'proto-signing'), { recursive: true });
     mkdirSync(join(dataDir, 'node_modules', '.bin'));
     mkdirSync(join(root, 'scripts'));
-    for (const name of ['start-server.cjs', '_runtime.cjs', '_io.cjs']) {
+    for (const name of ['start-server.cjs', '_runtime.cjs', '_io.cjs', '_credentials.cjs', '_wincred.ps1']) {
       copyFileSync(resolve(__dirname, '..', 'scripts', name), join(root, 'scripts', name));
     }
     const dependencies = { '@manifest-network/manifest-mcp-node': 'test-version' };
@@ -46,11 +46,15 @@ async function withRuntime(behavior, run) {
     writeFileSync(join(dataDir, 'node_modules', '.bin', 'manifest-mcp-chain'), `#!/usr/bin/env node
       'use strict';
       const assert = require('node:assert/strict');
-      const { existsSync } = require('node:fs');
+      const { existsSync, readFileSync } = require('node:fs');
+      const { join } = require('node:path');
       const { createInterface } = require('node:readline');
       assert.equal(process.env.COSMOS_CHAIN_ID, 'manifest-launcher-test');
       assert.equal(process.env.COSMOS_MNEMONIC, undefined);
       assert.equal(process.env.MANIFEST_KEY_PASSWORD, 'manifest-launcher-public-fixture');
+      const config = JSON.parse(readFileSync(join(process.env.MANIFEST_PLUGIN_DATA, 'config.json')));
+      assert.equal(Object.hasOwn(config.agent, 'keyPassword'), false);
+      assert.equal(config.agent.keyPasswordRef.backend, 'file');
       assert.equal(process.env.DOTENV_CONFIG_QUIET, 'true');
       assert.equal(process.env.MANIFEST_FAUCET_URL, undefined);
       assert.equal(existsSync('.env'), false);

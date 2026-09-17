@@ -37,7 +37,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 
 If it fails, tell the user to run `/manifest-agent:init-agent` first and stop. Otherwise parse the JSON to get `activeChain` and `address`. Show the user their current active chain and agent address.
 
-**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains the key password. Always use `update-config.cjs --status` to read safe fields.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password. Always use `update-config.cjs --status` to read safe fields.
 
 ## Step 1 — Choose new chain
 

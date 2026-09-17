@@ -24,6 +24,7 @@ async function fixture(t) {
   async function connect(server, { capabilities = { elicitation: { form: {} } }, onRequest, onNotification } = {}) {
     const child = spawn(process.execPath, [join(pluginRoot, 'scripts/codex-server.cjs'), server], {
       cwd: root, env: { PATH: process.env.PATH, HOME: process.env.HOME, MANIFEST_CODEX_DATA: dataDir,
+        MANIFEST_CREDENTIAL_STORE: 'file',
         CLAUDE_PLUGIN_DATA: join(root, 'unrelated Claude data'), MANIFEST_PLUGIN_DATA: join(root, 'stale data') },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -75,7 +76,7 @@ test('missing or invalid packaged assets fail before creating runtime data or in
   const plugin = buildCodex({ out: join(root, 'package') });
   const dataDir = join(root, 'must-not-be-created');
   const run = (launcher, data = dataDir) => spawnSync(process.execPath, [launcher, 'chain'], {
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, MANIFEST_CODEX_DATA: data }, encoding: 'utf8', timeout: 5000,
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, MANIFEST_CODEX_DATA: data, MANIFEST_CREDENTIAL_STORE: 'file' }, encoding: 'utf8', timeout: 5000,
   });
   for (const [file, invalid] of [['mcp-policy.json', null], ['mcp-policy.json', '{bad'], ['mcp-policy.json', '{"chain":[]}'],
     ['mcp-policy.json', '{"chain":[3]}'], ['references/runtime-policy.md', null], ['references/runtime-policy.md', ' \n'],

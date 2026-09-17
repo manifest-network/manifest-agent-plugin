@@ -50,7 +50,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 If it fails, tell the user to run `/manifest-agent:init-agent` first and stop.
 Otherwise parse the JSON; show the user `activeChain` and `address`.
 
-**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains the key password.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password.
 
 ## Step 1 — Choose deployment shape
 

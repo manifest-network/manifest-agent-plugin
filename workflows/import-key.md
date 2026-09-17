@@ -32,9 +32,15 @@ Run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If it fails, tell the user to run `{{invoke:init-agent}}` first and stop. Otherwise parse the JSON; you need `activeChain` AND `gasPrice` — both are required in Step 2 to preserve the existing chain + gas-price settings when re-writing the config.
+If config is absent, tell the user to run `{{invoke:init-agent}}` first and stop.
+If an existing config cannot be read, show the sanitized diagnostic and stop
+before importing: the user must repair its JSON privately to preserve any legacy
+password, or move it aside as a private backup before initialization. Do not
+delete it or ask the user to paste its contents. Otherwise parse the JSON;
+`activeChain` AND `gasPrice` are required in Step 2 to preserve the existing chain
+and gas settings when re-writing the config.
 
-**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — it contains the key password. Always use `update-config.cjs --status` to read safe fields.
+**Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password. Always use `update-config.cjs --status` to read safe fields.
 
 ## Step 1 — Get mnemonic file path
 
@@ -56,6 +62,13 @@ Do NOT read the mnemonic file. The file content must never enter {{host}}'s cont
 
 ## Step 2 — Import key and update config
 
+The password is saved in the OS credential store and config keeps only its
+reference. Linux requires `secret-tool` and an unlocked Secret Service session.
+For headless use without a keychain, explain the private-file fallback and set
+`MANIFEST_CREDENTIAL_STORE=file` only when the user has selected it. A keychain
+failure must stop the import, with the existing wallet configuration preserved;
+do not work around it by writing a plaintext password into config.
+
 Run (replacing `MNEMONIC_FILE` with the user's file path, `ACTIVE_CHAIN`
 with the `activeChain` from Step 0, and `CURRENT_GAS_PRICE` with the
 `gasPrice` from Step 0):
@@ -69,6 +82,15 @@ The mnemonic flows through the pipe (file → import-key → write-config).
 and `write-config.cjs`'s safe stdout JSON.
 
 Parse the JSON output to get `address` and `activeChain`.
+
+If the pipeline fails, stop and show the diagnostic, including the retained
+keyfile path. Resolve the credential/config problem before retrying; repeated
+imports can leave unused encrypted keyfiles. Never delete a supplied keyfile
+automatically, because it may still be the active wallet.
+After the user restores store access, the manual
+`node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs"` command retries any
+legacy migration immediately. Explicit config writes also bypass the brief pause
+used by automatic startup attempts.
 
 Suggest the user delete their mnemonic file after a successful import.
 
