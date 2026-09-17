@@ -159,6 +159,26 @@ test('configuration validation failures release the lock and preserve the select
   assert.equal(resolvePassword(f.config(), f.data), f.key.password);
 });
 
+test('invalid cached minimum gas prices cannot replace config through either writer', (t) => {
+  const f = fixture(t);
+  assert.equal(run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key)).status, 0);
+  const before = fs.readFileSync(f.path);
+  f.chains.testnet.feeTokens[0].fixedMinGasPrice = null;
+  fs.writeFileSync(join(f.data, 'chains', 'testnet.json'), JSON.stringify(f.chains.testnet));
+  for (const [script, args, input] of [
+    ['write-config.cjs', writeArgs, JSON.stringify(f.key)],
+    ['update-config.cjs', ['--gas-token', 'MFX']],
+  ]) {
+    const result = run(f, script, args, input);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /fixedMinGasPrice must be a finite nonnegative number/);
+    assert.deepEqual(fs.readFileSync(f.path), before);
+    assert.equal(fs.existsSync(join(f.data, '.config.lock')), false);
+  }
+  assert.equal(resolvePassword(f.config(), f.data), f.key.password);
+});
+
 test('status rejects nonobject config with private recovery guidance and no mutation', (t) => {
   const f = fixture(t);
   for (const original of ['null', '[]', 'true', '123', '"OLD_PASSWORD_SECRET"']) {

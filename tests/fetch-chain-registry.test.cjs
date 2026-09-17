@@ -23,7 +23,7 @@ function fixture(t, behavior = {}) {
   const chains = join(data, 'chains');
   fs.mkdirSync(scripts);
   fs.mkdirSync(chains, { recursive: true });
-  for (const name of ['fetch-chain-registry.cjs', '_io.cjs']) {
+  for (const name of ['fetch-chain-registry.cjs', '_io.cjs', '_chain-registry.cjs', '_chain-config.cjs']) {
     fs.copyFileSync(join(__dirname, '../scripts', name), join(scripts, name));
   }
   fs.writeFileSync(join(scripts, 'behavior.json'), JSON.stringify({
@@ -86,40 +86,16 @@ test('a complete registry refresh reports exactly the saved networks and advance
   assert.doesNotMatch(result.stderr, /Error|Partial registry refresh|No chain data/);
 });
 
-const valid = chainData('fixture');
-const rpcField = 'apis.rpc[0].address';
 const invalidMetadata = [
   ['empty object', {}, 'chain_id'],
-  ['array body', [valid], 'chain.json'],
-  ['empty array body', [], 'chain.json'],
+  ['array body', [], 'chain.json'],
+  ['primitive body', 42, 'chain.json'],
   ['null body', null, 'chain.json'],
-  ['string body', 'chain data', 'chain.json'],
-  ['number body', 42, 'chain.json'],
-  ['boolean body', false, 'chain.json'],
-  ['missing chain ID', { apis: valid.apis }, 'chain_id'],
-  ...[
-    ['null', null], ['number', 42], ['boolean', false], ['object', {}],
-    ['array', ['manifest-ledger-fixture']], ['empty', ''], ['blank', ' \t\n'],
-  ].map(([name, chain_id]) => [`${name} chain ID`, { ...valid, chain_id }, 'chain_id']),
-  ['missing APIs', { chain_id: valid.chain_id }, rpcField],
-  ['null APIs', { ...valid, apis: null }, rpcField],
-  ['missing RPC list', { ...valid, apis: {} }, rpcField],
-  ...[
-    ['null', null], ['empty', []], ['string', 'https://rpc.example.invalid'],
-    ['object', { 0: { address: 'https://rpc.example.invalid' } }],
-    ['null first entry', [null]], ['missing first address', [{}]],
-  ].map(([name, rpc]) => [`${name} RPC list`, { ...valid, apis: { rpc } }, rpcField]),
-  ...[
-    ['null', null], ['number', 42], ['boolean', false], ['object', {}],
-    ['array', ['https://rpc.example.invalid']], ['empty', ''], ['blank', ' \t\n'],
-    ['unparseable', 'not a URL'], ['relative', '/rpc'],
-    ['protocol-relative', '//rpc.example.invalid'], ['missing host', 'https://'],
-    ['invalid host', 'https://[invalid]'], ['invalid port', 'https://rpc.example.invalid:65536'],
-    ['unsupported FTP', 'ftp://rpc.example.invalid'], ['unsupported WebSocket', 'wss://rpc.example.invalid'],
-    ['missing slashes', 'https:rpc.example.invalid'], ['empty authority', 'https:///rpc.example.invalid'],
-    ['whitespace', 'https://rpc.example.invalid/with space'], ['backslash', 'https://rpc.example.invalid\\path'],
-  ].map(([name, address]) => [`${name} RPC URL`, { ...valid, apis: { rpc: [{ address }] } }, rpcField]),
-  ['invalid first RPC with valid fallback', { ...valid, apis: { rpc: [{ address: 'wss://rpc.example.invalid' }, ...valid.apis.rpc] } }, rpcField],
+  ['padded chain ID', { ...chainData('fixture'), chain_id: ' manifest-ledger-mainnet\n' }, 'chain_id'],
+  ['remote HTTP RPC', { ...chainData('fixture'), apis: { rpc: [{ address: 'http://rpc.example.invalid' }] } }, 'apis.rpc[0].address'],
+  ['invalid REST', { ...chainData('fixture'), apis: { ...chainData('fixture').apis, rest: [{ address: 'ftp://rest.example.invalid' }] } }, 'apis.rest[0].address'],
+  ['missing fee price', { ...chainData('fixture'), fees: { fee_tokens: [{ denom: 'umfx' }] } }, 'fees.fee_tokens[0].fixed_min_gas_price'],
+  ['malformed fee list', { ...chainData('fixture'), fees: { fee_tokens: {} } }, 'fees.fee_tokens'],
 ];
 
 for (const [name, body, field] of invalidMetadata) {
@@ -153,9 +129,9 @@ for (const [name, body, field] of invalidMetadata) {
   }
 }
 
-test('valid minimal metadata preserves HTTP(S) endpoints and chain IDs without requiring optional fields', t => {
+test('valid minimal metadata normalizes endpoint schemes and keeps optional fields optional', t => {
   const chainBodies = {
-    mainnet: { chain_id: 'manifest-ledger-1', apis: { rpc: [{ address: 'http://rpc.example.invalid:26657/rpc' }] } },
+    mainnet: { chain_id: 'manifest-ledger-1', apis: { rpc: [{ address: 'HTTP://127.0.0.1:26657/rpc' }] } },
     testnet: { chain_id: 'manifest-ledger-testnet', apis: { rpc: [
       { address: 'HTTPS://[2001:db8::1]:443/rpc?network=testnet' },
       { address: 'https://unused.example.invalid' },
@@ -167,7 +143,7 @@ test('valid minimal metadata preserves HTTP(S) endpoints and chain IDs without r
   assert.deepEqual(Object.keys(result.json), ['mainnet', 'testnet']);
   for (const [network, body] of Object.entries(chainBodies)) {
     assert.equal(result.json[network].chainId, body.chain_id);
-    assert.equal(result.json[network].rpcUrl, body.apis.rpc[0].address);
+    assert.equal(result.json[network].rpcUrl, body.apis.rpc[0].address.replace(/^[^:]+:/, scheme => scheme.toLowerCase()));
     assert.deepEqual(result.json[network].feeTokens, []);
     assert.deepEqual(JSON.parse(fs.readFileSync(join(f.chains, network + '.json'), 'utf8')), result.json[network]);
   }

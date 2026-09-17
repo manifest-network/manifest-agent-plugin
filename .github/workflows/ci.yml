@@ -134,6 +134,9 @@ jobs:
       - name: Verify lease-state mapping against installed manifestjs
         run: node ci/lease-state-parity.cjs --data-dir "$HOME/.manifest-agent"
 
+      - name: Verify registry configuration policy against installed MCP core
+        run: node ci/chain-config-parity.cjs --data-dir "$HOME/.manifest-agent"
+
       - name: Verify published servers through the real launcher
         run: node ci/launcher-transport.cjs --data-dir "$HOME/.manifest-agent"
 

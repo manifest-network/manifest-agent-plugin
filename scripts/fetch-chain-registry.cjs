@@ -23,6 +23,7 @@ const { join } = require('node:path');
 const { URL } = require('node:url');
 const { atomicWrite, getDataDir } = require('./_io.cjs');
 const { httpsGet } = require('./_https-json.cjs');
+const { extractChainData } = require('./_chain-registry.cjs');
 
 // SSRF guard, request timeout, and body-size cap all live in
 // `_https-json.cjs` now — see that file for the rationale on the shared
@@ -78,55 +79,6 @@ function parseArgs(argv) {
     if (argv[i] === '--data-dir' && argv[i + 1]) args.dataDir = argv[++i];
   }
   return args;
-}
-
-function buildDenomSymbolMap(assetList) {
-  const map = {};
-  for (const asset of assetList?.assets || []) {
-    if (asset.base && asset.symbol) {
-      map[asset.base] = asset.symbol;
-    }
-  }
-  return map;
-}
-
-function extractChainData(chainRaw, assetList) {
-  if (!chainRaw || typeof chainRaw !== 'object' || Array.isArray(chainRaw)) {
-    throw new Error('chain.json must be a JSON object.');
-  }
-  if (typeof chainRaw.chain_id !== 'string' || !chainRaw.chain_id.trim()) {
-    throw new Error('chain_id must be a nonempty string.');
-  }
-  const rpc = Array.isArray(chainRaw.apis?.rpc) ? chainRaw.apis.rpc[0]?.address : undefined;
-  let rpcUrl;
-  if (typeof rpc === 'string') {
-    try { rpcUrl = new URL(rpc); } catch { /* Use the field diagnostic below. */ }
-  }
-  // URL parsing alone repairs missing slashes, whitespace and backslashes.
-  // Require an explicit authority and preserve the validated registry value.
-  if (!rpcUrl || !['http:', 'https:'].includes(rpcUrl.protocol) || !rpcUrl.hostname
-    || !/^https?:\/\/[^/\s\\]/i.test(rpc) || /[\s\\]/.test(rpc)) {
-    throw new Error('apis.rpc[0].address must be an absolute HTTP(S) URL with a hostname and no whitespace or backslashes.');
-  }
-  const rest = chainRaw.apis?.rest?.[0]?.address;
-  const symbolMap = buildDenomSymbolMap(assetList);
-  const feeTokens = (chainRaw.fees?.fee_tokens || []).map((t) => ({
-    denom: t.denom,
-    symbol: symbolMap[t.denom] || t.denom,
-    fixedMinGasPrice: Number(t.fixed_min_gas_price),
-    lowGasPrice: Number(t.low_gas_price),
-    averageGasPrice: Number(t.average_gas_price),
-    highGasPrice: Number(t.high_gas_price),
-  }));
-  const explorerUrl = chainRaw.explorers?.[0]?.url;
-
-  return {
-    chainId: chainRaw.chain_id,
-    rpcUrl: rpc,
-    restUrl: rest,
-    feeTokens,
-    explorerUrl,
-  };
 }
 
 (async () => {

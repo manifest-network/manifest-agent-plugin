@@ -2,8 +2,8 @@
 
 The [second PR review](https://github.com/manifest-network/manifest-agent-plugin/pull/20#issuecomment-5718411512)
 separates its release-documentation blocker from the source changes below.
-These items remain open after the documentation corrections and additional
-builder guard tests. They were checked against reviewed source
+These items were open after the documentation corrections and additional
+builder guard tests; status notes below identify subsequent fixes. They were checked against reviewed source
 `4bbd5af14c504ac280fc6dc8c14383c6fff6c832`; none is claimed fixed by the
 current [release preparation](release-0.5.0.md).
 
@@ -48,20 +48,21 @@ completion report must describe the actual final settings.
 
 ## Reject unusable registry chain metadata before saving it
 
-[fetch-chain-registry.cjs](../scripts/fetch-chain-registry.cjs) currently
-accepts a successful JSON response containing `{}`. An offline fixture
+Status: implemented in [ENG-1008](eng-1008-plan.md), including the PR review's
+consumer-policy, REST, chain-ID and fee-token corrections. Release acceptance
+for the changed source is still pending.
+
+The v0.5.0 [fetch-chain-registry.cjs](../scripts/fetch-chain-registry.cjs)
+accepted a successful JSON response containing `{}`. An offline fixture
 reproduced exit 0, both networks in stdout, overwritten good cache files
 without `chainId` or `rpcUrl`, and an advanced fetch timestamp.
 
-Validate a nonempty chain ID and usable RPC address before the atomic write.
-Malformed metadata should count as a failed network, preserve that network's
-cached bytes, and follow the existing partial/zero-save status contract.
-Test malformed JSON shapes independently for each network, both networks,
-and a valid control; verify stdout, diagnostics, files and timestamp.
-
-Until that validation lands, a successful save is not a complete shape check.
-Inspect the saved chain ID and RPC URL when diagnosing a subsequent launcher
-failure; refetch corrected registry metadata before trying to start servers.
+The fetcher now validates startup-relevant metadata before atomic writes,
+retains failed networks' cached bytes, and preserves the partial/zero-save
+contract. Endpoint schemes are normalized for the pinned transport. Offline
+tests cover validation and persistence; an installed-runtime parity check
+guards drift from the pinned consumer. See the plan for current checks and
+the remaining host acceptance requirements.
 
 ## Make config-update recovery diagnostics actionable
 

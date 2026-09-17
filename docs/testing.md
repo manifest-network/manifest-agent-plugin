@@ -177,24 +177,36 @@ environment secret in the journal or command output.
 
 ## Registry metadata regressions (ENG-1008)
 
-`tests/fetch-chain-registry.test.cjs` replaces only the HTTPS boundary; JSON
-parsing, chain extraction, validation and atomic writes run normally. Its
-malformed-response matrix covers object/array/primitive/null bodies,
-missing/wrong-type/blank chain IDs, malformed RPC lists, and missing,
-wrong-type, invalid or unsupported RPC URLs. Each case fails mainnet,
-testnet, and both networks in turn. Assertions check stdout contains exactly
-the saved networks, exit status, network/field diagnostics, unchanged failed
-cache bytes, saved files, and timestamp advancement or preservation.
+`tests/_chain-registry.test.cjs` runs the full malformed-metadata matrix in
+process: response shapes, chain-ID syntax, RPC/REST endpoint policy, fee-token
+structure, denominations and minimum/optional gas prices. It checks local HTTP,
+HTTPS, scheme normalization, first-entry selection, optional fields, and gas
+composition after a JSON cache round trip.
 
-Valid controls cover full and minimal metadata, HTTP and HTTPS, ports,
-IPv6, paths and queries, and preservation of the first RPC value. Existing
-transport/write failures and optional asset-fetch failures remain covered;
-timestamp-write failure must leave stdout empty and retain saved chain files.
-Run the matrix offline with no chain transactions:
+`tests/fetch-chain-registry.test.cjs` replaces only the HTTPS boundary and keeps
+35 subprocess cases for persistence and failure handling. Representative
+malformed inputs fail mainnet, testnet, and both networks in turn. Assertions
+check stdout, status, network/field diagnostics, cached bytes, saved files,
+and timestamp advancement/preservation. Transport/write failures, optional
+asset failure and timestamp-write failure remain covered. Config-writer tests
+prove an old null minimum price cannot replace an existing config.
 
 ```bash
-node --test tests/fetch-chain-registry.test.cjs
+node --test tests/_chain-config.test.cjs tests/_chain-registry.test.cjs tests/_gas-price.test.cjs tests/fetch-chain-registry.test.cjs tests/chain-config-parity.test.cjs
 ```
+
+After locked runtime setup, CI runs the following offline consumer check:
+
+```bash
+node ci/chain-config-parity.cjs --data-dir "$INSTALL_DIR"
+```
+
+It compares endpoint, chain-ID and gas-price predicates with the installed
+MCP core using shared vectors, then feeds extracted/persisted metadata and
+composed gas prices through upstream startup validation. Unit tests inject
+policy drift to ensure the check fails. Registry shape/spelling checks are
+intentionally stricter than the upstream string predicates. No endpoint
+probes or transactions are performed.
 
 These Linux checks do not replace source-bound host acceptance or establish
 native macOS/Windows compatibility. See [the plan](eng-1008-plan.md) and
