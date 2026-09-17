@@ -12,6 +12,19 @@ release rows. Their implementation must include regression tests, generated
 skill updates where applicable, and fresh acceptance evidence as described
 in [host acceptance](host-acceptance.md#release-evidence).
 
+## Include shell guidance in shipped secret-input recipes
+
+Carry the README's Bash-first advice into the user-typed secret-file recipes
+in `workflows/init-agent.md`, `workflows/import-key.md`, and
+`workflows/author-manifest.md`. The repository's `CLAUDE.md` is contributor
+guidance; plugin users need the caveat in the generated skills, which
+currently present POSIX assignments without it.
+
+Tell fish users to run `bash` in their separate terminal before the recipe
+and remain in that shell through temporary-file cleanup. When updating these
+workflows, regenerate both hosts' skills and verify that all three recipes
+include the advice alongside the commands the user is asked to type.
+
 ## Preserve reinitialization settings and clarify import recovery
 
 [init-agent](../workflows/init-agent.md) replaces configuration through
