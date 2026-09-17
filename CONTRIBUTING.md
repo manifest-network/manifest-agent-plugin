@@ -4,22 +4,32 @@ Thanks for considering a contribution. This doc covers branch naming, commit con
 
 ## Before opening a PR
 
-Run locally what CI will run on your branch:
+Start with these local checks from the repository root. The full CI inventory,
+installed-runtime commands, and separate host acceptance requirements are in
+[`docs/testing.md`](docs/testing.md):
 
 ```bash
 # Syntax check
-for f in scripts/*.cjs; do node --check "$f"; done
+for f in scripts/*.cjs ci/*.cjs tests/fixtures/*.cjs; do node --check "$f"; done
 for f in scripts/*.sh;  do bash -n "$f"; done
 
 # Tests
 npm run build:codex
 npm test
+npm run test:policy-completeness
 
 # Version consistency (CI fails if these drift)
 node -p "require('./package.json').version"
 node -p "require('./.claude-plugin/plugin.json').version"
 node -p "require('./hosts/codex/manifest-agent/.codex-plugin/plugin.json').version"
+node -p "require('./package-lock.json').packages[''].version"
 ```
+
+Run `pwsh -NoProfile -File ci/check-powershell.ps1` when PowerShell is
+available; CI performs this syntax check on Linux. It does not establish
+native Windows credential-store or ACL behavior. Executable doc examples
+also require the locked runtime and `NODE_PATH`; use the testing guide's
+setup before running `npm run test:docs`.
 
 If you change the published MCP tool surface, review its mutation classification, update `hooks/hooks.json` and the runtime policy where required, and keep the "Tools gated by the PreToolUse hook" list in `CLAUDE.md` consistent. `ci/mcp-tool-policy.cjs` checks the actual installed package inventory; the workflow no longer carries a separate expected tool list. Include argument-specific read-only exceptions, such as domain lookup, in hook tests. See [`docs/approval-validation.md`](docs/approval-validation.md) for the distinction between hook tests and actual host validation.
 
@@ -79,7 +89,7 @@ The architectural patterns are in [`CLAUDE.md`](CLAUDE.md). The recurring ones t
 
 - **CJS only** (`.cjs` extension, `require()`) — `NODE_PATH` doesn't work with ESM. Don't introduce ESM modules in `scripts/`.
 - **Underscore prefix for sibling-only helpers.** `_io.cjs`, `_uuid.cjs`, etc. are required via `./_X.cjs` and never invoked by skills via `node`.
-- **Atomic write + 0600 mode** for any file under `$MANIFEST_PLUGIN_DATA`. Use `_io.cjs`'s `atomicWrite` instead of writing files directly.
+- **Atomic write + 0600 mode** for config, wallets, credentials, drafts and saved records under `$MANIFEST_PLUGIN_DATA`. Use `_io.cjs`'s `atomicWrite` for replaceable files; the journal has its own append helper. Public chain-registry metadata explicitly uses `0644` inside the private data directory.
 - **Secrets via stdin**, never via argv. Mnemonics, passwords, env-file paths flow through pipes; argv is visible in `/proc/*/cmdline`.
 - **Fail loudly** on misuse. CLI scripts exit `1` on bad input with a one-line stderr diagnostic. Don't paper over errors with defaults.
 - **Scripts pin contracts; prose handles ambiguity.** Deterministic logic (UUID validation, threshold comparisons, JSON shape extraction) belongs in a `.cjs` script with a test. Asking the user a question or interpreting a fuzzy diagnostic belongs in `SKILL.md` prose.

@@ -1,10 +1,10 @@
 ---
 name: set-gas-price
 description: >
-  Change the default gas fee token, price, and/or gas multiplier used by
-  the Manifest MCP servers. Shows available fee tokens from the chain
+  Select the default gas fee token at its registry minimum price and/or
+  change the gas multiplier used by the Manifest MCP servers. Shows tokens from the chain
   registry. Use when the user requests this operation.
-allowed-tools: Bash(*)
+allowed-tools: Bash(*), Write
 disable-model-invocation: true
 ---
 
@@ -35,7 +35,10 @@ Run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If it fails, tell the user to run `/manifest-agent:init-agent` first and stop. Otherwise parse the JSON output. Show the user their current settings:
+If config is absent, tell the user to run `/manifest-agent:init-agent` first and stop.
+If an existing config is unreadable or invalid, show the sanitized diagnostic
+and stop; repair it privately or preserve a private backup before initialization.
+Otherwise parse the JSON output. Show the user their current settings:
 - Gas price (token and amount)
 - Gas multiplier (if set, otherwise "default: 1.5")
 - Active chain
@@ -81,7 +84,7 @@ Ask the user for the new gas multiplier value. Explain:
 
 Pass whichever flags changed. If only the token changed:
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token GAS_TOKEN
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token 'GAS_TOKEN'
 ```
 
 If only the multiplier changed:
@@ -91,13 +94,18 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-multiplier 1.8
 
 Both at once:
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token GAS_TOKEN --gas-multiplier 1.8
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token 'GAS_TOKEN' --gas-multiplier 1.8
 ```
 
-Replace `GAS_TOKEN` with the symbol the user chose in Step 2 (e.g., `MFX`).
+Replace `GAS_TOKEN` with the symbol the user chose in Step 2 (e.g., `MFX`)
+as a properly shell-escaped literal, including any apostrophes. Registry
+symbols are data, not shell code.
 Passing no flags is a usage error.
 
-Parse the JSON output to confirm the update.
+If the update fails, stop and report its diagnostic; do not claim success or
+write a success journal entry. A legacy credential migration can require an
+unlocked credential store before the change succeeds. Parse successful JSON
+output to confirm the update.
 
 ## Step 5 — Report
 
@@ -117,8 +125,11 @@ optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
 the writer is fail-closed and will exit 1 rather than append such
 records.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. Placeholders describe
+in-memory values; never substitute them into shell source or treat the sketch
+as already serialized JSON.
+
+```text
 {
   "skill": "set-gas-price",
   "active_chain": "<activeChain from Step 0 status>",
@@ -131,11 +142,37 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": []
 }
-JOURNAL_EOF
 ```
 
-Substitute the bracketed values inline before running the heredoc; no
-`<...>` placeholders should remain. If the user cancelled mid-flow (e.g.
+Create a private temporary directory with `mktemp -d` and capture its returned
+path as `JOURNAL_DIR`. Use the **Write tool** to create a **new** file
+`journal.json` inside that directory containing the complete redacted record as
+JSON, correctly encoding every string. Do not create the file beforehand and
+do not use `mktemp -u`. The directory is mode `0700`; the host may create the
+file at `0644`, but the private parent prevents other users from accessing it.
+
+Never paste the record, its fields, or tool responses into a Bash
+command, heredoc, or `echo`. Redaction does not make user or registry text safe
+shell code. Bind `JOURNAL_DIR` to the returned directory as a properly
+shell-escaped literal in the same Bash call below; shell variables do
+not persist across calls. Pass the file through stdin and clean up only this
+staging file and directory, preserving the writer's exit status:
+
+```bash
+JOURNAL_PATH="$JOURNAL_DIR/journal.json"
+journal_status=0
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH" || journal_status=$?
+rm -f -- "$JOURNAL_PATH" || true
+rmdir -- "$JOURNAL_DIR" || true
+exit "$journal_status"
+```
+
+Also remove the staging file (if created) and directory on cancellation or
+Write failure. If appending fails, report the journal diagnostic
+without repeating the underlying operation; a journal failure does not undo
+completed work.
+
+If the user cancelled mid-flow (e.g.
 in Step 1), set `outcome` to `"cancelled"` and adjust `final_state`
 accordingly. Do NOT mention the journal write in your reply to the user
 — it's an internal audit trail.

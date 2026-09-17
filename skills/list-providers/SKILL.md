@@ -5,7 +5,7 @@ description: >
   Defaults to active providers only; pass `--all` as the argument to
   include inactive entries. Foundational for SKU picking and
   provider-aware deploy flows.
-allowed-tools: Bash(*), Read
+allowed-tools: Bash(*), Read, Write
 ---
 
 <!-- Generated from workflows/list-providers.md by ci/build-packages.cjs. -->
@@ -49,12 +49,25 @@ Call:
 mcp__plugin_manifest-agent_manifest-lease__get_providers({ active_only: ACTIVE_ONLY })
 ```
 
-Then pipe the JSON response through the renderer:
+Read `structuredContent` or parse the JSON text fallback. Check for MCP
+`isError: true` / JSON `error: true` before rendering; a failed query must
+not become an empty or healthy report. Create a private directory with
+`mktemp -d` and capture its path as `RESPONSE_DIR`. Use **Write** to
+create a new `response.json` inside it containing the successful payload as
+JSON; do not create that file beforehand or use `mktemp -u`. The directory
+is mode `0700`, so a host-created file at `0644` remains private inside it.
+Never interpolate response values into a shell command, heredoc, or `echo`.
+Bind `RESPONSE_DIR` and `RESPONSE_PATH` (the directory's `response.json`) to
+shell-quoted paths in the same Bash call where they are used. Redirect
+the file to the renderer's stdin:
 
 ```bash
-echo '<get_providers response>' \
-  | node "$MANIFEST_PLUGIN_ROOT/scripts/render-providers.cjs"
+node "$MANIFEST_PLUGIN_ROOT/scripts/render-providers.cjs" < "$RESPONSE_PATH"
 ```
+
+Remove `RESPONSE_PATH` and then the empty `RESPONSE_DIR` after rendering,
+retaining the renderer's exit status. Also clean them up on cancellation or
+Write failure. On renderer failure, report the diagnostic and stop.
 
 **Print the script's stdout verbatim.** Do not paraphrase the table or
 re-order the rows; the script owns the canonical Markdown.

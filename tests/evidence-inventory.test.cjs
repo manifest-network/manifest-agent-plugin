@@ -52,14 +52,15 @@ test('historical scope and skill inventory follow the recorded tree as current f
     assert.equal(validate(report, { root, requireHistory: true }).verification, 'commit');
     assert.equal(validate({ ...report, source_status: 'current' }, { root, requireCurrent: true }).verification, 'workspace');
   }
-  for (const file of ['scripts/zz-review-probe.cjs', 'scripts/zz-review-probe.ps1', 'workflows/zz-review-probe.md', 'skills/zz-review-probe/SKILL.md']) write(file, 'new file');
+  for (const file of ['scripts/zz-review-probe.cjs', 'scripts/zz-review-probe.ps1', 'workflows/zz-review-probe.md',
+    'workflows/fragments/zz-review-probe.md', 'skills/zz-review-probe/SKILL.md']) write(file, 'new file');
   for (const [report, validate] of original) {
     assert.equal(validate(report, { root, requireHistory: true }).verification, 'commit');
     assert.throws(() => validate({ ...report, source_status: 'current' }, { root, requireCurrent: true }), /exactly the expected files/);
   }
   const expanded = records(commit());
   for (const file of ['scripts/zz-review-probe.cjs', 'scripts/zz-review-probe.ps1', 'workflows/zz-review-probe.md', 'skills/zz-review-probe/SKILL.md',
-    'scripts/_io.cjs', 'workflows/balance.md', 'skills/balance/SKILL.md', 'package.json', '.mcp.json']) fs.rmSync(join(root, file));
+    'workflows/fragments/zz-review-probe.md', 'scripts/_io.cjs', 'workflows/balance.md', 'skills/balance/SKILL.md', 'package.json', '.mcp.json']) fs.rmSync(join(root, file));
   for (const [report, validate] of [...original, ...expanded]) {
     assert.equal(validate(report, { root, requireHistory: true }).verification, 'commit');
     for (const changed of [

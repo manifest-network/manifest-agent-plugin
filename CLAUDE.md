@@ -61,13 +61,30 @@ Plugin root (read-only)          Runtime data ($MANIFEST_PLUGIN_DATA)
 
 **All scripts use CJS** — `require()`, async IIFE with `.catch(() => process.exit(1))`. Use `getDataDir()` from `_io.cjs` for the data directory path; never compose `homedir() + '.manifest-agent'` (the latter is the legacy pre-v0.5 path).
 
-**Secrets via stdin** — Mnemonics are piped via heredoc (`<<'EOF'`, single-quoted to prevent shell expansion), never as command-line args (visible in `/proc/*/cmdline`).
+**Secrets via stdin** — The user creates a fresh private mnemonic file in a
+separate terminal and supplies only its path. Redirect that file into
+`import-key.cjs` with `< 'MNEMONIC_FILE'`, then pipe its output directly to
+`write-config.cjs`. Do not read the mnemonic into model context or place it in
+a heredoc, command-line argument, or chat message.
+
+Terminal secret-file recipes use POSIX assignments such as
+`MNEMONIC_INPUT_PATH=$(mktemp)`. Ask fish users to start `bash` in their separate
+terminal before following the recipe and remain in that shell through cleanup;
+do not offer unverified fish translations.
 
 **Underscore-prefix helpers** — Scripts named `_<topic>.cjs` (`_io.cjs`, `_uuid.cjs`, `_gas-price.cjs`, `_spec.cjs`, `_https-json.cjs`, `_journal.cjs`) are sibling-only modules consumed via `require('./_X.cjs')`. Skills MUST NOT shell out to them. The post-ENG-130 `humanize-denom.cjs` is a documented exception because it's conceptually a renderer composed by another renderer (`render-balance.cjs`); see the "Renderer / structural summarizers" subsection of the inventory below.
 
 **MCP wrapper** (`start-server.cjs`) — Waits for concurrent SessionStart setup (2-second pre-lock grace, 25-second total bound) before spawning; failure diagnostics identify the missing/incomplete dependency. Reads `config.json`, builds env vars, spawns `$MANIFEST_PLUGIN_DATA/node_modules/.bin/manifest-mcp-<name>` directly (not npx — 30ms vs 800ms startup). Forwards SIGTERM/SIGINT/SIGHUP. Uses `stdio: 'inherit'` so MCP JSON-RPC passes through transparently.
 
 **Configuration precedence** — Config owns chain, gas-price/multiplier and wallet variables. The launcher removes inherited values before applying the selected config, including stale optional endpoints and mnemonic fallback. `agent.keyFile` must exist and `agent.keyPasswordRef` must resolve through `_credentials.cjs`; legacy `agent.keyPassword` is migrated before launching; an explicit empty password is preserved, although upstream 0.22.0 rejects empty-password encrypted wallets. The child runs from an owned empty temporary directory so dotenv cannot load a workspace `.env`, and `DOTENV_CONFIG_QUIET=true` keeps stdout protocol-only. The temporary directory is removed on exit; generic transport settings such as proxies remain inherited. `COSMOS_MAX_GAS` remains an explicit operator override of the upstream gas ceiling; it is not a config-owned field. Invalid values are rejected upstream.
+
+**Reinitialization limit** — `write-config.cjs` rebuilds config without retaining
+`gasMultiplier`. Re-running `init-agent` therefore resets a custom multiplier
+to the runtime default `1.5`. The standalone `import-key` workflow captures the
+safe status first and restores a non-null multiplier in a separate checked
+`update-config.cjs` call. If restoration fails, the new wallet is already
+configured: report a partial outcome and retry only the multiplier update
+after resolving the error. Do not rerun the import or claim completion.
 
 ## Credential storage and startup identity (ENG-85)
 
@@ -125,7 +142,7 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **init-agent** — Full setup: install deps, fetch registry, choose chain, generate or import key, write config
 - **import-key** — Import existing mnemonic (requires init-agent first)
 - **switch-chain** — Switch testnet/mainnet with mainnet confirmation before write
-- **set-gas-price** — Change gas fee token, price, and/or gas multiplier
+- **set-gas-price** — Select the gas fee token at its registry minimum price and/or change the gas multiplier
 - **refresh-registry** — Re-fetch chain data from Cosmos chain registry
 - **author-manifest** — Plugin-side draft creation. Builds + validates a Fred spec via `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview`, saves via `save-manifest-draft.cjs` to `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json` (or a user-chosen path). Preserves supplied image digests and asks for an explicit mutable-tag choice per service. No readiness pre-flight — the orchestrated deploy tool re-checks at broadcast time. No client-side image inspection or domain validation. MCP 0.22.0 exposes no tag-resolution API; preview validates the manifest, not registry contents. See DECISION 1 and the ENG-117 boundary below.
 - **troubleshoot-deployment** — Picker (`$ARGUMENTS` → `manifest://leases/active` → `list-saved-manifests.cjs` → lookup-by-FQDN → user-paste) plus a thin invocation of `mcp__plugin_manifest-agent_manifest-agent__troubleshoot_deployment_orchestrated`, which is a pure chain query returning pre-rendered Markdown. The cleanup elicitation, when the user opts in, drives `mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated` as a separate tool call. The outer close invocation is gated before execution; its internal SDK operations do not trigger separate host PreToolUse events.
@@ -209,7 +226,7 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 - `ci/check-powershell.ps1` parses the shipped PowerShell scripts without running Windows APIs. Tests verify syntax-error rejection, Unicode stdin, and that ACL/invalid operations skip native compilation.
 - `ci/terminal-host-smoke.cjs` drives the actual Claude and Codex terminal UIs through a private tmux socket, a loopback model fixture, and marker-only MCP tools. It records rendered prompts, input keys, progress, results and mutation counts. See `docs/host-acceptance.md` for the pinned CLI versions and scope.
 - `ci/lease-state-parity.cjs --data-dir <runtime-dir>` compares the plugin's numeric `STATES` table with the installed manifestjs `LeaseState` enum, excluding the SDK's `UNRECOGNIZED = -1` sentinel. CI runs it after runtime installation; its unit tests use fixtures and require no runtime packages.
-- Use `rg -n '<script>.cjs' skills/ scripts/` to locate callers — the call graph drifts and isn't worth restating in prose.
+- Use `rg -n '<script>.cjs' workflows/ skills/ scripts/ ci/` to locate callers. Change shared workflow sources and regenerate shipped skills together.
 
 ## config.json → MCP env var mapping
 
@@ -227,7 +244,7 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 | `agent.keyFile` | `MANIFEST_KEY_FILE` | yes (existing file) |
 | `agent.keyPasswordRef` → credential store | `MANIFEST_KEY_PASSWORD` | yes (resolved string, including empty; legacy plaintext migrated first) |
 
-**Agent-server-only env vars** (set unconditionally when `serverName === 'agent'`, see `start-server.cjs`):
+**Agent-server-only env vars** (the first two are always set for `agent`; the guarded-fetch override is forwarded only when present):
 
 | Computed value | Env var | Required |
 |---|---|---|
@@ -351,7 +368,15 @@ See [the integration plan](docs/eng-117-plan.md) for the release gate.
 
 ### Sensitive env values (file-pipe pattern)
 
-Mirrors the mnemonic-import pattern used by `init-agent` / `import-key`. The user creates a dotenv file in a separate terminal (`cat > /tmp/<svc>.env` … Ctrl+D, then `chmod 600`), names the path in chat, and the agent pipes it through `scripts/merge-env.cjs` to mutate the spec file in place. The script outputs only the merged keys (never values), so the chat input box stays clean and the agent never echoes secrets in summaries. Author flow merges into the saved spec at `--spec-file <SAVED_PATH>`; deploy flow materializes the in-memory spec to a `/tmp/.spec-env-<pid>.json`, merges, then `Read`s it back.
+The user creates a private dotenv file in a separate terminal, names only
+its path in chat, and the agent pipes it into `scripts/merge-env.cjs`. Create
+the fresh file with `umask 077` and `ENV_INPUT_PATH=$(mktemp)`, then write or
+edit it locally using the quoted `"$ENV_INPUT_PATH"`. Use the same pattern
+with `MNEMONIC_INPUT_PATH` for mnemonic import; do not reuse a fixed filename,
+because `umask` does not change an existing file's permissions. Authoring merges into
+the saved draft at `--spec-file <SAVED_PATH>`; the helper emits only key
+names. `deploy-app` loads a complete saved spec and has no inline env-entry
+or env-merge branch. Follow the shared authoring workflow for file cleanup.
 
 What this protects: the chat input never carries secrets, and prose summaries (intent recap, deployment plan) are keys-only by construction. The orchestrated tools' plan + recap renderers (inside `manifest-agent-core/internals/render-*`) use the same env-keys-only discipline; the plugin-side `summarize-manifest.cjs` keeps the redaction discipline for the read-only discovery surface.
 
@@ -371,7 +396,13 @@ What it doesn't: env values still flow into the `build_manifest_preview` and `de
 
 **Dual-tx broadcast (deploy-app with `customDomain`):** the orchestrated tool itemizes both fees in its plan-elicitation prompt, broadcasts both inside one MCP tool call, and routes partial-success failures through agent-core's recovery dispatch (retry-set-domain / salvage-without-domain / cancel-or-close). Host permission is requested before the outer orchestrated call. Lease creation and domain assignment are separate, sequential transactions; one can succeed while the next fails.
 
-**Known limitation (unchanged from pre-rewire):** `manage-domain` set/clear operations do NOT refresh the saved wrapper's `custom_domain` field — the persistence path requires the canonical `manifest_json` bytes which manage-domain never has. The wrapper's `custom_domain` may go stale until the next `deploy-app` run for that lease; consumers needing the live value should query the chain via `mcp__plugin_manifest-agent_manifest-lease__leases_by_tenant` or `mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain`.
+**Known limitation:** `manage-domain` set/clear operations do not refresh
+the saved wrapper's `custom_domain` field. Treat it as a historical deployment
+snapshot and query the chain for the current assignment via
+`mcp__plugin_manifest-agent_manifest-lease__leases_by_tenant` or
+`mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain`.
+Calling `deploy-app` again creates a new lease; it is not a way to refresh
+the existing lease's record.
 
 ## Saved post-deploy records
 
@@ -411,9 +442,14 @@ Every state-changing skill appends one record per invocation to `$MANIFEST_PLUGI
 
 **Writing**: skills pipe a JSON record to `journal-write.cjs`. The writer auto-fills `timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` (from `$MANIFEST_SESSION_ID`); runs `validateRecord` (fail-closed against `SECRET_KEY_DENYLIST` — see below); appends one line via `fs.appendFileSync(... { flag: 'a' })`. Concurrency story: on Linux ext4 / xfs the inode mutex serializes concurrent `write(2)` calls to a regular file, so a record under `MAX_RECORD_BYTES` (4 KiB) appends without interleaving in practice — best-effort, not a POSIX guarantee (`PIPE_BUF` formally applies to pipes / FIFOs only). Records exceeding 4 KiB are replaced with a smaller `journal_truncated` marker so realistic concurrent writes stay in the single-`write(2)` regime and the daily file never carries a torn line.
 
-`deploy-app` serializes the complete redacted record with the host Write
-tool into a private temporary file, then passes it via stdin redirection.
-Only the file path enters shell source. Redaction removes secret values;
+Every journal-writing workflow uses the shared `workflows/fragments/journal-write.md`
+fragment to serialize the complete redacted record with the host Write tool.
+It creates a private directory with `mktemp -d` (mode `0700`) and writes a
+new filename inside it, then passes the file via stdin redirection. Claude's
+Write tool can create the new file without first reading it; a file created
+with mode `0644` remains private through its `0700` parent. The workflow
+removes both temporary artifacts after the append attempt. Only quoted
+temporary paths enter shell source. Redaction removes secret values;
 it does not make remaining values such as provider-controlled SKU names
 safe to interpolate into a shell command or heredoc.
 

@@ -5,7 +5,7 @@ description: >
   after installing the plugin (or to re-key); it picks a chain, generates or
   imports a wallet, and writes config.json. User-invoked only — not for
   Claude Code to auto-discover.
-allowed-tools: Bash(*)
+allowed-tools: Bash(*), Write
 disable-model-invocation: true
 ---
 
@@ -72,8 +72,11 @@ still hold a recoverable legacy password. Do not treat that file as absent.
 node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
 ```
 
-Parse the JSON output. This fetches both mainnet and testnet data from the
-Cosmos chain registry.
+Check the exit status and parse the JSON output. Each present network key
+identifies data successfully fetched and saved; omitted networks were not
+refreshed. On nonzero exit or no successful networks, report the diagnostic
+and stop before creating a key or writing config. Preserve partial-refresh
+diagnostics and do not claim both networks were refreshed when only one was.
 
 ## Step 2 — Choose chain
 
@@ -82,7 +85,10 @@ Use AskUserQuestion to ask which chain to use, with these options:
 - **testnet** — manifest-ledger-testnet (recommended for development)
 - **mainnet** — manifest-ledger-mainnet (real assets, use with care)
 
-Store the answer as `CHOSEN_CHAIN` (`testnet` or `mainnet`).
+Store the answer as `CHOSEN_CHAIN` (`testnet` or `mainnet`). Require that key
+in the successful Step 1 output before continuing. If it is absent, report
+that the selected network was not refreshed and stop before creating a key
+or writing config; an older cached file is not proof of a fresh fetch.
 
 ## Step 3 — Choose gas fee token
 
@@ -140,11 +146,12 @@ The key script pipes directly into write-config so the password never enters the
 conversation:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain 'CHOSEN_CHAIN' --gas-token 'GAS_TOKEN'
 ```
 
 Replace `CHOSEN_CHAIN` with the user's choice from Step 2 and `GAS_TOKEN`
-with the symbol they chose in Step 3 (e.g., `MFX`).
+with the symbol they chose in Step 3 (e.g., `MFX`), using properly shell-escaped
+literals including any apostrophes. Registry symbols are data, not shell code.
 
 Parse the JSON output from stdout to get `address` and `activeChain`.
 
@@ -165,23 +172,31 @@ Ask the user to provide the **path to a file** containing their mnemonic.
 They create the file themselves in a separate terminal:
 
 ```bash
-cat > /tmp/mnemonic.txt    # paste mnemonic, Enter, Ctrl+D
-chmod 600 /tmp/mnemonic.txt
+umask 077
+MNEMONIC_INPUT_PATH=$(mktemp)
+cat > "$MNEMONIC_INPUT_PATH"
+# paste mnemonic, press Enter, then Ctrl+D
+printf '%s\n' "$MNEMONIC_INPUT_PATH"
 ```
 
 **Do NOT use `echo`** (shell history). **Do NOT ask the user to paste the
 mnemonic in the conversation. Do NOT `Read` the mnemonic file.** The
 mnemonic must never enter Claude Code's context.
 
-Wait for the user to provide the path. Then run (substitute `MNEMONIC_FILE`,
-`CHOSEN_CHAIN` from Step 2, `GAS_TOKEN` from Step 3):
+Wait for the user to provide the path. Use properly shell-escaped literals
+for the supplied path and registry symbol, including any apostrophes; never
+insert unescaped text into shell source. Run, substituting `MNEMONIC_FILE`,
+`CHOSEN_CHAIN` from Step 2 and `GAS_TOKEN` from Step 3:
 
 ```bash
-cat MNEMONIC_FILE | node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest < 'MNEMONIC_FILE' | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain 'CHOSEN_CHAIN' --gas-token 'GAS_TOKEN'
 ```
 
-Parse the JSON output to get `address` and `activeChain`. Suggest the
-user `rm` their mnemonic file after.
+If the pipeline fails, stop and report the sanitized diagnostic and retained
+keyfile path before retrying. Parse successful JSON output to get `address`
+and `activeChain`. Suggest the user delete their mnemonic file after success
+(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
+created it).
 
 ## Step 6 — Report results
 
@@ -191,7 +206,10 @@ Tell the user:
 3. Which chain is active
 4. The gas fee token in use
 5. That MCP servers need to be restarted to use the new config — they can do
-   this by running `/mcp` and reconnecting, or by restarting Claude Code
+   this through their host's MCP controls or by restarting Claude Code
+6. Generated wallets do not display a mnemonic. Back up the config, encrypted
+   keyfile and referenced OS credential entry (or the explicit file fallback).
+   Imported wallets can also be recovered using the original mnemonic.
 
 ## Step 7 — Offer testnet funding
 
@@ -211,8 +229,11 @@ the writer is fail-closed and will exit 1 rather than append such
 records. This is the defense in depth for this skill — mnemonics flow
 only through stdin pipes between scripts and never enter the journal.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. Placeholders describe
+in-memory values; never substitute them into shell source or treat the sketch
+as already serialized JSON.
+
+```text
 {
   "skill": "init-agent",
   "active_chain": "<chosen chain — testnet or mainnet>",
@@ -229,8 +250,35 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": []
 }
-JOURNAL_EOF
 ```
+
+Create a private temporary directory with `mktemp -d` and capture its returned
+path as `JOURNAL_DIR`. Use the **Write tool** to create a **new** file
+`journal.json` inside that directory containing the complete redacted record as
+JSON, correctly encoding every string. Do not create the file beforehand and
+do not use `mktemp -u`. The directory is mode `0700`; the host may create the
+file at `0644`, but the private parent prevents other users from accessing it.
+
+Never paste the record, its fields, or tool responses into a Bash
+command, heredoc, or `echo`. Redaction does not make user or registry text safe
+shell code. Bind `JOURNAL_DIR` to the returned directory as a properly
+shell-escaped literal in the same Bash call below; shell variables do
+not persist across calls. Pass the file through stdin and clean up only this
+staging file and directory, preserving the writer's exit status:
+
+```bash
+JOURNAL_PATH="$JOURNAL_DIR/journal.json"
+journal_status=0
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH" || journal_status=$?
+rm -f -- "$JOURNAL_PATH" || true
+rmdir -- "$JOURNAL_DIR" || true
+exit "$journal_status"
+```
+
+Also remove the staging file (if created) and directory on cancellation or
+Write failure. If appending fails, report the journal diagnostic
+without repeating the underlying operation; a journal failure does not undo
+completed work.
 
 If the user declined the existing-key warning in Step 4 or cancelled at
 any choice prompt, set `outcome` to `"cancelled"`. Do NOT mention the

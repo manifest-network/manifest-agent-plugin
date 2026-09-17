@@ -1,0 +1,1838 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "current-install-preservation",
+  "source_status": "historical",
+  "recordedAt": "2026-09-17T15:04:01.463Z",
+  "pluginVersion": "0.5.0",
+  "upstreamVersion": "0.22.0",
+  "nodeVersion": "v24.15.0",
+  "head": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
+  "sourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
+  "sourceHashes": {
+    "ci/build-packages.cjs": "ace8ab10d26482b5d441fc9cdd026e92453df5303c7a82100e21f36275ef1712",
+    "ci/codex-host-smoke.cjs": "2e6b218c7fa32f91bacd11695da7f98e2b338776ae97ddcfef47ff4ad36a9bdd",
+    "docs/codex.md": "9e1f6297b58ba5afb587431e759c320a4015cfb2f8aebfe897a94778c8de8e3e",
+    "docs/identity.md": "f32d698de5b233ee5f97106f8c1694f60eb0c9ec90431a428a719d3bb13f5da5",
+    "hooks/hooks.json": "81aea5599bbdde695da2f45bf1c40e64f5b15c2f172a569868a770e451510822",
+    "hosts/claude/restart-confirmation.md": "159cb357c11444cdadf5959aa06663af09b4b226b492ce04698e8ad29ae9e1b9",
+    "hosts/codex/env.sh": "f96fe3ceaea07ca5ae6812ec981f0c616c53a81fdac29abf082a4db79c9f5dde",
+    "hosts/codex/manifest-agent/.codex-plugin/plugin.json": "4257028232fc5c248b97749ec8df133e1e9afb737dc98e1b6192d407d02e2f46",
+    "hosts/codex/manifest-agent/.mcp.json": "29068fb19ab4e1ddd3601d32053d8b0b6a49c67bec4a3775044b19190e6d26c3",
+    "hosts/codex/restart-confirmation.md": "9363ba23d915f10db0a6b5f1e9590476a630acecd76e7fb718c7bc722104913e",
+    "package-lock.json": "e3efcaf2ea73d8241d438d42979f4b3985568cf8740d5ba14011c7e31cda5df0",
+    "package.json": "763cd88167267f711f42f2cb9e88788cccf349c5997de12514334d1ffeae5be6",
+    "scripts/_credentials.cjs": "695cf19737706dc6be5fd780419a858e3c34ce0a19ba52663e88e0396ad8369b",
+    "scripts/_gas-price.cjs": "bead2ed0961f0bddfbd9e3f05a134ef698fbd4a1827e64e222647e0c09c6144a",
+    "scripts/_host.cjs": "393b76ea1e6f60e391919f014e18c37a3303179b6f63e1ce9dd97d1c95c88507",
+    "scripts/_https-json.cjs": "3759edcc2b2fc4676c0004119a5cce396bc9d823ce3e65d2a506c5b4c6c768e3",
+    "scripts/_image-ref.cjs": "f9daaae4689298747cb7f4f5fa09884066a49ac4cd968709697bd909f34139e4",
+    "scripts/_io.cjs": "f022384ca4320a0cc5eefb26c930796772deb1ec7312c420a1d6f32f2d842e8c",
+    "scripts/_journal.cjs": "0702d7003f3efce65f0dad3d6f46f4db569bc004a7351f6ba0d7f750f05ea7db",
+    "scripts/_lease-state.cjs": "3d2d69ef7aaa181b60c2e3e9f53d5e47eae3e2f668d845e90863d4d839db3583",
+    "scripts/_mcp-bridge.cjs": "79bea2475042046450817cb91542772a23f2de622775f2b430bd17f85948dfc1",
+    "scripts/_runtime.cjs": "a6743b45d56eeee779aa179a3e7aa3acb09540e4e76e053000f25acc0f2d4bbe",
+    "scripts/_spec.cjs": "3ce8d37290ba7694693f14646d90f2fd84da6a710aa5a21c3fda9dc5efd1bc69",
+    "scripts/_uuid.cjs": "cd2e0288e7c00f2d9dd941aabf16d60118a439ebc51c94a4b70e7c93005859f4",
+    "scripts/_wincred.ps1": "67faa7cddb4f3d9a922869088267d1939631c3cc1c26438b63cdae850766cc26",
+    "scripts/check-image-references.cjs": "f3c95dc5579ade66fce11ff3ce1048d8675bcb7a1c14672664fd307142a845e1",
+    "scripts/check-storage-selection.cjs": "6c806576c56d1bdd547428e4676d82e9ef540b5556b7d6647bddbd04484d2cc0",
+    "scripts/codex-server.cjs": "d6175981d5dc3e34894189171cdb0c7861189ba101f15160659e44bc372143f4",
+    "scripts/decode-lease-state.cjs": "47f5c454a7492034374085c2e392571a8f480cec4c97dc292efba2c6ca54b511",
+    "scripts/fetch-chain-registry.cjs": "7a0c80bf3fd133c69bcbe48657f4f68e422bd3c9ad68013e1d5fe068e7098aac",
+    "scripts/gen-agent-key.cjs": "eefe8c734d2bb6e1d3fb08faa8b08f1c010bbb69c64cd8ed584c8f46449c1dac",
+    "scripts/host-env.cjs": "cb506ae0ac34b25bf0ff914e8ed1b606dea12f6bffee37d9dd5f1b24592d64db",
+    "scripts/humanize-denom.cjs": "c1533b0952b8603570380a3bdc06ab24edd0c914cca7268bf7a121361adb25ce",
+    "scripts/import-key.cjs": "ee719770f54e13d1c7aeafe97dd1b935659c09f5c067e4db5ca64d31d8e149d9",
+    "scripts/journal-read.cjs": "05831d3009955951639e72c8a4c8386b6d5684bd8835904ba49cae3aa0ac047d",
+    "scripts/journal-write.cjs": "d7c71bca01b8d0f757fae5ac0c9948e3d1f119a4df66019ac1820a528d9dd6cc",
+    "scripts/list-saved-manifests.cjs": "f1dfd3e3dd6b7f0795a637fb48976552f743258a53f7a48af3c0965344c09052",
+    "scripts/merge-env.cjs": "2638ff0e8162359b518ca72da0d4b1d8f93ed62055cbc4b00d46ed45794fcc4b",
+    "scripts/migrate-credentials.cjs": "792f287c46d99da9a3060887190cc667e72dd8d93b57e554ef9d4ebce6fffcc1",
+    "scripts/pre-tool-use.cjs": "5751786575c7c1d563b4bcf99779881777a2bac9454bcaf432ed4c155fd3e03c",
+    "scripts/pre-tool-use.sh": "a9aa07b4b2fff19053d3249ab86e52ebcce99a38d35d5c4cc78b97da50f2fb19",
+    "scripts/render-balance.cjs": "bb54ad119c159fbdde215f34a8d1f4116536c81e400a8eeb41391bc8812da5cc",
+    "scripts/render-providers.cjs": "36e6042b5f3f731a4c5772af498b8025290331e5ec4ed4f1cf6e1fd7e403f228",
+    "scripts/render-releases.cjs": "b0e92af516b7b096386f4e3252f54c7c2fdfb69d3ff17c81383cb49c7f0ea6e3",
+    "scripts/save-manifest-draft.cjs": "ea72c014d6f338ae400ee61f0c87b2024dece44273f4b50085738e4b9fb839b9",
+    "scripts/session-hook.cjs": "5f0c118d8c12d64d75cb709efce7223caa4622c6276aac250969f79a9b298f9b",
+    "scripts/session-identity.cjs": "09d6558f117444be194b181afab5e43745cc7ade79bf76983ced47584e775969",
+    "scripts/session-start.sh": "0a56968eafc48855822775a2bce49480e16e0f1231a8c46a76b081ac712892cd",
+    "scripts/setup-runtime.cjs": "bc9979a96da195042e637d7f9ed8715094020203faacb0116de12e86353ac6ed",
+    "scripts/start-server.cjs": "6b335990ce8ddf36fb7f1faa6f2cf3bd9f71aa97e85578b463b7031bd9047fc3",
+    "scripts/summarize-manifest.cjs": "3dedef40d45aa9e8ad98ef49441a975f21e41fa70f35f5e044edc1d60cb47fd2",
+    "scripts/update-config.cjs": "d0d92346f8926606fd950eaea09090fa0cc57370b7f346d25e07205086295205",
+    "scripts/write-config.cjs": "bd5e4f8faaea11833fbdb8f73bdfe85d575e51822609146ff38dc40895e82dff",
+    "tests/fixtures/json-rpc-peer.cjs": "f10549f9697cc42a2c905831caaddad063716cb9ff087694f3429c62209d01c3",
+    "tests/fixtures/native-host-fixture.cjs": "dddab5d597ebb4d37700223a0803eb8f1fbe4229959199af85a0a809a3e88e50",
+    "workflows/author-manifest.md": "29d50989ea88d40baa8d9646569e61fb79eefc47b405834a76e199436e7306e8",
+    "workflows/balance.md": "603e27d5a819043607074a12f4f0f201f2bdaf9f1d66d0454423030f12e8507b",
+    "workflows/deploy-app.md": "2679614df74165b7cc646b4fba91f468ba5cce840eda300451432f033d82bd2a",
+    "workflows/fragments/journal-write.md": "efc0752dcbf357abf82f92803578d892b3adce615c8463fe2158abb74255cb47",
+    "workflows/import-key.md": "d59ae67efc3a051a23e8ca0a974106d7ab7be3959ec28e8cb3d8e8faf140d132",
+    "workflows/init-agent.md": "14ba6b650b0b82a618c4fccebb0c68a04b9ad213f44aff558c3757939400650f",
+    "workflows/journal.md": "8ee82286846c1dab3b2de55ee9911a3a56d13f9a84be2ace990dfdb7f84ead1e",
+    "workflows/list-providers.md": "b7094a821ba1187437fec45f011e91b32c45a2d22eb3851ca926397fb77d60eb",
+    "workflows/list-releases.md": "34df9afd7ba2066f79f7603e44d5dd3bebc8d45fc43e6e8214ae51a2e62d0288",
+    "workflows/manage-domain.md": "08fd1ec36e2edbc0bfffa19650b6e21584f9f8e277a26d70e3531354b9345444",
+    "workflows/refresh-registry.md": "bf6a493e3329239aacc7f2810e25547f863038f9f8b33bac8447f4c38e36d6f0",
+    "workflows/restart-app.md": "95f4afb22668a2e13b884d6231ef9b0e1c26e10d40b92df97616452ba92ffb64",
+    "workflows/set-gas-price.md": "727d469a8dcb6d373f1947767f2cb79a2719a88f4a99ddb8d74211f1e2b09565",
+    "workflows/switch-chain.md": "f2634abb464712df0ce409fe0d1548bc1d8f70ed8b3f2cd0fc03cd7ff1bf4701",
+    "workflows/troubleshoot-deployment.md": "365562dc3fc1d5c0986d58669cdb9230b06202ffd58ee83967452c2cc1f28f18"
+  },
+  "scope": {
+    "tested": [
+      "native-legacy-upgrade",
+      "automatic-plaintext-credential-migration",
+      "current-version-reinstall",
+      "automatic-runtime-repair",
+      "saved-state-and-signing"
+    ],
+    "credentialStore": "Explicit file backend in isolated temporary profiles; native OS-store access is not established by this run."
+  },
+  "hosts": {
+    "claude": {
+      "hostVersion": "2.1.270 (Claude Code)",
+      "dataRoot": "/var/tmp/pr20-preserve-X3jBjL/claude/config/plugins/data/manifest-agent-pr20-preserve",
+      "installedPluginRoot": "/var/tmp/pr20-preserve-X3jBjL/claude/config/plugins/cache/pr20-preserve/manifest-agent/0.5.0",
+      "walletAddress": "manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7",
+      "installedPackage": {
+        "files": 185,
+        "sha256": "7671e6b72d80b6883350a4566514c80fcfd8daa386f29395a5f07d38941c0c4c",
+        "installedSourceMatchesPreparedPackage": true
+      },
+      "legacyUpgrade": {
+        "fromVersion": "0.4.0",
+        "toVersion": "0.5.0",
+        "sourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
+        "legacySourceCommit": "06870ea68d07855305f3c4eb229ec61b6fa1e949",
+        "nativeUpgradeCommands": [
+          {
+            "at": "2026-09-17T14:54:12.854Z",
+            "command": [
+              "claude",
+              "plugin",
+              "uninstall",
+              "manifest-agent@pr20-preserve",
+              "--keep-data",
+              "--json"
+            ],
+            "exitCode": 0,
+            "stdout": "{\"command\":\"uninstall\",\"outcome\":\"ok\",\"plugin\":\"manifest-agent@pr20-preserve\",\"pluginId\":\"manifest-agent@pr20-preserve\",\"scope\":\"user\",\"keptData\":true,\"message\":\"Successfully uninstalled plugin: manifest-agent (scope: user)\"}\n",
+            "stderr": ""
+          },
+          {
+            "at": "2026-09-17T14:54:13.991Z",
+            "command": [
+              "claude",
+              "plugin",
+              "install",
+              "manifest-agent@pr20-preserve",
+              "--json"
+            ],
+            "exitCode": 0,
+            "stdout": "{\"command\":\"install\",\"outcome\":\"ok\",\"plugin\":\"manifest-agent@pr20-preserve\",\"pluginId\":\"manifest-agent@pr20-preserve\",\"scope\":\"user\",\"message\":\"Successfully installed plugin: manifest-agent@pr20-preserve (scope: user)\"}\n",
+            "stderr": ""
+          }
+        ],
+        "nativeInstalledVersion": "0.5.0",
+        "legacyBytesPreservedThroughNativeInstall": true,
+        "at": "2026-09-17T14:56:39.545Z",
+        "automaticMigration": true,
+        "onlyConfigCredentialRepresentationChanged": true,
+        "sixNonConfigFilesPreserved": true,
+        "plaintextPasswordRemoved": true,
+        "credentialBackend": "file",
+        "originalWalletAddress": "manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7",
+        "offlineKeyDecryptionAndSigning": true,
+        "currentProbe": {
+          "host": "claude",
+          "phase": "baseline",
+          "tool": "list_modules",
+          "readOnlyProbePassed": true,
+          "normalPermissions": true,
+          "at": "2026-09-17T14:57:15.071Z",
+          "toolOutput": [
+            {
+              "tool_use_id": "toolu_pr20_6adee870-71ee-4a7a-82ca-ca936c826891",
+              "type": "tool_result",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "{\n  \"queryModules\": [\n    {\n      \"name\": \"bank\",\n      \"description\": \"Querying commands for the bank module\"\n    },\n    {\n      \"name\": \"staking\",\n      \"description\": \"Querying commands for the staking module\"\n    },\n    {\n      \"name\": \"distribution\",\n      \"description\": \"Querying commands for the distribution module\"\n    },\n    {\n      \"name\": \"gov\",\n      \"description\": \"Querying commands for the governance module\"\n    },\n    {\n      \"name\": \"authz\",\n      \"description\": \"Querying commands for the authz module\"\n    },\n    {\n      \"name\": \"feegrant\",\n      \"description\": \"Querying commands for the feegrant module\"\n    },\n    {\n      \"name\": \"mint\",\n      \"description\": \"Querying commands for the mint module\"\n    },\n    {\n      \"name\": \"auth\",\n      \"description\": \"Querying commands for the auth module\"\n    },\n    {\n      \"name\": \"billing\",\n      \"description\": \"Querying commands for the Manifest billing module\"\n    },\n    {\n      \"name\": \"sku\",\n      \"description\": \"Querying commands for the Manifest SKU module\"\n    },\n    {\n      \"name\": \"group\",\n      \"description\": \"Querying commands for the group module\"\n    },\n    {\n      \"name\": \"poa\",\n      \"description\": \"Querying commands for the Proof-of-Authority (strangelove_ventures) module\"\n    },\n    {\n      \"name\": \"tokenfactory\",\n      \"description\": \"Querying commands for the tokenfactory (osmosis) module\"\n    },\n    {\n      \"name\": \"ibc-transfer\",\n      \"description\": \"Querying commands for the IBC fungible-token transfer module\"\n    },\n    {\n      \"name\": \"wasm\",\n      \"description\": \"Querying commands for the CosmWasm wasm module\"\n    }\n  ],\n  \"txModules\": [\n    {\n      \"name\": \"authz\",\n      \"description\": \"Authz transaction subcommands\"\n    },\n    {\n      \"name\": \"bank\",\n      \"description\": \"Bank transaction subcommands\"\n    },\n    {\n      \"name\": \"staking\",\n      \"description\": \"Staking transaction subcommands\"\n    },\n    {\n      \"name\": \"distribution\",\n      \"description\": \"Distribution transaction subcommands\"\n    },\n    {\n      \"name\": \"feegrant\",\n      \"description\": \"Feegrant transaction subcommands\"\n    },\n    {\n      \"name\": \"gov\",\n      \"description\": \"Governance transaction subcommands\"\n    },\n    {\n      \"name\": \"billing\",\n      \"description\": \"Manifest billing transaction subcommands\"\n    },\n    {\n      \"name\": \"manifest\",\n      \"description\": \"Manifest module transaction subcommands\"\n    },\n    {\n      \"name\": \"sku\",\n      \"description\": \"Manifest SKU module transaction subcommands\"\n    },\n    {\n      \"name\": \"group\",\n      \"description\": \"Group module transaction subcommands\"\n    },\n    {\n      \"name\": \"poa\",\n      \"description\": \"Proof-of-Authority (strangelove_ventures) transaction subcommands\"\n    },\n    {\n      \"name\": \"tokenfactory\",\n      \"description\": \"Tokenfactory (osmosis) transaction subcommands\"\n    },\n    {\n      \"name\": \"ibc-transfer\",\n      \"description\": \"IBC fungible-token transfer transaction subcommands\"\n    },\n    {\n      \"name\": \"wasm\",\n      \"description\": \"CosmWasm wasm transaction subcommands\"\n    }\n  ]\n}\n"
+                },
+                {
+                  "type": "text",
+                  "text": "<system-reminder>\n<total_tokens>14999980 tokens left</total_tokens>\n</system-reminder>"
+                }
+              ],
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "screens": [
+            {
+              "label": "probe-result",
+              "screen": "\n ▐▛███▛█   Claude Code v2.1.270\n▝▜██████▀  Sonnet 4.5 · API Usage Billing\n  ▝▝ ▝▝    /var/tmp/pr20-preserve-X3jBjL/claude/work\n\n▎ Debug mode enabled · logging to /var/tmp/pr20-preserve-X3jBjL/claude/debug.log\n  ⎿  SessionStart:startup says: manifest-agent: Agent address: manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7\n     manifest-agent: Active chain: testnet (manifest-preservation-offline)\n     manifest-agent: Gas denom: umfx\n     manifest-agent: Gas-token balance unavailable (timed out); retry the balance check when the chain server is reachable.\n\n❯ PR20_STEP:claude-baseline\n\n  Called plugin:manifest-agent:manifest-chain\n\n● PR20 result for claude-baseline:\n  [{\"tool_use_id\":\"toolu_pr20_6adee870-71ee-4a7a-82ca-ca936c826891\",\"type\":\"tool_result\",\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \"queryModules\": [\\n    {\\n\n  \"name\": \"bank\",\\n      \"description\": \"Querying commands for the bank module\"\\n    },\\n    {\\n      \"name\": \"staking\",\\n      \"description\": \"Querying\n  commands for the staking module\"\\n    },\\n    {\\n      \"name\": \"distribution\",\\n      \"description\": \"Querying commands for the distribution module\"\\n    },\\n\n     {\\n      \"name\": \"gov\",\\n      \"description\": \"Querying commands for the governance module\"\\n    },\\n    {\\n      \"name\": \"authz\",\\n      \"description\":\n  \"Querying commands for the authz module\"\\n    },\\n    {\\n      \"name\": \"feegrant\",\\n      \"description\": \"Querying commands for the feegrant module\"\\n    },\\n\n     {\\n      \"name\": \"mint\",\\n      \"description\": \"Querying commands for the mint module\"\\n    },\\n    {\\n      \"name\": \"auth\",\\n      \"description\":\n  \"Querying commands for the auth module\"\\n    },\\n    {\\n      \"name\": \"billing\",\\n      \"description\": \"Querying commands for the Manifest billing module\"\\n\n   },\\n    {\\n      \"name\": \"sku\",\\n      \"description\": \"Querying commands for the Manifest SKU module\"\\n    },\\n    {\\n      \"name\": \"group\",\\n\n  \"description\": \"Querying commands for the group module\"\\n    },\\n    {\\n      \"name\": \"poa\",\\n      \"description\": \"Querying commands for the\n  Proof-of-Authority (strangelove_ventures) module\"\\n    },\\n    {\\n      \"name\": \"tokenfactory\",\\n      \"description\": \"Querying commands for the tokenfactory\n  (osmosis) module\"\\n    },\\n    {\\n      \"name\": \"ibc-transfer\",\\n      \"description\": \"Querying commands for the IBC fungible-token transfer module\"\\n    },\\n\n     {\\n      \"name\": \"wasm\",\\n      \"description\": \"Querying commands for the CosmWasm wasm module\"\\n    }\\n  ],\\n  \"txModules\": [\\n    {\\n      \"name\":\n  \"authz\",\\n      \"description\": \"Authz transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"bank\",\\n      \"description\": \"Bank transaction subcommands\"\\n\n  },\\n    {\\n      \"name\": \"staking\",\\n      \"description\": \"Staking transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"distribution\",\\n\n  \"description\": \"Distribution transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"feegrant\",\\n      \"description\": \"Feegrant transaction subcommands\"\\n\n  },\\n    {\\n      \"name\": \"gov\",\\n      \"description\": \"Governance transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"billing\",\\n      \"description\":\n  \"Manifest billing transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"manifest\",\\n      \"description\": \"Manifest module transaction subcommands\"\\n    },\\n\n     {\\n      \"name\": \"sku\",\\n      \"description\": \"Manifest SKU module transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"group\",\\n      \"description\":\n  \"Group module transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"poa\",\\n      \"description\": \"Proof-of-Authority (strangelove_ventures) transaction\n  subcommands\"\\n    },\\n    {\\n      \"name\": \"tokenfactory\",\\n      \"description\": \"Tokenfactory (osmosis) transaction subcommands\"\\n    },\\n    {\\n\n  \"name\": \"ibc-transfer\",\\n      \"description\": \"IBC fungible-token transfer transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"wasm\",\\n\n  \"description\": \"CosmWasm wasm transaction subcommands\"\\n    }\\n  ]\\n}\\n\"},{\"type\":\"text\",\"text\":\"<system-reminder>\\n<total_tokens>14999980 tokens\n  left</total_tokens>\\n</system-reminder>\"}],\"cache_control\":{\"type\":\"ephemeral\"}}]\n\n✻ Sautéed for 0s · done 10:57 AM\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏸ manual mode on · ? for shortcuts · ← for agents\n"
+            }
+          ]
+        },
+        "legacyProbe": {
+          "host": "claude",
+          "phase": "legacy",
+          "tool": "list_modules",
+          "readOnlyProbePassed": true,
+          "normalPermissions": true,
+          "at": "2026-09-17T14:53:03.623Z",
+          "toolOutput": [
+            {
+              "tool_use_id": "toolu_pr20_43994ea6-bfa9-4e11-8076-0b7dc75e2517",
+              "type": "tool_result",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "{\n  \"queryModules\": [\n    {\n      \"name\": \"bank\",\n      \"description\": \"Querying commands for the bank module\"\n    },\n    {\n      \"name\": \"staking\",\n      \"description\": \"Querying commands for the staking module\"\n    },\n    {\n      \"name\": \"distribution\",\n      \"description\": \"Querying commands for the distribution module\"\n    },\n    {\n      \"name\": \"gov\",\n      \"description\": \"Querying commands for the governance module\"\n    },\n    {\n      \"name\": \"authz\",\n      \"description\": \"Querying commands for the authz module\"\n    },\n    {\n      \"name\": \"feegrant\",\n      \"description\": \"Querying commands for the feegrant module\"\n    },\n    {\n      \"name\": \"mint\",\n      \"description\": \"Querying commands for the mint module\"\n    },\n    {\n      \"name\": \"auth\",\n      \"description\": \"Querying commands for the auth module\"\n    },\n    {\n      \"name\": \"billing\",\n      \"description\": \"Querying commands for the Manifest billing module\"\n    },\n    {\n      \"name\": \"sku\",\n      \"description\": \"Querying commands for the Manifest SKU module\"\n    },\n    {\n      \"name\": \"group\",\n      \"description\": \"Querying commands for the group module\"\n    },\n    {\n      \"name\": \"poa\",\n      \"description\": \"Querying commands for the Proof-of-Authority (strangelove_ventures) module\"\n    },\n    {\n      \"name\": \"tokenfactory\",\n      \"description\": \"Querying commands for the tokenfactory (osmosis) module\"\n    },\n    {\n      \"name\": \"ibc-transfer\",\n      \"description\": \"Querying commands for the IBC fungible-token transfer module\"\n    },\n    {\n      \"name\": \"wasm\",\n      \"description\": \"Querying commands for the CosmWasm wasm module\"\n    }\n  ],\n  \"txModules\": [\n    {\n      \"name\": \"authz\",\n      \"description\": \"Authz transaction subcommands\"\n    },\n    {\n      \"name\": \"bank\",\n      \"description\": \"Bank transaction subcommands\"\n    },\n    {\n      \"name\": \"staking\",\n      \"description\": \"Staking transaction subcommands\"\n    },\n    {\n      \"name\": \"distribution\",\n      \"description\": \"Distribution transaction subcommands\"\n    },\n    {\n      \"name\": \"feegrant\",\n      \"description\": \"Feegrant transaction subcommands\"\n    },\n    {\n      \"name\": \"gov\",\n      \"description\": \"Governance transaction subcommands\"\n    },\n    {\n      \"name\": \"billing\",\n      \"description\": \"Manifest billing transaction subcommands\"\n    },\n    {\n      \"name\": \"manifest\",\n      \"description\": \"Manifest module transaction subcommands\"\n    },\n    {\n      \"name\": \"sku\",\n      \"description\": \"Manifest SKU module transaction subcommands\"\n    },\n    {\n      \"name\": \"group\",\n      \"description\": \"Group module transaction subcommands\"\n    },\n    {\n      \"name\": \"poa\",\n      \"description\": \"Proof-of-Authority (strangelove_ventures) transaction subcommands\"\n    },\n    {\n      \"name\": \"tokenfactory\",\n      \"description\": \"Tokenfactory (osmosis) transaction subcommands\"\n    },\n    {\n      \"name\": \"ibc-transfer\",\n      \"description\": \"IBC fungible-token transfer transaction subcommands\"\n    },\n    {\n      \"name\": \"wasm\",\n      \"description\": \"CosmWasm wasm transaction subcommands\"\n    }\n  ]\n}\n"
+                },
+                {
+                  "type": "text",
+                  "text": "<system-reminder>\n<total_tokens>14999980 tokens left</total_tokens>\n</system-reminder>"
+                }
+              ],
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "screens": [
+            {
+              "label": "probe-result",
+              "screen": "\n ▐▛███▛█   Claude Code v2.1.270\n▝▜██████▀  Sonnet 4.5 · API Usage Billing\n  ▝▝ ▝▝    /var/tmp/pr20-preserve-X3jBjL/claude/work\n\n▎ Debug mode enabled · logging to /var/tmp/pr20-preserve-X3jBjL/claude/debug.log\n\n❯ PR20_STEP:claude-legacy\n\n  Called plugin:manifest-agent:manifest-chain\n\n● PR20 result for claude-legacy:\n  [{\"tool_use_id\":\"toolu_pr20_43994ea6-bfa9-4e11-8076-0b7dc75e2517\",\"type\":\"tool_result\",\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \"queryModules\": [\\n    {\\n\n  \"name\": \"bank\",\\n      \"description\": \"Querying commands for the bank module\"\\n    },\\n    {\\n      \"name\": \"staking\",\\n      \"description\": \"Querying\n  commands for the staking module\"\\n    },\\n    {\\n      \"name\": \"distribution\",\\n      \"description\": \"Querying commands for the distribution module\"\\n    },\\n\n     {\\n      \"name\": \"gov\",\\n      \"description\": \"Querying commands for the governance module\"\\n    },\\n    {\\n      \"name\": \"authz\",\\n      \"description\":\n  \"Querying commands for the authz module\"\\n    },\\n    {\\n      \"name\": \"feegrant\",\\n      \"description\": \"Querying commands for the feegrant module\"\\n    },\\n\n     {\\n      \"name\": \"mint\",\\n      \"description\": \"Querying commands for the mint module\"\\n    },\\n    {\\n      \"name\": \"auth\",\\n      \"description\":\n  \"Querying commands for the auth module\"\\n    },\\n    {\\n      \"name\": \"billing\",\\n      \"description\": \"Querying commands for the Manifest billing module\"\\n\n   },\\n    {\\n      \"name\": \"sku\",\\n      \"description\": \"Querying commands for the Manifest SKU module\"\\n    },\\n    {\\n      \"name\": \"group\",\\n\n  \"description\": \"Querying commands for the group module\"\\n    },\\n    {\\n      \"name\": \"poa\",\\n      \"description\": \"Querying commands for the\n  Proof-of-Authority (strangelove_ventures) module\"\\n    },\\n    {\\n      \"name\": \"tokenfactory\",\\n      \"description\": \"Querying commands for the tokenfactory\n  (osmosis) module\"\\n    },\\n    {\\n      \"name\": \"ibc-transfer\",\\n      \"description\": \"Querying commands for the IBC fungible-token transfer module\"\\n    },\\n\n     {\\n      \"name\": \"wasm\",\\n      \"description\": \"Querying commands for the CosmWasm wasm module\"\\n    }\\n  ],\\n  \"txModules\": [\\n    {\\n      \"name\":\n  \"authz\",\\n      \"description\": \"Authz transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"bank\",\\n      \"description\": \"Bank transaction subcommands\"\\n\n  },\\n    {\\n      \"name\": \"staking\",\\n      \"description\": \"Staking transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"distribution\",\\n\n  \"description\": \"Distribution transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"feegrant\",\\n      \"description\": \"Feegrant transaction subcommands\"\\n\n  },\\n    {\\n      \"name\": \"gov\",\\n      \"description\": \"Governance transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"billing\",\\n      \"description\":\n  \"Manifest billing transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"manifest\",\\n      \"description\": \"Manifest module transaction subcommands\"\\n    },\\n\n     {\\n      \"name\": \"sku\",\\n      \"description\": \"Manifest SKU module transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"group\",\\n      \"description\":\n  \"Group module transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"poa\",\\n      \"description\": \"Proof-of-Authority (strangelove_ventures) transaction\n  subcommands\"\\n    },\\n    {\\n      \"name\": \"tokenfactory\",\\n      \"description\": \"Tokenfactory (osmosis) transaction subcommands\"\\n    },\\n    {\\n\n  \"name\": \"ibc-transfer\",\\n      \"description\": \"IBC fungible-token transfer transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"wasm\",\\n\n  \"description\": \"CosmWasm wasm transaction subcommands\"\\n    }\\n  ]\\n}\\n\"},{\"type\":\"text\",\"text\":\"<system-reminder>\\n<total_tokens>14999980 tokens\n  left</total_tokens>\\n</system-reminder>\"}],\"cache_control\":{\"type\":\"ephemeral\"}}]\n\n✻ Cooked for 0s · done 10:53 AM\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏸ manual mode on · ? for shortcuts · ← for agents\n"
+            }
+          ]
+        },
+        "credentialFiles": {
+          "credentials/c95a0291bacb56e41226ed87-ce709a48-37ac-4cbe-bb76-c465472ea5ae.json": {
+            "sha256": "a96ce711f898f01eda825027a27c594c0180fc7208e8b7c00c9827baea7981f0",
+            "bytes": 71,
+            "mode": "600"
+          }
+        }
+      },
+      "records": {
+        "baseline": {
+          "host": "claude",
+          "stage": "baseline",
+          "at": "2026-09-17T14:56:41.223Z",
+          "address": "manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7",
+          "files": {
+            "config.json": {
+              "sha256": "2888a36a0c3a0053b02652994d68b06cf086ecce04eff1229a513e38cdf494f9",
+              "bytes": 923,
+              "mode": "600"
+            },
+            "keys/agent-7a2948ea.json": {
+              "sha256": "1bb0d8deecdbe85d2d0bd60c030c7374a99c89092f84a80822e8b51e2d776c82",
+              "bytes": 565,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/4bd4837e-7f86-4c66-8ae4-88e52180725f.json": {
+              "sha256": "08adf29e1057515fb3a029bbafcd5ddf27d2161942f45b26cde4e3c603c83425",
+              "bytes": 710,
+              "mode": "600"
+            },
+            "manifests/addda382-f8eb-4c65-aff3-2842aa9330b9.json": {
+              "sha256": "8535e34dc6fb4e80557881dbf6ec9c035db005244210f04c3c1cdec556902772",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "7b544e5cc03dd060c949a7f08b3372454fe7e98b16a9b98a32f7c84b2973808b",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/c95a0291bacb56e41226ed87-ce709a48-37ac-4cbe-bb76-c465472ea5ae.json": {
+              "sha256": "a96ce711f898f01eda825027a27c594c0180fc7208e8b7c00c9827baea7981f0",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "4bd4837e-7f86-4c66-8ae4-88e52180725f",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 3,
+              "custom_domain": "claude-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "addda382-f8eb-4c65-aff3-2842aa9330b9",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       4bd4837e-7f86-4c66-8ae4-88e52180725f\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   3\nCustom domain:    claude-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       addda382-f8eb-4c65-aff3-2842aa9330b9\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        },
+        "after-startup": {
+          "host": "claude",
+          "stage": "after-startup",
+          "at": "2026-09-17T14:58:04.200Z",
+          "address": "manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7",
+          "files": {
+            "config.json": {
+              "sha256": "2888a36a0c3a0053b02652994d68b06cf086ecce04eff1229a513e38cdf494f9",
+              "bytes": 923,
+              "mode": "600"
+            },
+            "keys/agent-7a2948ea.json": {
+              "sha256": "1bb0d8deecdbe85d2d0bd60c030c7374a99c89092f84a80822e8b51e2d776c82",
+              "bytes": 565,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/4bd4837e-7f86-4c66-8ae4-88e52180725f.json": {
+              "sha256": "08adf29e1057515fb3a029bbafcd5ddf27d2161942f45b26cde4e3c603c83425",
+              "bytes": 710,
+              "mode": "600"
+            },
+            "manifests/addda382-f8eb-4c65-aff3-2842aa9330b9.json": {
+              "sha256": "8535e34dc6fb4e80557881dbf6ec9c035db005244210f04c3c1cdec556902772",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "7b544e5cc03dd060c949a7f08b3372454fe7e98b16a9b98a32f7c84b2973808b",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/c95a0291bacb56e41226ed87-ce709a48-37ac-4cbe-bb76-c465472ea5ae.json": {
+              "sha256": "a96ce711f898f01eda825027a27c594c0180fc7208e8b7c00c9827baea7981f0",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "4bd4837e-7f86-4c66-8ae4-88e52180725f",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 3,
+              "custom_domain": "claude-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "addda382-f8eb-4c65-aff3-2842aa9330b9",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       4bd4837e-7f86-4c66-8ae4-88e52180725f\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   3\nCustom domain:    claude-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       addda382-f8eb-4c65-aff3-2842aa9330b9\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        },
+        "uninstalled": {
+          "host": "claude",
+          "stage": "uninstalled",
+          "at": "2026-09-17T14:58:07.778Z",
+          "address": "manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7",
+          "files": {
+            "config.json": {
+              "sha256": "2888a36a0c3a0053b02652994d68b06cf086ecce04eff1229a513e38cdf494f9",
+              "bytes": 923,
+              "mode": "600"
+            },
+            "keys/agent-7a2948ea.json": {
+              "sha256": "1bb0d8deecdbe85d2d0bd60c030c7374a99c89092f84a80822e8b51e2d776c82",
+              "bytes": 565,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/4bd4837e-7f86-4c66-8ae4-88e52180725f.json": {
+              "sha256": "08adf29e1057515fb3a029bbafcd5ddf27d2161942f45b26cde4e3c603c83425",
+              "bytes": 710,
+              "mode": "600"
+            },
+            "manifests/addda382-f8eb-4c65-aff3-2842aa9330b9.json": {
+              "sha256": "8535e34dc6fb4e80557881dbf6ec9c035db005244210f04c3c1cdec556902772",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "7b544e5cc03dd060c949a7f08b3372454fe7e98b16a9b98a32f7c84b2973808b",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/c95a0291bacb56e41226ed87-ce709a48-37ac-4cbe-bb76-c465472ea5ae.json": {
+              "sha256": "a96ce711f898f01eda825027a27c594c0180fc7208e8b7c00c9827baea7981f0",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "4bd4837e-7f86-4c66-8ae4-88e52180725f",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 3,
+              "custom_domain": "claude-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "addda382-f8eb-4c65-aff3-2842aa9330b9",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       4bd4837e-7f86-4c66-8ae4-88e52180725f\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   3\nCustom domain:    claude-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       addda382-f8eb-4c65-aff3-2842aa9330b9\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        },
+        "after-install": {
+          "host": "claude",
+          "stage": "after-install",
+          "at": "2026-09-17T14:58:20.543Z",
+          "address": "manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7",
+          "files": {
+            "config.json": {
+              "sha256": "2888a36a0c3a0053b02652994d68b06cf086ecce04eff1229a513e38cdf494f9",
+              "bytes": 923,
+              "mode": "600"
+            },
+            "keys/agent-7a2948ea.json": {
+              "sha256": "1bb0d8deecdbe85d2d0bd60c030c7374a99c89092f84a80822e8b51e2d776c82",
+              "bytes": 565,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/4bd4837e-7f86-4c66-8ae4-88e52180725f.json": {
+              "sha256": "08adf29e1057515fb3a029bbafcd5ddf27d2161942f45b26cde4e3c603c83425",
+              "bytes": 710,
+              "mode": "600"
+            },
+            "manifests/addda382-f8eb-4c65-aff3-2842aa9330b9.json": {
+              "sha256": "8535e34dc6fb4e80557881dbf6ec9c035db005244210f04c3c1cdec556902772",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "7b544e5cc03dd060c949a7f08b3372454fe7e98b16a9b98a32f7c84b2973808b",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/c95a0291bacb56e41226ed87-ce709a48-37ac-4cbe-bb76-c465472ea5ae.json": {
+              "sha256": "a96ce711f898f01eda825027a27c594c0180fc7208e8b7c00c9827baea7981f0",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "4bd4837e-7f86-4c66-8ae4-88e52180725f",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 3,
+              "custom_domain": "claude-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "addda382-f8eb-4c65-aff3-2842aa9330b9",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       4bd4837e-7f86-4c66-8ae4-88e52180725f\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   3\nCustom domain:    claude-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       addda382-f8eb-4c65-aff3-2842aa9330b9\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        },
+        "reinstalled": {
+          "host": "claude",
+          "stage": "reinstalled",
+          "at": "2026-09-17T15:00:07.890Z",
+          "address": "manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7",
+          "files": {
+            "config.json": {
+              "sha256": "2888a36a0c3a0053b02652994d68b06cf086ecce04eff1229a513e38cdf494f9",
+              "bytes": 923,
+              "mode": "600"
+            },
+            "keys/agent-7a2948ea.json": {
+              "sha256": "1bb0d8deecdbe85d2d0bd60c030c7374a99c89092f84a80822e8b51e2d776c82",
+              "bytes": 565,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/4bd4837e-7f86-4c66-8ae4-88e52180725f.json": {
+              "sha256": "08adf29e1057515fb3a029bbafcd5ddf27d2161942f45b26cde4e3c603c83425",
+              "bytes": 710,
+              "mode": "600"
+            },
+            "manifests/addda382-f8eb-4c65-aff3-2842aa9330b9.json": {
+              "sha256": "8535e34dc6fb4e80557881dbf6ec9c035db005244210f04c3c1cdec556902772",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "7b544e5cc03dd060c949a7f08b3372454fe7e98b16a9b98a32f7c84b2973808b",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/c95a0291bacb56e41226ed87-ce709a48-37ac-4cbe-bb76-c465472ea5ae.json": {
+              "sha256": "a96ce711f898f01eda825027a27c594c0180fc7208e8b7c00c9827baea7981f0",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "4bd4837e-7f86-4c66-8ae4-88e52180725f",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 3,
+              "custom_domain": "claude-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "addda382-f8eb-4c65-aff3-2842aa9330b9",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       4bd4837e-7f86-4c66-8ae4-88e52180725f\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   3\nCustom domain:    claude-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       addda382-f8eb-4c65-aff3-2842aa9330b9\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        },
+        "repaired": {
+          "host": "claude",
+          "stage": "repaired",
+          "at": "2026-09-17T15:03:07.726Z",
+          "address": "manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7",
+          "files": {
+            "config.json": {
+              "sha256": "2888a36a0c3a0053b02652994d68b06cf086ecce04eff1229a513e38cdf494f9",
+              "bytes": 923,
+              "mode": "600"
+            },
+            "keys/agent-7a2948ea.json": {
+              "sha256": "1bb0d8deecdbe85d2d0bd60c030c7374a99c89092f84a80822e8b51e2d776c82",
+              "bytes": 565,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/4bd4837e-7f86-4c66-8ae4-88e52180725f.json": {
+              "sha256": "08adf29e1057515fb3a029bbafcd5ddf27d2161942f45b26cde4e3c603c83425",
+              "bytes": 710,
+              "mode": "600"
+            },
+            "manifests/addda382-f8eb-4c65-aff3-2842aa9330b9.json": {
+              "sha256": "8535e34dc6fb4e80557881dbf6ec9c035db005244210f04c3c1cdec556902772",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "7b544e5cc03dd060c949a7f08b3372454fe7e98b16a9b98a32f7c84b2973808b",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/c95a0291bacb56e41226ed87-ce709a48-37ac-4cbe-bb76-c465472ea5ae.json": {
+              "sha256": "a96ce711f898f01eda825027a27c594c0180fc7208e8b7c00c9827baea7981f0",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "4bd4837e-7f86-4c66-8ae4-88e52180725f",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 3,
+              "custom_domain": "claude-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "addda382-f8eb-4c65-aff3-2842aa9330b9",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       4bd4837e-7f86-4c66-8ae4-88e52180725f\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   3\nCustom domain:    claude-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       addda382-f8eb-4c65-aff3-2842aa9330b9\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    b76223a747f3aed562f139db298d7b8ebf20b9ffd77389fcb45789774def788c\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        }
+      },
+      "phases": {
+        "baseline": {
+          "host": "claude",
+          "phase": "baseline",
+          "tool": "list_modules",
+          "readOnlyProbePassed": true,
+          "normalPermissions": true,
+          "at": "2026-09-17T14:57:15.071Z",
+          "toolOutput": [
+            {
+              "tool_use_id": "toolu_pr20_6adee870-71ee-4a7a-82ca-ca936c826891",
+              "type": "tool_result",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "{\n  \"queryModules\": [\n    {\n      \"name\": \"bank\",\n      \"description\": \"Querying commands for the bank module\"\n    },\n    {\n      \"name\": \"staking\",\n      \"description\": \"Querying commands for the staking module\"\n    },\n    {\n      \"name\": \"distribution\",\n      \"description\": \"Querying commands for the distribution module\"\n    },\n    {\n      \"name\": \"gov\",\n      \"description\": \"Querying commands for the governance module\"\n    },\n    {\n      \"name\": \"authz\",\n      \"description\": \"Querying commands for the authz module\"\n    },\n    {\n      \"name\": \"feegrant\",\n      \"description\": \"Querying commands for the feegrant module\"\n    },\n    {\n      \"name\": \"mint\",\n      \"description\": \"Querying commands for the mint module\"\n    },\n    {\n      \"name\": \"auth\",\n      \"description\": \"Querying commands for the auth module\"\n    },\n    {\n      \"name\": \"billing\",\n      \"description\": \"Querying commands for the Manifest billing module\"\n    },\n    {\n      \"name\": \"sku\",\n      \"description\": \"Querying commands for the Manifest SKU module\"\n    },\n    {\n      \"name\": \"group\",\n      \"description\": \"Querying commands for the group module\"\n    },\n    {\n      \"name\": \"poa\",\n      \"description\": \"Querying commands for the Proof-of-Authority (strangelove_ventures) module\"\n    },\n    {\n      \"name\": \"tokenfactory\",\n      \"description\": \"Querying commands for the tokenfactory (osmosis) module\"\n    },\n    {\n      \"name\": \"ibc-transfer\",\n      \"description\": \"Querying commands for the IBC fungible-token transfer module\"\n    },\n    {\n      \"name\": \"wasm\",\n      \"description\": \"Querying commands for the CosmWasm wasm module\"\n    }\n  ],\n  \"txModules\": [\n    {\n      \"name\": \"authz\",\n      \"description\": \"Authz transaction subcommands\"\n    },\n    {\n      \"name\": \"bank\",\n      \"description\": \"Bank transaction subcommands\"\n    },\n    {\n      \"name\": \"staking\",\n      \"description\": \"Staking transaction subcommands\"\n    },\n    {\n      \"name\": \"distribution\",\n      \"description\": \"Distribution transaction subcommands\"\n    },\n    {\n      \"name\": \"feegrant\",\n      \"description\": \"Feegrant transaction subcommands\"\n    },\n    {\n      \"name\": \"gov\",\n      \"description\": \"Governance transaction subcommands\"\n    },\n    {\n      \"name\": \"billing\",\n      \"description\": \"Manifest billing transaction subcommands\"\n    },\n    {\n      \"name\": \"manifest\",\n      \"description\": \"Manifest module transaction subcommands\"\n    },\n    {\n      \"name\": \"sku\",\n      \"description\": \"Manifest SKU module transaction subcommands\"\n    },\n    {\n      \"name\": \"group\",\n      \"description\": \"Group module transaction subcommands\"\n    },\n    {\n      \"name\": \"poa\",\n      \"description\": \"Proof-of-Authority (strangelove_ventures) transaction subcommands\"\n    },\n    {\n      \"name\": \"tokenfactory\",\n      \"description\": \"Tokenfactory (osmosis) transaction subcommands\"\n    },\n    {\n      \"name\": \"ibc-transfer\",\n      \"description\": \"IBC fungible-token transfer transaction subcommands\"\n    },\n    {\n      \"name\": \"wasm\",\n      \"description\": \"CosmWasm wasm transaction subcommands\"\n    }\n  ]\n}\n"
+                },
+                {
+                  "type": "text",
+                  "text": "<system-reminder>\n<total_tokens>14999980 tokens left</total_tokens>\n</system-reminder>"
+                }
+              ],
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "screens": [
+            {
+              "label": "probe-result",
+              "screen": "\n ▐▛███▛█   Claude Code v2.1.270\n▝▜██████▀  Sonnet 4.5 · API Usage Billing\n  ▝▝ ▝▝    /var/tmp/pr20-preserve-X3jBjL/claude/work\n\n▎ Debug mode enabled · logging to /var/tmp/pr20-preserve-X3jBjL/claude/debug.log\n  ⎿  SessionStart:startup says: manifest-agent: Agent address: manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7\n     manifest-agent: Active chain: testnet (manifest-preservation-offline)\n     manifest-agent: Gas denom: umfx\n     manifest-agent: Gas-token balance unavailable (timed out); retry the balance check when the chain server is reachable.\n\n❯ PR20_STEP:claude-baseline\n\n  Called plugin:manifest-agent:manifest-chain\n\n● PR20 result for claude-baseline:\n  [{\"tool_use_id\":\"toolu_pr20_6adee870-71ee-4a7a-82ca-ca936c826891\",\"type\":\"tool_result\",\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \"queryModules\": [\\n    {\\n\n  \"name\": \"bank\",\\n      \"description\": \"Querying commands for the bank module\"\\n    },\\n    {\\n      \"name\": \"staking\",\\n      \"description\": \"Querying\n  commands for the staking module\"\\n    },\\n    {\\n      \"name\": \"distribution\",\\n      \"description\": \"Querying commands for the distribution module\"\\n    },\\n\n     {\\n      \"name\": \"gov\",\\n      \"description\": \"Querying commands for the governance module\"\\n    },\\n    {\\n      \"name\": \"authz\",\\n      \"description\":\n  \"Querying commands for the authz module\"\\n    },\\n    {\\n      \"name\": \"feegrant\",\\n      \"description\": \"Querying commands for the feegrant module\"\\n    },\\n\n     {\\n      \"name\": \"mint\",\\n      \"description\": \"Querying commands for the mint module\"\\n    },\\n    {\\n      \"name\": \"auth\",\\n      \"description\":\n  \"Querying commands for the auth module\"\\n    },\\n    {\\n      \"name\": \"billing\",\\n      \"description\": \"Querying commands for the Manifest billing module\"\\n\n   },\\n    {\\n      \"name\": \"sku\",\\n      \"description\": \"Querying commands for the Manifest SKU module\"\\n    },\\n    {\\n      \"name\": \"group\",\\n\n  \"description\": \"Querying commands for the group module\"\\n    },\\n    {\\n      \"name\": \"poa\",\\n      \"description\": \"Querying commands for the\n  Proof-of-Authority (strangelove_ventures) module\"\\n    },\\n    {\\n      \"name\": \"tokenfactory\",\\n      \"description\": \"Querying commands for the tokenfactory\n  (osmosis) module\"\\n    },\\n    {\\n      \"name\": \"ibc-transfer\",\\n      \"description\": \"Querying commands for the IBC fungible-token transfer module\"\\n    },\\n\n     {\\n      \"name\": \"wasm\",\\n      \"description\": \"Querying commands for the CosmWasm wasm module\"\\n    }\\n  ],\\n  \"txModules\": [\\n    {\\n      \"name\":\n  \"authz\",\\n      \"description\": \"Authz transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"bank\",\\n      \"description\": \"Bank transaction subcommands\"\\n\n  },\\n    {\\n      \"name\": \"staking\",\\n      \"description\": \"Staking transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"distribution\",\\n\n  \"description\": \"Distribution transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"feegrant\",\\n      \"description\": \"Feegrant transaction subcommands\"\\n\n  },\\n    {\\n      \"name\": \"gov\",\\n      \"description\": \"Governance transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"billing\",\\n      \"description\":\n  \"Manifest billing transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"manifest\",\\n      \"description\": \"Manifest module transaction subcommands\"\\n    },\\n\n     {\\n      \"name\": \"sku\",\\n      \"description\": \"Manifest SKU module transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"group\",\\n      \"description\":\n  \"Group module transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"poa\",\\n      \"description\": \"Proof-of-Authority (strangelove_ventures) transaction\n  subcommands\"\\n    },\\n    {\\n      \"name\": \"tokenfactory\",\\n      \"description\": \"Tokenfactory (osmosis) transaction subcommands\"\\n    },\\n    {\\n\n  \"name\": \"ibc-transfer\",\\n      \"description\": \"IBC fungible-token transfer transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"wasm\",\\n\n  \"description\": \"CosmWasm wasm transaction subcommands\"\\n    }\\n  ]\\n}\\n\"},{\"type\":\"text\",\"text\":\"<system-reminder>\\n<total_tokens>14999980 tokens\n  left</total_tokens>\\n</system-reminder>\"}],\"cache_control\":{\"type\":\"ephemeral\"}}]\n\n✻ Sautéed for 0s · done 10:57 AM\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏸ manual mode on · ? for shortcuts · ← for agents\n"
+            }
+          ]
+        },
+        "reinstalled": {
+          "host": "claude",
+          "phase": "reinstalled",
+          "tool": "list_modules",
+          "readOnlyProbePassed": true,
+          "normalPermissions": true,
+          "at": "2026-09-17T14:59:48.099Z",
+          "toolOutput": [
+            {
+              "tool_use_id": "toolu_pr20_9adaa7c7-f0d0-4c27-ada5-9d376d0bd145",
+              "type": "tool_result",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "{\n  \"queryModules\": [\n    {\n      \"name\": \"bank\",\n      \"description\": \"Querying commands for the bank module\"\n    },\n    {\n      \"name\": \"staking\",\n      \"description\": \"Querying commands for the staking module\"\n    },\n    {\n      \"name\": \"distribution\",\n      \"description\": \"Querying commands for the distribution module\"\n    },\n    {\n      \"name\": \"gov\",\n      \"description\": \"Querying commands for the governance module\"\n    },\n    {\n      \"name\": \"authz\",\n      \"description\": \"Querying commands for the authz module\"\n    },\n    {\n      \"name\": \"feegrant\",\n      \"description\": \"Querying commands for the feegrant module\"\n    },\n    {\n      \"name\": \"mint\",\n      \"description\": \"Querying commands for the mint module\"\n    },\n    {\n      \"name\": \"auth\",\n      \"description\": \"Querying commands for the auth module\"\n    },\n    {\n      \"name\": \"billing\",\n      \"description\": \"Querying commands for the Manifest billing module\"\n    },\n    {\n      \"name\": \"sku\",\n      \"description\": \"Querying commands for the Manifest SKU module\"\n    },\n    {\n      \"name\": \"group\",\n      \"description\": \"Querying commands for the group module\"\n    },\n    {\n      \"name\": \"poa\",\n      \"description\": \"Querying commands for the Proof-of-Authority (strangelove_ventures) module\"\n    },\n    {\n      \"name\": \"tokenfactory\",\n      \"description\": \"Querying commands for the tokenfactory (osmosis) module\"\n    },\n    {\n      \"name\": \"ibc-transfer\",\n      \"description\": \"Querying commands for the IBC fungible-token transfer module\"\n    },\n    {\n      \"name\": \"wasm\",\n      \"description\": \"Querying commands for the CosmWasm wasm module\"\n    }\n  ],\n  \"txModules\": [\n    {\n      \"name\": \"authz\",\n      \"description\": \"Authz transaction subcommands\"\n    },\n    {\n      \"name\": \"bank\",\n      \"description\": \"Bank transaction subcommands\"\n    },\n    {\n      \"name\": \"staking\",\n      \"description\": \"Staking transaction subcommands\"\n    },\n    {\n      \"name\": \"distribution\",\n      \"description\": \"Distribution transaction subcommands\"\n    },\n    {\n      \"name\": \"feegrant\",\n      \"description\": \"Feegrant transaction subcommands\"\n    },\n    {\n      \"name\": \"gov\",\n      \"description\": \"Governance transaction subcommands\"\n    },\n    {\n      \"name\": \"billing\",\n      \"description\": \"Manifest billing transaction subcommands\"\n    },\n    {\n      \"name\": \"manifest\",\n      \"description\": \"Manifest module transaction subcommands\"\n    },\n    {\n      \"name\": \"sku\",\n      \"description\": \"Manifest SKU module transaction subcommands\"\n    },\n    {\n      \"name\": \"group\",\n      \"description\": \"Group module transaction subcommands\"\n    },\n    {\n      \"name\": \"poa\",\n      \"description\": \"Proof-of-Authority (strangelove_ventures) transaction subcommands\"\n    },\n    {\n      \"name\": \"tokenfactory\",\n      \"description\": \"Tokenfactory (osmosis) transaction subcommands\"\n    },\n    {\n      \"name\": \"ibc-transfer\",\n      \"description\": \"IBC fungible-token transfer transaction subcommands\"\n    },\n    {\n      \"name\": \"wasm\",\n      \"description\": \"CosmWasm wasm transaction subcommands\"\n    }\n  ]\n}\n"
+                },
+                {
+                  "type": "text",
+                  "text": "<system-reminder>\n<total_tokens>14999980 tokens left</total_tokens>\n</system-reminder>"
+                }
+              ],
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "screens": [
+            {
+              "label": "probe-result",
+              "screen": "\n ▐▛███▛█   Claude Code v2.1.270\n▝▜██████▀  Sonnet 4.5 · API Usage Billing\n  ▝▝ ▝▝    /var/tmp/pr20-preserve-X3jBjL/claude/work\n\n▎ Debug mode enabled · logging to /var/tmp/pr20-preserve-X3jBjL/claude/debug.log\n  ⎿  SessionStart:startup says: manifest-agent: Agent address: manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7\n     manifest-agent: Active chain: testnet (manifest-preservation-offline)\n     manifest-agent: Gas denom: umfx\n     manifest-agent: Gas-token balance unavailable (timed out); retry the balance check when the chain server is reachable.\n\n❯ PR20_STEP:claude-reinstalled\n\n  Called plugin:manifest-agent:manifest-chain\n\n● PR20 result for claude-reinstalled:\n  [{\"tool_use_id\":\"toolu_pr20_9adaa7c7-f0d0-4c27-ada5-9d376d0bd145\",\"type\":\"tool_result\",\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \"queryModules\": [\\n    {\\n\n  \"name\": \"bank\",\\n      \"description\": \"Querying commands for the bank module\"\\n    },\\n    {\\n      \"name\": \"staking\",\\n      \"description\": \"Querying\n  commands for the staking module\"\\n    },\\n    {\\n      \"name\": \"distribution\",\\n      \"description\": \"Querying commands for the distribution module\"\\n    },\\n\n     {\\n      \"name\": \"gov\",\\n      \"description\": \"Querying commands for the governance module\"\\n    },\\n    {\\n      \"name\": \"authz\",\\n      \"description\":\n  \"Querying commands for the authz module\"\\n    },\\n    {\\n      \"name\": \"feegrant\",\\n      \"description\": \"Querying commands for the feegrant module\"\\n    },\\n\n     {\\n      \"name\": \"mint\",\\n      \"description\": \"Querying commands for the mint module\"\\n    },\\n    {\\n      \"name\": \"auth\",\\n      \"description\":\n  \"Querying commands for the auth module\"\\n    },\\n    {\\n      \"name\": \"billing\",\\n      \"description\": \"Querying commands for the Manifest billing module\"\\n\n   },\\n    {\\n      \"name\": \"sku\",\\n      \"description\": \"Querying commands for the Manifest SKU module\"\\n    },\\n    {\\n      \"name\": \"group\",\\n\n  \"description\": \"Querying commands for the group module\"\\n    },\\n    {\\n      \"name\": \"poa\",\\n      \"description\": \"Querying commands for the\n  Proof-of-Authority (strangelove_ventures) module\"\\n    },\\n    {\\n      \"name\": \"tokenfactory\",\\n      \"description\": \"Querying commands for the tokenfactory\n  (osmosis) module\"\\n    },\\n    {\\n      \"name\": \"ibc-transfer\",\\n      \"description\": \"Querying commands for the IBC fungible-token transfer module\"\\n    },\\n\n     {\\n      \"name\": \"wasm\",\\n      \"description\": \"Querying commands for the CosmWasm wasm module\"\\n    }\\n  ],\\n  \"txModules\": [\\n    {\\n      \"name\":\n  \"authz\",\\n      \"description\": \"Authz transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"bank\",\\n      \"description\": \"Bank transaction subcommands\"\\n\n  },\\n    {\\n      \"name\": \"staking\",\\n      \"description\": \"Staking transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"distribution\",\\n\n  \"description\": \"Distribution transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"feegrant\",\\n      \"description\": \"Feegrant transaction subcommands\"\\n\n  },\\n    {\\n      \"name\": \"gov\",\\n      \"description\": \"Governance transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"billing\",\\n      \"description\":\n  \"Manifest billing transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"manifest\",\\n      \"description\": \"Manifest module transaction subcommands\"\\n    },\\n\n     {\\n      \"name\": \"sku\",\\n      \"description\": \"Manifest SKU module transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"group\",\\n      \"description\":\n  \"Group module transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"poa\",\\n      \"description\": \"Proof-of-Authority (strangelove_ventures) transaction\n  subcommands\"\\n    },\\n    {\\n      \"name\": \"tokenfactory\",\\n      \"description\": \"Tokenfactory (osmosis) transaction subcommands\"\\n    },\\n    {\\n\n  \"name\": \"ibc-transfer\",\\n      \"description\": \"IBC fungible-token transfer transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"wasm\",\\n\n  \"description\": \"CosmWasm wasm transaction subcommands\"\\n    }\\n  ]\\n}\\n\"},{\"type\":\"text\",\"text\":\"<system-reminder>\\n<total_tokens>14999980 tokens\n  left</total_tokens>\\n</system-reminder>\"}],\"cache_control\":{\"type\":\"ephemeral\"}}]\n\n✻ Baked for 0s · done 10:59 AM\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏸ manual mode on · ? for shortcuts · ← for agents\n"
+            }
+          ]
+        },
+        "repaired": {
+          "host": "claude",
+          "phase": "repaired",
+          "tool": "list_modules",
+          "readOnlyProbePassed": true,
+          "normalPermissions": true,
+          "at": "2026-09-17T15:02:37.711Z",
+          "toolOutput": [
+            {
+              "tool_use_id": "toolu_pr20_5263de70-8fd5-4d8a-b672-4b2b266a7704",
+              "type": "tool_result",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "{\n  \"queryModules\": [\n    {\n      \"name\": \"bank\",\n      \"description\": \"Querying commands for the bank module\"\n    },\n    {\n      \"name\": \"staking\",\n      \"description\": \"Querying commands for the staking module\"\n    },\n    {\n      \"name\": \"distribution\",\n      \"description\": \"Querying commands for the distribution module\"\n    },\n    {\n      \"name\": \"gov\",\n      \"description\": \"Querying commands for the governance module\"\n    },\n    {\n      \"name\": \"authz\",\n      \"description\": \"Querying commands for the authz module\"\n    },\n    {\n      \"name\": \"feegrant\",\n      \"description\": \"Querying commands for the feegrant module\"\n    },\n    {\n      \"name\": \"mint\",\n      \"description\": \"Querying commands for the mint module\"\n    },\n    {\n      \"name\": \"auth\",\n      \"description\": \"Querying commands for the auth module\"\n    },\n    {\n      \"name\": \"billing\",\n      \"description\": \"Querying commands for the Manifest billing module\"\n    },\n    {\n      \"name\": \"sku\",\n      \"description\": \"Querying commands for the Manifest SKU module\"\n    },\n    {\n      \"name\": \"group\",\n      \"description\": \"Querying commands for the group module\"\n    },\n    {\n      \"name\": \"poa\",\n      \"description\": \"Querying commands for the Proof-of-Authority (strangelove_ventures) module\"\n    },\n    {\n      \"name\": \"tokenfactory\",\n      \"description\": \"Querying commands for the tokenfactory (osmosis) module\"\n    },\n    {\n      \"name\": \"ibc-transfer\",\n      \"description\": \"Querying commands for the IBC fungible-token transfer module\"\n    },\n    {\n      \"name\": \"wasm\",\n      \"description\": \"Querying commands for the CosmWasm wasm module\"\n    }\n  ],\n  \"txModules\": [\n    {\n      \"name\": \"authz\",\n      \"description\": \"Authz transaction subcommands\"\n    },\n    {\n      \"name\": \"bank\",\n      \"description\": \"Bank transaction subcommands\"\n    },\n    {\n      \"name\": \"staking\",\n      \"description\": \"Staking transaction subcommands\"\n    },\n    {\n      \"name\": \"distribution\",\n      \"description\": \"Distribution transaction subcommands\"\n    },\n    {\n      \"name\": \"feegrant\",\n      \"description\": \"Feegrant transaction subcommands\"\n    },\n    {\n      \"name\": \"gov\",\n      \"description\": \"Governance transaction subcommands\"\n    },\n    {\n      \"name\": \"billing\",\n      \"description\": \"Manifest billing transaction subcommands\"\n    },\n    {\n      \"name\": \"manifest\",\n      \"description\": \"Manifest module transaction subcommands\"\n    },\n    {\n      \"name\": \"sku\",\n      \"description\": \"Manifest SKU module transaction subcommands\"\n    },\n    {\n      \"name\": \"group\",\n      \"description\": \"Group module transaction subcommands\"\n    },\n    {\n      \"name\": \"poa\",\n      \"description\": \"Proof-of-Authority (strangelove_ventures) transaction subcommands\"\n    },\n    {\n      \"name\": \"tokenfactory\",\n      \"description\": \"Tokenfactory (osmosis) transaction subcommands\"\n    },\n    {\n      \"name\": \"ibc-transfer\",\n      \"description\": \"IBC fungible-token transfer transaction subcommands\"\n    },\n    {\n      \"name\": \"wasm\",\n      \"description\": \"CosmWasm wasm transaction subcommands\"\n    }\n  ]\n}\n"
+                },
+                {
+                  "type": "text",
+                  "text": "<system-reminder>\n<total_tokens>14999980 tokens left</total_tokens>\n</system-reminder>"
+                }
+              ],
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "screens": [
+            {
+              "label": "probe-result",
+              "screen": "\n ▐▛███▛█   Claude Code v2.1.270\n▝▜██████▀  Sonnet 4.5 · API Usage Billing\n  ▝▝ ▝▝    /var/tmp/pr20-preserve-X3jBjL/claude/work\n\n▎ Debug mode enabled · logging to /var/tmp/pr20-preserve-X3jBjL/claude/debug.log\n  ⎿  SessionStart:startup says: manifest-agent: Agent address: manifest18dlkgj6v266v7mqe2y9wdq9vpqtcc7fj8f5dh7\n     manifest-agent: Active chain: testnet (manifest-preservation-offline)\n     manifest-agent: Gas denom: umfx\n     manifest-agent: Gas-token balance unavailable (timed out); retry the balance check when the chain server is reachable.\n\n❯ PR20_STEP:claude-repaired\n\n  Called plugin:manifest-agent:manifest-chain\n\n● PR20 result for claude-repaired:\n  [{\"tool_use_id\":\"toolu_pr20_5263de70-8fd5-4d8a-b672-4b2b266a7704\",\"type\":\"tool_result\",\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \"queryModules\": [\\n    {\\n\n  \"name\": \"bank\",\\n      \"description\": \"Querying commands for the bank module\"\\n    },\\n    {\\n      \"name\": \"staking\",\\n      \"description\": \"Querying\n  commands for the staking module\"\\n    },\\n    {\\n      \"name\": \"distribution\",\\n      \"description\": \"Querying commands for the distribution module\"\\n    },\\n\n     {\\n      \"name\": \"gov\",\\n      \"description\": \"Querying commands for the governance module\"\\n    },\\n    {\\n      \"name\": \"authz\",\\n      \"description\":\n  \"Querying commands for the authz module\"\\n    },\\n    {\\n      \"name\": \"feegrant\",\\n      \"description\": \"Querying commands for the feegrant module\"\\n    },\\n\n     {\\n      \"name\": \"mint\",\\n      \"description\": \"Querying commands for the mint module\"\\n    },\\n    {\\n      \"name\": \"auth\",\\n      \"description\":\n  \"Querying commands for the auth module\"\\n    },\\n    {\\n      \"name\": \"billing\",\\n      \"description\": \"Querying commands for the Manifest billing module\"\\n\n   },\\n    {\\n      \"name\": \"sku\",\\n      \"description\": \"Querying commands for the Manifest SKU module\"\\n    },\\n    {\\n      \"name\": \"group\",\\n\n  \"description\": \"Querying commands for the group module\"\\n    },\\n    {\\n      \"name\": \"poa\",\\n      \"description\": \"Querying commands for the\n  Proof-of-Authority (strangelove_ventures) module\"\\n    },\\n    {\\n      \"name\": \"tokenfactory\",\\n      \"description\": \"Querying commands for the tokenfactory\n  (osmosis) module\"\\n    },\\n    {\\n      \"name\": \"ibc-transfer\",\\n      \"description\": \"Querying commands for the IBC fungible-token transfer module\"\\n    },\\n\n     {\\n      \"name\": \"wasm\",\\n      \"description\": \"Querying commands for the CosmWasm wasm module\"\\n    }\\n  ],\\n  \"txModules\": [\\n    {\\n      \"name\":\n  \"authz\",\\n      \"description\": \"Authz transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"bank\",\\n      \"description\": \"Bank transaction subcommands\"\\n\n  },\\n    {\\n      \"name\": \"staking\",\\n      \"description\": \"Staking transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"distribution\",\\n\n  \"description\": \"Distribution transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"feegrant\",\\n      \"description\": \"Feegrant transaction subcommands\"\\n\n  },\\n    {\\n      \"name\": \"gov\",\\n      \"description\": \"Governance transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"billing\",\\n      \"description\":\n  \"Manifest billing transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"manifest\",\\n      \"description\": \"Manifest module transaction subcommands\"\\n    },\\n\n     {\\n      \"name\": \"sku\",\\n      \"description\": \"Manifest SKU module transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"group\",\\n      \"description\":\n  \"Group module transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"poa\",\\n      \"description\": \"Proof-of-Authority (strangelove_ventures) transaction\n  subcommands\"\\n    },\\n    {\\n      \"name\": \"tokenfactory\",\\n      \"description\": \"Tokenfactory (osmosis) transaction subcommands\"\\n    },\\n    {\\n\n  \"name\": \"ibc-transfer\",\\n      \"description\": \"IBC fungible-token transfer transaction subcommands\"\\n    },\\n    {\\n      \"name\": \"wasm\",\\n\n  \"description\": \"CosmWasm wasm transaction subcommands\"\\n    }\\n  ]\\n}\\n\"},{\"type\":\"text\",\"text\":\"<system-reminder>\\n<total_tokens>14999980 tokens\n  left</total_tokens>\\n</system-reminder>\"}],\"cache_control\":{\"type\":\"ephemeral\"}}]\n\n✻ Worked for 0s · done 11:02 AM\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏸ manual mode on · ? for shortcuts · ← for agents\n"
+            }
+          ]
+        }
+      },
+      "reinstallCommands": [
+        {
+          "at": "2026-09-17T14:58:06.874Z",
+          "command": [
+            "claude",
+            "plugin",
+            "uninstall",
+            "manifest-agent@pr20-preserve",
+            "--keep-data",
+            "--json"
+          ],
+          "exitCode": 0,
+          "stdout": "{\"command\":\"uninstall\",\"outcome\":\"ok\",\"plugin\":\"manifest-agent@pr20-preserve\",\"pluginId\":\"manifest-agent@pr20-preserve\",\"scope\":\"user\",\"keptData\":true,\"message\":\"Successfully uninstalled plugin: manifest-agent (scope: user)\"}\n",
+          "stderr": ""
+        },
+        {
+          "at": "2026-09-17T14:58:08.650Z",
+          "command": [
+            "<node>",
+            "/home/fmorency/dev/manifest-agent-plugin/dist/pr20-preservation/preserve.cjs",
+            "verify",
+            "/var/tmp/pr20-preserve-X3jBjL",
+            "claude",
+            "uninstalled"
+          ],
+          "exitCode": 0,
+          "stdout": "{\"host\":\"claude\",\"stage\":\"uninstalled\",\"files\":7,\"signing\":true,\"readers\":true}\n",
+          "stderr": ""
+        },
+        {
+          "at": "2026-09-17T14:58:08.723Z",
+          "command": [
+            "claude",
+            "plugin",
+            "install",
+            "manifest-agent@pr20-preserve",
+            "--json"
+          ],
+          "exitCode": 0,
+          "stdout": "{\"command\":\"install\",\"outcome\":\"ok\",\"plugin\":\"manifest-agent@pr20-preserve\",\"pluginId\":\"manifest-agent@pr20-preserve\",\"scope\":\"user\",\"message\":\"Successfully installed plugin: manifest-agent@pr20-preserve (scope: user)\"}\n",
+          "stderr": ""
+        },
+        {
+          "at": "2026-09-17T14:58:21.104Z",
+          "command": [
+            "<node>",
+            "/home/fmorency/dev/manifest-agent-plugin/dist/pr20-preservation/preserve.cjs",
+            "verify",
+            "/var/tmp/pr20-preserve-X3jBjL",
+            "claude",
+            "after-install"
+          ],
+          "exitCode": 0,
+          "stdout": "{\"host\":\"claude\",\"stage\":\"after-install\",\"files\":7,\"signing\":true,\"readers\":true}\n",
+          "stderr": ""
+        }
+      ],
+      "runtimeRepair": {
+        "at": "2026-09-17T15:00:11.017Z",
+        "relative": "node_modules/@manifest-network/manifest-mcp-node/package.json",
+        "originalSha256": "94455b23c6ba250ea57229bb1b67e02bbd5f3802db9bb2316d36bf41de5b9853",
+        "before": {
+          "ready": true,
+          "fingerprint": "aa05c57ae9f1a0dbd2f24cc858dd3fce478f259146d1fd754401908e4dc6354c"
+        },
+        "completionSha256": "afa272458fe11df5849314f269946c929dd07af328667ec7fb9e83fefcac75a7",
+        "after": {
+          "ready": false,
+          "reason": "Missing or invalid installed dependency: node_modules/@manifest-network/manifest-mcp-node",
+          "fingerprint": "aa05c57ae9f1a0dbd2f24cc858dd3fce478f259146d1fd754401908e4dc6354c"
+        },
+        "completionRecordLeftInPlace": true,
+        "restoredSha256": "94455b23c6ba250ea57229bb1b67e02bbd5f3802db9bb2316d36bf41de5b9853",
+        "afterRepair": {
+          "ready": true,
+          "fingerprint": "aa05c57ae9f1a0dbd2f24cc858dd3fce478f259146d1fd754401908e4dc6354c"
+        }
+      },
+      "checks": {
+        "sevenFilesByteAndModeIdentical": true,
+        "credentialFileByteAndModeIdentical": true,
+        "offlineWalletSigning": true,
+        "savedManifestReadersRedactCanary": true,
+        "historicalJournalReadable": true,
+        "automaticRuntimeRepair": true,
+        "hostDataRootsSeparate": true
+      }
+    },
+    "codex": {
+      "hostVersion": "codex-cli 0.154.0",
+      "dataRoot": "/var/tmp/pr20-preserve-X3jBjL/codex/home/.local/share/manifest-agent/codex",
+      "installedPluginRoot": "/var/tmp/pr20-preserve-X3jBjL/codex/config/plugins/cache/manifest/manifest-agent/0.5.0",
+      "walletAddress": "manifest1swn2dcfwk648lph026s7sclnwfnngs583q0hwz",
+      "installedPackage": {
+        "files": 80,
+        "sha256": "d8115146f210ebd1df48d5225e58f3c8057db71490e75dc4ae6a98e7ce5ce25b",
+        "installedSourceMatchesPreparedPackage": true
+      },
+      "legacyUpgrade": {
+        "fromVersion": "0.4.0",
+        "toVersion": "0.5.0",
+        "sourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
+        "legacySourceCommit": "06870ea68d07855305f3c4eb229ec61b6fa1e949",
+        "nativeUpgradeCommands": [
+          {
+            "at": "2026-09-17T14:55:06.988Z",
+            "command": [
+              "codex",
+              "plugin",
+              "remove",
+              "manifest-agent@manifest",
+              "--json"
+            ],
+            "exitCode": 0,
+            "stdout": "{\n  \"pluginId\": \"manifest-agent@manifest\",\n  \"name\": \"manifest-agent\",\n  \"marketplaceName\": \"manifest\"\n}\n",
+            "stderr": ""
+          },
+          {
+            "at": "2026-09-17T14:55:07.636Z",
+            "command": [
+              "codex",
+              "plugin",
+              "add",
+              "manifest-agent@manifest",
+              "--json"
+            ],
+            "exitCode": 0,
+            "stdout": "{\n  \"pluginId\": \"manifest-agent@manifest\",\n  \"name\": \"manifest-agent\",\n  \"marketplaceName\": \"manifest\",\n  \"version\": \"0.5.0\",\n  \"installedPath\": \"/var/tmp/pr20-preserve-X3jBjL/codex/config/plugins/cache/manifest/manifest-agent/0.5.0\",\n  \"authPolicy\": \"ON_INSTALL\"\n}\n",
+            "stderr": ""
+          }
+        ],
+        "nativeInstalledVersion": "0.5.0",
+        "legacyBytesPreservedThroughNativeInstall": true,
+        "at": "2026-09-17T14:57:19.231Z",
+        "automaticMigration": true,
+        "onlyConfigCredentialRepresentationChanged": true,
+        "sixNonConfigFilesPreserved": true,
+        "plaintextPasswordRemoved": true,
+        "credentialBackend": "file",
+        "originalWalletAddress": "manifest1swn2dcfwk648lph026s7sclnwfnngs583q0hwz",
+        "offlineKeyDecryptionAndSigning": true,
+        "currentProbe": {
+          "host": "codex",
+          "phase": "baseline",
+          "tool": "list_modules",
+          "readOnlyProbePassed": true,
+          "normalPermissions": true,
+          "at": "2026-09-17T14:57:16.396Z",
+          "toolOutput": [
+            {
+              "type": "custom_tool_call_output",
+              "id": "ctco_01a0afdf-362e-7a41-a005-ec56e7c299c9",
+              "call_id": "pr20_1d8a8950-d2f0-47ad-88c9-0fca1fda0e38",
+              "output": [
+                {
+                  "type": "input_text",
+                  "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"
+                },
+                {
+                  "type": "input_text",
+                  "text": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"queryModules\\\": [\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Querying commands for the bank module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Querying commands for the staking module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\": \\\"Querying commands for the distribution module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Querying commands for the governance module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Querying commands for the authz module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Querying commands for the feegrant module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"mint\\\",\\n      \\\"description\\\": \\\"Querying commands for the mint module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"auth\\\",\\n      \\\"description\\\": \\\"Querying commands for the auth module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest billing module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest SKU module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Querying commands for the group module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Querying commands for the Proof-of-Authority (strangelove_ventures) module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Querying commands for the tokenfactory (osmosis) module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"Querying commands for the IBC fungible-token transfer module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"Querying commands for the CosmWasm wasm module\\\"\\n    }\\n  ],\\n  \\\"txModules\\\": [\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Authz transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Bank transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Staking transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\": \\\"Distribution transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Feegrant transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Governance transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Manifest billing transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"manifest\\\",\\n      \\\"description\\\": \\\"Manifest module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Manifest SKU module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Group module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Proof-of-Authority (strangelove_ventures) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Tokenfactory (osmosis) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"IBC fungible-token transfer transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"CosmWasm wasm transaction subcommands\\\"\\n    }\\n  ]\\n}\"}]}"
+                }
+              ]
+            }
+          ],
+          "screens": [
+            {
+              "label": "probe-result",
+              "screen": "\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: /var/tmp/pr20-preserve-X3jBjL/codex/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n⚠ 1 MCP startup issue · ctrl + t for details\n\n\n› PR20_STEP:codex-baseline\n\n\n• Called manifest-chain.list_modules({})\n  └ {\"queryModules\": [{\"name\": \"bank\", \"description\": \"Querying commands for the bank module\"}, {\"name\": \"staking\", \"description\": \"Querying commands for the\n        staking module\"}, {\"name\": \"distribution\", \"description\": \"Querying commands for the distribution module\"}, {\"name\": \"gov\", \"description\": \"Querying\n        commands for the governance module\"}, {\"name\": \"authz\", \"description\": \"Querying commands for the authz module\"}, {\"name\": \"feegrant\", \"description\":\n        \"Querying commands for the feegrant module\"}, {\"name\": \"mint\", \"description\": \"Querying commands for the mint module\"}, {\"name\": \"auth\", \"description\":\n        \"Querying commands for the auth module\"}, {\"name\": \"billing\", \"description\": \"Querying commands for the Manifest billing module\"}, {\"name\": \"sku\",\n        \"description\": \"Quer...\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• PR20 result for codex-baseline:\n  [{\"type\":\"custom_tool_call_output\",\"id\":\"ctco_01a0afdf-362e-7a41-a005-ec56e7c299c9\",\"call_id\":\"pr20_1d8a8950-d2f0-47ad-88c9-0fca1fda0e38\",\"output\":\n  [{\"type\":\"input_text\",\"text\":\"Script completed\\nWall time 0.1 seconds\\nOutput:\\n\"},{\"type\":\"input_text\",\"text\":\"{\"content\":[{\"type\":\"text\",\"text\":\"{\\n\n  \\\"queryModules\\\": [\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Querying commands for the bank module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"staking\\\",\\n      \\\"description\\\": \\\"Querying commands for the staking module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\":\n  \\\"Querying commands for the distribution module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Querying commands for the governance\n  module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Querying commands for the authz module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Querying commands for the feegrant module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"mint\\\",\\n      \\\"description\\\":\n  \\\"Querying commands for the mint module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"auth\\\",\\n      \\\"description\\\": \\\"Querying commands for the auth module\\\"\\n    },\n  \\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest billing module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n\n  \\\"description\\\": \\\"Querying commands for the Manifest SKU module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Querying commands for\n  the group module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Querying commands for the Proof-of-Authority (strangelove_ventures)\n  module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Querying commands for the tokenfactory (osmosis) module\\\"\\n    },\\n\n  {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"Querying commands for the IBC fungible-token transfer module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"wasm\\\",\\n      \\\"description\\\": \\\"Querying commands for the CosmWasm wasm module\\\"\\n    }\\n  ],\\n  \\\"txModules\\\": [\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n\n  \\\"description\\\": \\\"Authz transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Bank transaction subcommands\\\"\\n    },\n  \\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Staking transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n\n  \\\"description\\\": \\\"Distribution transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Feegrant transaction\n  subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Governance transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"billing\\\",\\n      \\\"description\\\": \\\"Manifest billing transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"manifest\\\",\\n      \\\"description\\\":\n  \\\"Manifest module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Manifest SKU module transaction\n  subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Group module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"poa\\\",\\n      \\\"description\\\": \\\"Proof-of-Authority (strangelove_ventures) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n\n  \\\"description\\\": \\\"Tokenfactory (osmosis) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"IBC fungible-\n  token transfer transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"CosmWasm wasm transaction\n  subcommands\\\"\\n    }\\n  ]\\n}\"}]}\"}]}]\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · /var/tmp/pr20-preserve-X3jBjL/codex/work · PR20 acceptance\n"
+            }
+          ]
+        },
+        "legacyProbe": {
+          "host": "codex",
+          "phase": "legacy",
+          "tool": "list_modules",
+          "readOnlyProbePassed": true,
+          "normalPermissions": true,
+          "at": "2026-09-17T14:53:50.828Z",
+          "toolOutput": [
+            {
+              "type": "custom_tool_call_output",
+              "id": "ctco_01a0afdc-1307-78a1-85a0-66425a13c08f",
+              "call_id": "pr20_addffcfb-725d-42b1-b678-54710dd1bf55",
+              "output": [
+                {
+                  "type": "input_text",
+                  "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"
+                },
+                {
+                  "type": "input_text",
+                  "text": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"queryModules\\\": [\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Querying commands for the bank module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Querying commands for the staking module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\": \\\"Querying commands for the distribution module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Querying commands for the governance module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Querying commands for the authz module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Querying commands for the feegrant module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"mint\\\",\\n      \\\"description\\\": \\\"Querying commands for the mint module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"auth\\\",\\n      \\\"description\\\": \\\"Querying commands for the auth module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest billing module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest SKU module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Querying commands for the group module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Querying commands for the Proof-of-Authority (strangelove_ventures) module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Querying commands for the tokenfactory (osmosis) module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"Querying commands for the IBC fungible-token transfer module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"Querying commands for the CosmWasm wasm module\\\"\\n    }\\n  ],\\n  \\\"txModules\\\": [\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Authz transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Bank transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Staking transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\": \\\"Distribution transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Feegrant transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Governance transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Manifest billing transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"manifest\\\",\\n      \\\"description\\\": \\\"Manifest module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Manifest SKU module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Group module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Proof-of-Authority (strangelove_ventures) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Tokenfactory (osmosis) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"IBC fungible-token transfer transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"CosmWasm wasm transaction subcommands\\\"\\n    }\\n  ]\\n}\"}]}"
+                }
+              ]
+            }
+          ],
+          "screens": [
+            {
+              "label": "probe-result",
+              "screen": "\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: /var/tmp/pr20-preserve-X3jBjL/codex/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Use the OpenAI docs MCP for API questions; enable it with codex mcp add openaiDeveloperDocs --url https://developers.openai.com/mcp.\n\n⚠ 1 MCP startup issue · ctrl + t for details\n\n\n› PR20_STEP:codex-legacy\n\n\n• Called manifest-chain.list_modules({})\n  └ {\"queryModules\": [{\"name\": \"bank\", \"description\": \"Querying commands for the bank module\"}, {\"name\": \"staking\", \"description\": \"Querying commands for the\n        staking module\"}, {\"name\": \"distribution\", \"description\": \"Querying commands for the distribution module\"}, {\"name\": \"gov\", \"description\": \"Querying\n        commands for the governance module\"}, {\"name\": \"authz\", \"description\": \"Querying commands for the authz module\"}, {\"name\": \"feegrant\", \"description\":\n        \"Querying commands for the feegrant module\"}, {\"name\": \"mint\", \"description\": \"Querying commands for the mint module\"}, {\"name\": \"auth\", \"description\":\n        \"Querying commands for the auth module\"}, {\"name\": \"billing\", \"description\": \"Querying commands for the Manifest billing module\"}, {\"name\": \"sku\",\n        \"description\": \"Quer...\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• PR20 result for codex-legacy:\n  [{\"type\":\"custom_tool_call_output\",\"id\":\"ctco_01a0afdc-1307-78a1-85a0-66425a13c08f\",\"call_id\":\"pr20_addffcfb-725d-42b1-b678-54710dd1bf55\",\"output\":\n  [{\"type\":\"input_text\",\"text\":\"Script completed\\nWall time 0.1 seconds\\nOutput:\\n\"},{\"type\":\"input_text\",\"text\":\"{\"content\":[{\"type\":\"text\",\"text\":\"{\\n\n  \\\"queryModules\\\": [\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Querying commands for the bank module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"staking\\\",\\n      \\\"description\\\": \\\"Querying commands for the staking module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\":\n  \\\"Querying commands for the distribution module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Querying commands for the governance\n  module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Querying commands for the authz module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Querying commands for the feegrant module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"mint\\\",\\n      \\\"description\\\":\n  \\\"Querying commands for the mint module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"auth\\\",\\n      \\\"description\\\": \\\"Querying commands for the auth module\\\"\\n    },\n  \\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest billing module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n\n  \\\"description\\\": \\\"Querying commands for the Manifest SKU module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Querying commands for\n  the group module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Querying commands for the Proof-of-Authority (strangelove_ventures)\n  module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Querying commands for the tokenfactory (osmosis) module\\\"\\n    },\\n\n  {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"Querying commands for the IBC fungible-token transfer module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"wasm\\\",\\n      \\\"description\\\": \\\"Querying commands for the CosmWasm wasm module\\\"\\n    }\\n  ],\\n  \\\"txModules\\\": [\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n\n  \\\"description\\\": \\\"Authz transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Bank transaction subcommands\\\"\\n    },\n  \\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Staking transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n\n  \\\"description\\\": \\\"Distribution transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Feegrant transaction\n  subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Governance transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"billing\\\",\\n      \\\"description\\\": \\\"Manifest billing transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"manifest\\\",\\n      \\\"description\\\":\n  \\\"Manifest module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Manifest SKU module transaction\n  subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Group module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"poa\\\",\\n      \\\"description\\\": \\\"Proof-of-Authority (strangelove_ventures) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n\n  \\\"description\\\": \\\"Tokenfactory (osmosis) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"IBC fungible-\n  token transfer transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"CosmWasm wasm transaction\n  subcommands\\\"\\n    }\\n  ]\\n}\"}]}\"}]}]\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · /var/tmp/pr20-preserve-X3jBjL/codex/work · PR20 acceptance\n"
+            }
+          ]
+        },
+        "credentialFiles": {
+          "credentials/299171b220d83a484932b9f8-4987e502-0857-420d-a0cf-642d9f08ef8e.json": {
+            "sha256": "dc4d9c9cd246c0d8d862b55602f4a84f6b8047f5d4fe91e90fba96b106a7deb6",
+            "bytes": 71,
+            "mode": "600"
+          }
+        }
+      },
+      "records": {
+        "baseline": {
+          "host": "codex",
+          "stage": "baseline",
+          "at": "2026-09-17T14:57:20.968Z",
+          "address": "manifest1swn2dcfwk648lph026s7sclnwfnngs583q0hwz",
+          "files": {
+            "config.json": {
+              "sha256": "42228b1ae2a552b8af205676a7daeb515fb7720ffb6294b609965fc5eab0eea6",
+              "bytes": 912,
+              "mode": "600"
+            },
+            "keys/agent-8282a12b.json": {
+              "sha256": "8e1a927ec4a558f78076c8188c7bd1f20ea755fc1ce17ae551aa55728d8d3dab",
+              "bytes": 561,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/5cae6534-088d-4bdb-a279-6389b244c0ac.json": {
+              "sha256": "61471958e42ab6b72e4baccbb0cf0a5f2143aee4652f6398045d91085b7708eb",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "manifests/47b03eff-5228-4dc6-a8ed-7990f8fb9308.json": {
+              "sha256": "655f8aebf08a87cfbe9134122c8df5262229bdd9dc95dfb4afc24a175111a2b4",
+              "bytes": 709,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "cc77d518ab67f5dfe8d18e22bc71c0ed7f1423cfd008acab535428f988d56ae7",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/299171b220d83a484932b9f8-4987e502-0857-420d-a0cf-642d9f08ef8e.json": {
+              "sha256": "dc4d9c9cd246c0d8d862b55602f4a84f6b8047f5d4fe91e90fba96b106a7deb6",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "47b03eff-5228-4dc6-a8ed-7990f8fb9308",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 3,
+              "custom_domain": "codex-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "5cae6534-088d-4bdb-a279-6389b244c0ac",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       5cae6534-088d-4bdb-a279-6389b244c0ac\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       47b03eff-5228-4dc6-a8ed-7990f8fb9308\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   3\nCustom domain:    codex-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        },
+        "after-startup": {
+          "host": "codex",
+          "stage": "after-startup",
+          "at": "2026-09-17T14:58:21.955Z",
+          "address": "manifest1swn2dcfwk648lph026s7sclnwfnngs583q0hwz",
+          "files": {
+            "config.json": {
+              "sha256": "42228b1ae2a552b8af205676a7daeb515fb7720ffb6294b609965fc5eab0eea6",
+              "bytes": 912,
+              "mode": "600"
+            },
+            "keys/agent-8282a12b.json": {
+              "sha256": "8e1a927ec4a558f78076c8188c7bd1f20ea755fc1ce17ae551aa55728d8d3dab",
+              "bytes": 561,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/5cae6534-088d-4bdb-a279-6389b244c0ac.json": {
+              "sha256": "61471958e42ab6b72e4baccbb0cf0a5f2143aee4652f6398045d91085b7708eb",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "manifests/47b03eff-5228-4dc6-a8ed-7990f8fb9308.json": {
+              "sha256": "655f8aebf08a87cfbe9134122c8df5262229bdd9dc95dfb4afc24a175111a2b4",
+              "bytes": 709,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "cc77d518ab67f5dfe8d18e22bc71c0ed7f1423cfd008acab535428f988d56ae7",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/299171b220d83a484932b9f8-4987e502-0857-420d-a0cf-642d9f08ef8e.json": {
+              "sha256": "dc4d9c9cd246c0d8d862b55602f4a84f6b8047f5d4fe91e90fba96b106a7deb6",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "47b03eff-5228-4dc6-a8ed-7990f8fb9308",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 3,
+              "custom_domain": "codex-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "5cae6534-088d-4bdb-a279-6389b244c0ac",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       5cae6534-088d-4bdb-a279-6389b244c0ac\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       47b03eff-5228-4dc6-a8ed-7990f8fb9308\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   3\nCustom domain:    codex-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        },
+        "uninstalled": {
+          "host": "codex",
+          "stage": "uninstalled",
+          "at": "2026-09-17T14:58:24.239Z",
+          "address": "manifest1swn2dcfwk648lph026s7sclnwfnngs583q0hwz",
+          "files": {
+            "config.json": {
+              "sha256": "42228b1ae2a552b8af205676a7daeb515fb7720ffb6294b609965fc5eab0eea6",
+              "bytes": 912,
+              "mode": "600"
+            },
+            "keys/agent-8282a12b.json": {
+              "sha256": "8e1a927ec4a558f78076c8188c7bd1f20ea755fc1ce17ae551aa55728d8d3dab",
+              "bytes": 561,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/5cae6534-088d-4bdb-a279-6389b244c0ac.json": {
+              "sha256": "61471958e42ab6b72e4baccbb0cf0a5f2143aee4652f6398045d91085b7708eb",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "manifests/47b03eff-5228-4dc6-a8ed-7990f8fb9308.json": {
+              "sha256": "655f8aebf08a87cfbe9134122c8df5262229bdd9dc95dfb4afc24a175111a2b4",
+              "bytes": 709,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "cc77d518ab67f5dfe8d18e22bc71c0ed7f1423cfd008acab535428f988d56ae7",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/299171b220d83a484932b9f8-4987e502-0857-420d-a0cf-642d9f08ef8e.json": {
+              "sha256": "dc4d9c9cd246c0d8d862b55602f4a84f6b8047f5d4fe91e90fba96b106a7deb6",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "47b03eff-5228-4dc6-a8ed-7990f8fb9308",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 3,
+              "custom_domain": "codex-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "5cae6534-088d-4bdb-a279-6389b244c0ac",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       5cae6534-088d-4bdb-a279-6389b244c0ac\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       47b03eff-5228-4dc6-a8ed-7990f8fb9308\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   3\nCustom domain:    codex-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        },
+        "after-install": {
+          "host": "codex",
+          "stage": "after-install",
+          "at": "2026-09-17T14:58:25.422Z",
+          "address": "manifest1swn2dcfwk648lph026s7sclnwfnngs583q0hwz",
+          "files": {
+            "config.json": {
+              "sha256": "42228b1ae2a552b8af205676a7daeb515fb7720ffb6294b609965fc5eab0eea6",
+              "bytes": 912,
+              "mode": "600"
+            },
+            "keys/agent-8282a12b.json": {
+              "sha256": "8e1a927ec4a558f78076c8188c7bd1f20ea755fc1ce17ae551aa55728d8d3dab",
+              "bytes": 561,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/5cae6534-088d-4bdb-a279-6389b244c0ac.json": {
+              "sha256": "61471958e42ab6b72e4baccbb0cf0a5f2143aee4652f6398045d91085b7708eb",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "manifests/47b03eff-5228-4dc6-a8ed-7990f8fb9308.json": {
+              "sha256": "655f8aebf08a87cfbe9134122c8df5262229bdd9dc95dfb4afc24a175111a2b4",
+              "bytes": 709,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "cc77d518ab67f5dfe8d18e22bc71c0ed7f1423cfd008acab535428f988d56ae7",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/299171b220d83a484932b9f8-4987e502-0857-420d-a0cf-642d9f08ef8e.json": {
+              "sha256": "dc4d9c9cd246c0d8d862b55602f4a84f6b8047f5d4fe91e90fba96b106a7deb6",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "47b03eff-5228-4dc6-a8ed-7990f8fb9308",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 3,
+              "custom_domain": "codex-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "5cae6534-088d-4bdb-a279-6389b244c0ac",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       5cae6534-088d-4bdb-a279-6389b244c0ac\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       47b03eff-5228-4dc6-a8ed-7990f8fb9308\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   3\nCustom domain:    codex-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        },
+        "reinstalled": {
+          "host": "codex",
+          "stage": "reinstalled",
+          "at": "2026-09-17T15:00:12.254Z",
+          "address": "manifest1swn2dcfwk648lph026s7sclnwfnngs583q0hwz",
+          "files": {
+            "config.json": {
+              "sha256": "42228b1ae2a552b8af205676a7daeb515fb7720ffb6294b609965fc5eab0eea6",
+              "bytes": 912,
+              "mode": "600"
+            },
+            "keys/agent-8282a12b.json": {
+              "sha256": "8e1a927ec4a558f78076c8188c7bd1f20ea755fc1ce17ae551aa55728d8d3dab",
+              "bytes": 561,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/5cae6534-088d-4bdb-a279-6389b244c0ac.json": {
+              "sha256": "61471958e42ab6b72e4baccbb0cf0a5f2143aee4652f6398045d91085b7708eb",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "manifests/47b03eff-5228-4dc6-a8ed-7990f8fb9308.json": {
+              "sha256": "655f8aebf08a87cfbe9134122c8df5262229bdd9dc95dfb4afc24a175111a2b4",
+              "bytes": 709,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "cc77d518ab67f5dfe8d18e22bc71c0ed7f1423cfd008acab535428f988d56ae7",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/299171b220d83a484932b9f8-4987e502-0857-420d-a0cf-642d9f08ef8e.json": {
+              "sha256": "dc4d9c9cd246c0d8d862b55602f4a84f6b8047f5d4fe91e90fba96b106a7deb6",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "47b03eff-5228-4dc6-a8ed-7990f8fb9308",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 3,
+              "custom_domain": "codex-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "5cae6534-088d-4bdb-a279-6389b244c0ac",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       5cae6534-088d-4bdb-a279-6389b244c0ac\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       47b03eff-5228-4dc6-a8ed-7990f8fb9308\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   3\nCustom domain:    codex-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        },
+        "repaired": {
+          "host": "codex",
+          "stage": "repaired",
+          "at": "2026-09-17T15:03:12.126Z",
+          "address": "manifest1swn2dcfwk648lph026s7sclnwfnngs583q0hwz",
+          "files": {
+            "config.json": {
+              "sha256": "42228b1ae2a552b8af205676a7daeb515fb7720ffb6294b609965fc5eab0eea6",
+              "bytes": 912,
+              "mode": "600"
+            },
+            "keys/agent-8282a12b.json": {
+              "sha256": "8e1a927ec4a558f78076c8188c7bd1f20ea755fc1ce17ae551aa55728d8d3dab",
+              "bytes": 561,
+              "mode": "600"
+            },
+            "chains/testnet.json": {
+              "sha256": "4c0dd3005691b252e1b1ce246735e72b2ab82b42a14898afd8c45d1e17329fda",
+              "bytes": 292,
+              "mode": "600"
+            },
+            "manifests-drafts/preserved-draft.json": {
+              "sha256": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "bytes": 186,
+              "mode": "600"
+            },
+            "manifests/5cae6534-088d-4bdb-a279-6389b244c0ac.json": {
+              "sha256": "61471958e42ab6b72e4baccbb0cf0a5f2143aee4652f6398045d91085b7708eb",
+              "bytes": 628,
+              "mode": "600"
+            },
+            "manifests/47b03eff-5228-4dc6-a8ed-7990f8fb9308.json": {
+              "sha256": "655f8aebf08a87cfbe9134122c8df5262229bdd9dc95dfb4afc24a175111a2b4",
+              "bytes": 709,
+              "mode": "600"
+            },
+            "journal/2026-09-01.jsonl": {
+              "sha256": "cc77d518ab67f5dfe8d18e22bc71c0ed7f1423cfd008acab535428f988d56ae7",
+              "bytes": 399,
+              "mode": "600"
+            }
+          },
+          "credentialFiles": {
+            "credentials/299171b220d83a484932b9f8-4987e502-0857-420d-a0cf-642d9f08ef8e.json": {
+              "sha256": "dc4d9c9cd246c0d8d862b55602f4a84f6b8047f5d4fe91e90fba96b106a7deb6",
+              "bytes": 71,
+              "mode": "600"
+            }
+          },
+          "exactBytesAndModesPreserved": true,
+          "offlineKeyDecryptionAndSigning": true,
+          "activeChain": "testnet",
+          "gasPrice": "1umfx",
+          "gasMultiplier": 1.7,
+          "savedManifests": [
+            {
+              "lease_uuid": "47b03eff-5228-4dc6-a8ed-7990f8fb9308",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 3,
+              "custom_domain": "codex-preserve.test",
+              "custom_domain_service_name": "app"
+            },
+            {
+              "lease_uuid": "5cae6534-088d-4bdb-a279-6389b244c0ac",
+              "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+              "size": "docker-micro",
+              "deployed_at_iso": "2026-09-01T12:00:00Z",
+              "chain_id": "manifest-preservation-offline",
+              "format": "stack",
+              "meta_hash_hex": "f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2",
+              "schema_version": 2
+            }
+          ],
+          "journalRecords": 1,
+          "summaries": [
+            "Lease UUID:       5cae6534-088d-4bdb-a279-6389b244c0ac\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   2\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n",
+            "Lease UUID:       47b03eff-5228-4dc6-a8ed-7990f8fb9308\nImage:            docker.io/nginxinc/nginx-unprivileged:alpine\nSize:             docker-micro\nDeployed at:      2026-09-01T12:00:00Z\nChain:            manifest-preservation-offline\nmeta_hash_hex:    f7ebe7df605c5ddd4653bfbcf8fa939b4d02e5b6528009f5791d9efa02f219b2\nFormat:           stack\nSchema version:   3\nCustom domain:    codex-preserve.test\nDomain service:   app\n\nManifest structure:\n  Services:        1\n  Ports exposed:   0\n  Env entries:     1\n  Env keys:        ACCEPTANCE_CANARY\n\n(Env *values* are intentionally redacted — they may contain secrets.)\n"
+          ],
+          "canaryRedacted": true,
+          "runtimeReady": true,
+          "runtimeVersion": "0.22.0"
+        }
+      },
+      "phases": {
+        "baseline": {
+          "host": "codex",
+          "phase": "baseline",
+          "tool": "list_modules",
+          "readOnlyProbePassed": true,
+          "normalPermissions": true,
+          "at": "2026-09-17T14:57:16.396Z",
+          "toolOutput": [
+            {
+              "type": "custom_tool_call_output",
+              "id": "ctco_01a0afdf-362e-7a41-a005-ec56e7c299c9",
+              "call_id": "pr20_1d8a8950-d2f0-47ad-88c9-0fca1fda0e38",
+              "output": [
+                {
+                  "type": "input_text",
+                  "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"
+                },
+                {
+                  "type": "input_text",
+                  "text": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"queryModules\\\": [\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Querying commands for the bank module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Querying commands for the staking module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\": \\\"Querying commands for the distribution module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Querying commands for the governance module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Querying commands for the authz module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Querying commands for the feegrant module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"mint\\\",\\n      \\\"description\\\": \\\"Querying commands for the mint module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"auth\\\",\\n      \\\"description\\\": \\\"Querying commands for the auth module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest billing module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest SKU module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Querying commands for the group module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Querying commands for the Proof-of-Authority (strangelove_ventures) module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Querying commands for the tokenfactory (osmosis) module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"Querying commands for the IBC fungible-token transfer module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"Querying commands for the CosmWasm wasm module\\\"\\n    }\\n  ],\\n  \\\"txModules\\\": [\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Authz transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Bank transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Staking transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\": \\\"Distribution transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Feegrant transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Governance transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Manifest billing transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"manifest\\\",\\n      \\\"description\\\": \\\"Manifest module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Manifest SKU module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Group module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Proof-of-Authority (strangelove_ventures) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Tokenfactory (osmosis) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"IBC fungible-token transfer transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"CosmWasm wasm transaction subcommands\\\"\\n    }\\n  ]\\n}\"}]}"
+                }
+              ]
+            }
+          ],
+          "screens": [
+            {
+              "label": "probe-result",
+              "screen": "\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: /var/tmp/pr20-preserve-X3jBjL/codex/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n⚠ 1 MCP startup issue · ctrl + t for details\n\n\n› PR20_STEP:codex-baseline\n\n\n• Called manifest-chain.list_modules({})\n  └ {\"queryModules\": [{\"name\": \"bank\", \"description\": \"Querying commands for the bank module\"}, {\"name\": \"staking\", \"description\": \"Querying commands for the\n        staking module\"}, {\"name\": \"distribution\", \"description\": \"Querying commands for the distribution module\"}, {\"name\": \"gov\", \"description\": \"Querying\n        commands for the governance module\"}, {\"name\": \"authz\", \"description\": \"Querying commands for the authz module\"}, {\"name\": \"feegrant\", \"description\":\n        \"Querying commands for the feegrant module\"}, {\"name\": \"mint\", \"description\": \"Querying commands for the mint module\"}, {\"name\": \"auth\", \"description\":\n        \"Querying commands for the auth module\"}, {\"name\": \"billing\", \"description\": \"Querying commands for the Manifest billing module\"}, {\"name\": \"sku\",\n        \"description\": \"Quer...\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• PR20 result for codex-baseline:\n  [{\"type\":\"custom_tool_call_output\",\"id\":\"ctco_01a0afdf-362e-7a41-a005-ec56e7c299c9\",\"call_id\":\"pr20_1d8a8950-d2f0-47ad-88c9-0fca1fda0e38\",\"output\":\n  [{\"type\":\"input_text\",\"text\":\"Script completed\\nWall time 0.1 seconds\\nOutput:\\n\"},{\"type\":\"input_text\",\"text\":\"{\"content\":[{\"type\":\"text\",\"text\":\"{\\n\n  \\\"queryModules\\\": [\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Querying commands for the bank module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"staking\\\",\\n      \\\"description\\\": \\\"Querying commands for the staking module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\":\n  \\\"Querying commands for the distribution module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Querying commands for the governance\n  module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Querying commands for the authz module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Querying commands for the feegrant module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"mint\\\",\\n      \\\"description\\\":\n  \\\"Querying commands for the mint module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"auth\\\",\\n      \\\"description\\\": \\\"Querying commands for the auth module\\\"\\n    },\n  \\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest billing module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n\n  \\\"description\\\": \\\"Querying commands for the Manifest SKU module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Querying commands for\n  the group module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Querying commands for the Proof-of-Authority (strangelove_ventures)\n  module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Querying commands for the tokenfactory (osmosis) module\\\"\\n    },\\n\n  {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"Querying commands for the IBC fungible-token transfer module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"wasm\\\",\\n      \\\"description\\\": \\\"Querying commands for the CosmWasm wasm module\\\"\\n    }\\n  ],\\n  \\\"txModules\\\": [\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n\n  \\\"description\\\": \\\"Authz transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Bank transaction subcommands\\\"\\n    },\n  \\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Staking transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n\n  \\\"description\\\": \\\"Distribution transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Feegrant transaction\n  subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Governance transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"billing\\\",\\n      \\\"description\\\": \\\"Manifest billing transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"manifest\\\",\\n      \\\"description\\\":\n  \\\"Manifest module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Manifest SKU module transaction\n  subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Group module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"poa\\\",\\n      \\\"description\\\": \\\"Proof-of-Authority (strangelove_ventures) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n\n  \\\"description\\\": \\\"Tokenfactory (osmosis) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"IBC fungible-\n  token transfer transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"CosmWasm wasm transaction\n  subcommands\\\"\\n    }\\n  ]\\n}\"}]}\"}]}]\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · /var/tmp/pr20-preserve-X3jBjL/codex/work · PR20 acceptance\n"
+            }
+          ]
+        },
+        "reinstalled": {
+          "host": "codex",
+          "phase": "reinstalled",
+          "tool": "list_modules",
+          "readOnlyProbePassed": true,
+          "normalPermissions": true,
+          "at": "2026-09-17T14:59:28.282Z",
+          "toolOutput": [
+            {
+              "type": "custom_tool_call_output",
+              "id": "ctco_01a0afe1-3938-7801-a540-54e5aa12c5b4",
+              "call_id": "pr20_114ac662-1cb6-4cd7-adf7-e6606354adba",
+              "output": [
+                {
+                  "type": "input_text",
+                  "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"
+                },
+                {
+                  "type": "input_text",
+                  "text": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"queryModules\\\": [\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Querying commands for the bank module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Querying commands for the staking module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\": \\\"Querying commands for the distribution module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Querying commands for the governance module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Querying commands for the authz module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Querying commands for the feegrant module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"mint\\\",\\n      \\\"description\\\": \\\"Querying commands for the mint module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"auth\\\",\\n      \\\"description\\\": \\\"Querying commands for the auth module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest billing module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest SKU module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Querying commands for the group module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Querying commands for the Proof-of-Authority (strangelove_ventures) module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Querying commands for the tokenfactory (osmosis) module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"Querying commands for the IBC fungible-token transfer module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"Querying commands for the CosmWasm wasm module\\\"\\n    }\\n  ],\\n  \\\"txModules\\\": [\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Authz transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Bank transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Staking transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\": \\\"Distribution transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Feegrant transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Governance transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Manifest billing transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"manifest\\\",\\n      \\\"description\\\": \\\"Manifest module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Manifest SKU module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Group module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Proof-of-Authority (strangelove_ventures) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Tokenfactory (osmosis) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"IBC fungible-token transfer transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"CosmWasm wasm transaction subcommands\\\"\\n    }\\n  ]\\n}\"}]}"
+                }
+              ]
+            }
+          ],
+          "screens": [
+            {
+              "label": "probe-result",
+              "screen": "\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: /var/tmp/pr20-preserve-X3jBjL/codex/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: See the Codex keymap documentation for supported actions and examples.\n\n⚠ 1 MCP startup issue · ctrl + t for details\n\n\n› PR20_STEP:codex-reinstalled\n\n\n• Called manifest-chain.list_modules({})\n  └ {\"queryModules\": [{\"name\": \"bank\", \"description\": \"Querying commands for the bank module\"}, {\"name\": \"staking\", \"description\": \"Querying commands for the\n        staking module\"}, {\"name\": \"distribution\", \"description\": \"Querying commands for the distribution module\"}, {\"name\": \"gov\", \"description\": \"Querying\n        commands for the governance module\"}, {\"name\": \"authz\", \"description\": \"Querying commands for the authz module\"}, {\"name\": \"feegrant\", \"description\":\n        \"Querying commands for the feegrant module\"}, {\"name\": \"mint\", \"description\": \"Querying commands for the mint module\"}, {\"name\": \"auth\", \"description\":\n        \"Querying commands for the auth module\"}, {\"name\": \"billing\", \"description\": \"Querying commands for the Manifest billing module\"}, {\"name\": \"sku\",\n        \"description\": \"Quer...\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• PR20 result for codex-reinstalled:\n  [{\"type\":\"custom_tool_call_output\",\"id\":\"ctco_01a0afe1-3938-7801-a540-54e5aa12c5b4\",\"call_id\":\"pr20_114ac662-1cb6-4cd7-adf7-e6606354adba\",\"output\":\n  [{\"type\":\"input_text\",\"text\":\"Script completed\\nWall time 0.1 seconds\\nOutput:\\n\"},{\"type\":\"input_text\",\"text\":\"{\"content\":[{\"type\":\"text\",\"text\":\"{\\n\n  \\\"queryModules\\\": [\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Querying commands for the bank module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"staking\\\",\\n      \\\"description\\\": \\\"Querying commands for the staking module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\":\n  \\\"Querying commands for the distribution module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Querying commands for the governance\n  module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Querying commands for the authz module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Querying commands for the feegrant module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"mint\\\",\\n      \\\"description\\\":\n  \\\"Querying commands for the mint module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"auth\\\",\\n      \\\"description\\\": \\\"Querying commands for the auth module\\\"\\n    },\n  \\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest billing module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n\n  \\\"description\\\": \\\"Querying commands for the Manifest SKU module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Querying commands for\n  the group module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Querying commands for the Proof-of-Authority (strangelove_ventures)\n  module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Querying commands for the tokenfactory (osmosis) module\\\"\\n    },\\n\n  {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"Querying commands for the IBC fungible-token transfer module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"wasm\\\",\\n      \\\"description\\\": \\\"Querying commands for the CosmWasm wasm module\\\"\\n    }\\n  ],\\n  \\\"txModules\\\": [\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n\n  \\\"description\\\": \\\"Authz transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Bank transaction subcommands\\\"\\n    },\n  \\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Staking transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n\n  \\\"description\\\": \\\"Distribution transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Feegrant transaction\n  subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Governance transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"billing\\\",\\n      \\\"description\\\": \\\"Manifest billing transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"manifest\\\",\\n      \\\"description\\\":\n  \\\"Manifest module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Manifest SKU module transaction\n  subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Group module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"poa\\\",\\n      \\\"description\\\": \\\"Proof-of-Authority (strangelove_ventures) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n\n  \\\"description\\\": \\\"Tokenfactory (osmosis) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"IBC fungible-\n  token transfer transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"CosmWasm wasm transaction\n  subcommands\\\"\\n    }\\n  ]\\n}\"}]}\"}]}]\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · /var/tmp/pr20-preserve-X3jBjL/codex/work · PR20 acceptance\n"
+            }
+          ]
+        },
+        "repaired": {
+          "host": "codex",
+          "phase": "repaired",
+          "tool": "list_modules",
+          "readOnlyProbePassed": true,
+          "normalPermissions": true,
+          "at": "2026-09-17T15:02:20.719Z",
+          "toolOutput": [
+            {
+              "type": "custom_tool_call_output",
+              "id": "ctco_01a0afe3-db09-70e0-933b-9cf1a1f0348d",
+              "call_id": "pr20_5a23f05a-f823-447b-b55e-7b9bfb41a56d",
+              "output": [
+                {
+                  "type": "input_text",
+                  "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"
+                },
+                {
+                  "type": "input_text",
+                  "text": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"queryModules\\\": [\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Querying commands for the bank module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Querying commands for the staking module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\": \\\"Querying commands for the distribution module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Querying commands for the governance module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Querying commands for the authz module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Querying commands for the feegrant module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"mint\\\",\\n      \\\"description\\\": \\\"Querying commands for the mint module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"auth\\\",\\n      \\\"description\\\": \\\"Querying commands for the auth module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest billing module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest SKU module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Querying commands for the group module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Querying commands for the Proof-of-Authority (strangelove_ventures) module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Querying commands for the tokenfactory (osmosis) module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"Querying commands for the IBC fungible-token transfer module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"Querying commands for the CosmWasm wasm module\\\"\\n    }\\n  ],\\n  \\\"txModules\\\": [\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Authz transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Bank transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Staking transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\": \\\"Distribution transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Feegrant transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Governance transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Manifest billing transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"manifest\\\",\\n      \\\"description\\\": \\\"Manifest module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Manifest SKU module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Group module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Proof-of-Authority (strangelove_ventures) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Tokenfactory (osmosis) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"IBC fungible-token transfer transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"CosmWasm wasm transaction subcommands\\\"\\n    }\\n  ]\\n}\"}]}"
+                }
+              ]
+            }
+          ],
+          "screens": [
+            {
+              "label": "probe-result",
+              "screen": "\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: /var/tmp/pr20-preserve-X3jBjL/codex/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n⚠ 1 MCP startup issue · ctrl + t for details\n\n\n› PR20_STEP:codex-repaired\n\n\n• Called manifest-chain.list_modules({})\n  └ {\"queryModules\": [{\"name\": \"bank\", \"description\": \"Querying commands for the bank module\"}, {\"name\": \"staking\", \"description\": \"Querying commands for the\n        staking module\"}, {\"name\": \"distribution\", \"description\": \"Querying commands for the distribution module\"}, {\"name\": \"gov\", \"description\": \"Querying\n        commands for the governance module\"}, {\"name\": \"authz\", \"description\": \"Querying commands for the authz module\"}, {\"name\": \"feegrant\", \"description\":\n        \"Querying commands for the feegrant module\"}, {\"name\": \"mint\", \"description\": \"Querying commands for the mint module\"}, {\"name\": \"auth\", \"description\":\n        \"Querying commands for the auth module\"}, {\"name\": \"billing\", \"description\": \"Querying commands for the Manifest billing module\"}, {\"name\": \"sku\",\n        \"description\": \"Quer...\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• PR20 result for codex-repaired:\n  [{\"type\":\"custom_tool_call_output\",\"id\":\"ctco_01a0afe3-db09-70e0-933b-9cf1a1f0348d\",\"call_id\":\"pr20_5a23f05a-f823-447b-b55e-7b9bfb41a56d\",\"output\":\n  [{\"type\":\"input_text\",\"text\":\"Script completed\\nWall time 0.1 seconds\\nOutput:\\n\"},{\"type\":\"input_text\",\"text\":\"{\"content\":[{\"type\":\"text\",\"text\":\"{\\n\n  \\\"queryModules\\\": [\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Querying commands for the bank module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"staking\\\",\\n      \\\"description\\\": \\\"Querying commands for the staking module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n      \\\"description\\\":\n  \\\"Querying commands for the distribution module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Querying commands for the governance\n  module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n      \\\"description\\\": \\\"Querying commands for the authz module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Querying commands for the feegrant module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"mint\\\",\\n      \\\"description\\\":\n  \\\"Querying commands for the mint module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"auth\\\",\\n      \\\"description\\\": \\\"Querying commands for the auth module\\\"\\n    },\n  \\n    {\\n      \\\"name\\\": \\\"billing\\\",\\n      \\\"description\\\": \\\"Querying commands for the Manifest billing module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n\n  \\\"description\\\": \\\"Querying commands for the Manifest SKU module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Querying commands for\n  the group module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"poa\\\",\\n      \\\"description\\\": \\\"Querying commands for the Proof-of-Authority (strangelove_ventures)\n  module\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n      \\\"description\\\": \\\"Querying commands for the tokenfactory (osmosis) module\\\"\\n    },\\n\n  {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"Querying commands for the IBC fungible-token transfer module\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"wasm\\\",\\n      \\\"description\\\": \\\"Querying commands for the CosmWasm wasm module\\\"\\n    }\\n  ],\\n  \\\"txModules\\\": [\\n    {\\n      \\\"name\\\": \\\"authz\\\",\\n\n  \\\"description\\\": \\\"Authz transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"bank\\\",\\n      \\\"description\\\": \\\"Bank transaction subcommands\\\"\\n    },\n  \\n    {\\n      \\\"name\\\": \\\"staking\\\",\\n      \\\"description\\\": \\\"Staking transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"distribution\\\",\\n\n  \\\"description\\\": \\\"Distribution transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"feegrant\\\",\\n      \\\"description\\\": \\\"Feegrant transaction\n  subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"gov\\\",\\n      \\\"description\\\": \\\"Governance transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"billing\\\",\\n      \\\"description\\\": \\\"Manifest billing transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"manifest\\\",\\n      \\\"description\\\":\n  \\\"Manifest module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"sku\\\",\\n      \\\"description\\\": \\\"Manifest SKU module transaction\n  subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"group\\\",\\n      \\\"description\\\": \\\"Group module transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\":\n  \\\"poa\\\",\\n      \\\"description\\\": \\\"Proof-of-Authority (strangelove_ventures) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tokenfactory\\\",\\n\n  \\\"description\\\": \\\"Tokenfactory (osmosis) transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ibc-transfer\\\",\\n      \\\"description\\\": \\\"IBC fungible-\n  token transfer transaction subcommands\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"wasm\\\",\\n      \\\"description\\\": \\\"CosmWasm wasm transaction\n  subcommands\\\"\\n    }\\n  ]\\n}\"}]}\"}]}]\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · /var/tmp/pr20-preserve-X3jBjL/codex/work · PR20 acceptance\n"
+            }
+          ]
+        }
+      },
+      "reinstallCommands": [
+        {
+          "at": "2026-09-17T14:58:23.870Z",
+          "command": [
+            "codex",
+            "plugin",
+            "remove",
+            "manifest-agent@manifest",
+            "--json"
+          ],
+          "exitCode": 0,
+          "stdout": "{\n  \"pluginId\": \"manifest-agent@manifest\",\n  \"name\": \"manifest-agent\",\n  \"marketplaceName\": \"manifest\"\n}\n",
+          "stderr": ""
+        },
+        {
+          "at": "2026-09-17T14:58:24.684Z",
+          "command": [
+            "<node>",
+            "/home/fmorency/dev/manifest-agent-plugin/dist/pr20-preservation/preserve.cjs",
+            "verify",
+            "/var/tmp/pr20-preserve-X3jBjL",
+            "codex",
+            "uninstalled"
+          ],
+          "exitCode": 0,
+          "stdout": "{\"host\":\"codex\",\"stage\":\"uninstalled\",\"files\":7,\"signing\":true,\"readers\":true}\n",
+          "stderr": ""
+        },
+        {
+          "at": "2026-09-17T14:58:24.753Z",
+          "command": [
+            "codex",
+            "plugin",
+            "add",
+            "manifest-agent@manifest",
+            "--json"
+          ],
+          "exitCode": 0,
+          "stdout": "{\n  \"pluginId\": \"manifest-agent@manifest\",\n  \"name\": \"manifest-agent\",\n  \"marketplaceName\": \"manifest\",\n  \"version\": \"0.5.0\",\n  \"installedPath\": \"/var/tmp/pr20-preserve-X3jBjL/codex/config/plugins/cache/manifest/manifest-agent/0.5.0\",\n  \"authPolicy\": \"ON_INSTALL\"\n}\n",
+          "stderr": ""
+        },
+        {
+          "at": "2026-09-17T14:58:26.146Z",
+          "command": [
+            "<node>",
+            "/home/fmorency/dev/manifest-agent-plugin/dist/pr20-preservation/preserve.cjs",
+            "verify",
+            "/var/tmp/pr20-preserve-X3jBjL",
+            "codex",
+            "after-install"
+          ],
+          "exitCode": 0,
+          "stdout": "{\"host\":\"codex\",\"stage\":\"after-install\",\"files\":7,\"signing\":true,\"readers\":true}\n",
+          "stderr": ""
+        }
+      ],
+      "runtimeRepair": {
+        "at": "2026-09-17T15:00:15.760Z",
+        "relative": "node_modules/@manifest-network/manifest-mcp-node/package.json",
+        "originalSha256": "94455b23c6ba250ea57229bb1b67e02bbd5f3802db9bb2316d36bf41de5b9853",
+        "before": {
+          "ready": true,
+          "fingerprint": "aa05c57ae9f1a0dbd2f24cc858dd3fce478f259146d1fd754401908e4dc6354c"
+        },
+        "completionSha256": "afa272458fe11df5849314f269946c929dd07af328667ec7fb9e83fefcac75a7",
+        "after": {
+          "ready": false,
+          "reason": "Missing or invalid installed dependency: node_modules/@manifest-network/manifest-mcp-node",
+          "fingerprint": "aa05c57ae9f1a0dbd2f24cc858dd3fce478f259146d1fd754401908e4dc6354c"
+        },
+        "completionRecordLeftInPlace": true,
+        "restoredSha256": "94455b23c6ba250ea57229bb1b67e02bbd5f3802db9bb2316d36bf41de5b9853",
+        "afterRepair": {
+          "ready": true,
+          "fingerprint": "aa05c57ae9f1a0dbd2f24cc858dd3fce478f259146d1fd754401908e4dc6354c"
+        }
+      },
+      "checks": {
+        "sevenFilesByteAndModeIdentical": true,
+        "credentialFileByteAndModeIdentical": true,
+        "offlineWalletSigning": true,
+        "savedManifestReadersRedactCanary": true,
+        "historicalJournalReadable": true,
+        "automaticRuntimeRepair": true,
+        "hostDataRootsSeparate": true
+      }
+    }
+  },
+  "terminalCoverage": {
+    "claude": {
+      "evidencePath": "docs/host-evidence/claude-terminal-0.5.0-reviewed.json",
+      "evidenceSha256": "c4488c8b102fb938b84a52d8cbcad6fc20df3252c814d8faa78be0cdab852efe",
+      "sourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
+      "cases": [
+        "discovery-read-only",
+        "outer-deny",
+        "direct-decline",
+        "direct-success",
+        "orchestrated-decline",
+        "orchestrated-cancel",
+        "orchestrated-success",
+        "paid-partial-recovery-decline",
+        "cancel-after-broadcast"
+      ]
+    },
+    "codex": {
+      "evidencePath": "docs/host-evidence/codex-terminal-0.5.0-reviewed.json",
+      "evidenceSha256": "b0371b3c108b0896207186d064bc64f7376641cd4b53b839175df4df0da2e687",
+      "sourceCommit": "4bbd5af14c504ac280fc6dc8c14383c6fff6c832",
+      "cases": [
+        "discovery-read-only",
+        "outer-deny",
+        "direct-decline",
+        "direct-success",
+        "orchestrated-decline",
+        "orchestrated-cancel",
+        "orchestrated-success",
+        "paid-partial-recovery-decline",
+        "cancel-after-broadcast"
+      ]
+    }
+  },
+  "limitations": [
+    "Actual native CLI terminals and published MCP packages were driven by operator-queued deterministic local model responses. This is not hosted-model reasoning, GUI or usability evidence.",
+    "Fresh unfunded wallets signed offline only. RPC/REST used disabled loopback endpoints; no chain or provider resources were created.",
+    "Minimal offline config omits converterAddress and faucetUrl; CosmWasm is unavailable and the faucet tool absent. Actual chain list_modules passed.",
+    "Saved schema 2/3 manifests, draft and journal are synthetic fixtures. Live deployment records are separate evidence.",
+    "Legacy upgrade uses tagged 0.4.0 and native remove/install under the same identity; marketplace update-in-place and other historical versions are untested.",
+    "Private-file credential migration does not establish native OS-store access, cross-machine portability or other operating systems.",
+    "This replay used a warmed private npm cache and connected without a native chain reconnect. It does not invalidate the earlier cold-start timeout reported in the initial 0.5.0 run."
+  ],
+  "cleanup": {
+    "verified": true,
+    "recordedAt": "2026-09-17T15:04:58.321Z",
+    "residue": "none",
+    "ownedProcessesRemaining": 0,
+    "temporaryProfilesRemoved": true,
+    "temporaryWalletKeysAndPasswordsRemoved": true,
+    "temporaryMarketplacesAndCachesRemoved": true,
+    "modelEndpointsClosed": true,
+    "chainOrProviderResourcesCreated": false,
+    "removedPaths": [
+      "/var/tmp/pr20-preserve-X3jBjL"
+    ]
+  },
+  "harness": {
+    "path": "dist/pr20-preservation/preserve.cjs",
+    "sha256": "8b8d9a3172fe0eae7892ec4bf83eb001e5442095df27aef507ee9f3e07ff5306",
+    "driverPath": "dist/pr20-live-driver/driver.cjs",
+    "driverSha256": "66e2cf45b9968c0cb856f4ad04b0e3efe089d24ad872c123a4399b03a3b8e1d8",
+    "hashScope": "These hashes identify on-disk preservation and driver helper bytes at report assembly, for reproduction reference. The driver was revised during the multi-phase run, and each daemon's loaded revision was not independently hashed at launch. These hashes therefore do not establish that every earlier daemon phase loaded these exact helper bytes. The separate sourceHashes inventory binds the 70 frozen plugin source files; preservation measurements and installed-package comparisons are unchanged."
+  },
+  "validation": {
+    "privateMaterialScan": {
+      "passed": true,
+      "privateStringsChecked": 6
+    },
+    "credentialFilePreservation": true,
+    "preservationSchema": true,
+    "currentSourceAndHistoricalCommitVerified": true
+  }
+}

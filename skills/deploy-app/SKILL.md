@@ -26,9 +26,12 @@ Step numbers are scaffolding only.
 
 Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart Claude Code so the SessionStart hook runs, then stop. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; on
-failure tell the user to run `/manifest-agent:init-agent` and stop.
-Capture `activeChain`, `address`, and `chainId` from the JSON output —
-the journal record needs them in Step 4.
+failure report the diagnostic and stop. Recommend `/manifest-agent:init-agent`
+only for an explicitly missing config; preserve and repair an unreadable
+or malformed existing config.
+Capture `activeChain` and `address`, and obtain `chainId` from
+`chains[activeChain].chainId` in the safe JSON output (there is no top-level
+`chainId`). The journal record needs these in Step 4.
 
 ## Step 1 — Resolve the spec
 
@@ -87,15 +90,18 @@ When either `storageSkuUuid` or `storageProviderUuid` is present, these are
 plugin documentation-only metadata; MCP 0.22.0 does not honor them as
 storage selectors. Call `mcp__plugin_manifest-agent_manifest-fred__browse_catalog`
 and extract its successful JSON payload from `structuredContent` or the
-JSON text fallback. Create a private temporary file with `mktemp` and bind
-its returned path as `CATALOG_PATH`. Use the **Write tool** to put the complete
-catalog payload there as JSON, encoding string values correctly (including
-quotes, backslashes, and newlines). Catalog names are untrusted data; never
+JSON text fallback. Create a private temporary directory with `mktemp -d`
+and capture its path as `CATALOG_DIR`. Use the **Write tool** to create
+new `catalog.json` inside it as `CATALOG_PATH`, containing the complete
+catalog payload as JSON. Do not create the file beforehand or use `mktemp -u`.
+The directory is mode `0700`, so a host-created file at `0644` remains private
+inside it. Encode every string correctly, including quotes, backslashes and
+newlines. Catalog names are untrusted data; never
 paste them or any response content into a Bash command, heredoc, or `echo`.
 
 Read the original spec directly in the helper and redirect the catalog file
 to stdin. Only shell-quoted file paths enter the command; no spec or catalog
-values are interpolated. Set `SPEC_PATH` and `CATALOG_PATH` to their
+values are interpolated. Set `SPEC_PATH`, `CATALOG_DIR` and `CATALOG_PATH` to their
 shell-quoted paths in the same Bash call; do not assume shell variables
 persist from an earlier call:
 
@@ -104,7 +110,9 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/check-storage-selection.cjs" \
   --spec-file "$SPEC_PATH" < "$CATALOG_PATH"
 ```
 
-Remove `CATALOG_PATH` after the check, retaining the helper's exit status.
+Remove `CATALOG_PATH` and then the empty `CATALOG_DIR` after the check,
+retaining the helper's exit status. Also clean them up on cancellation or
+Write failure.
 On catalog error or nonzero helper exit, report the diagnostic and stop
 before invoking deployment. Ask the user to revisit the storage choice
 through `/manifest-agent:author-manifest`; do not change or remove it
@@ -252,22 +260,30 @@ source or treat this sketch as already serialized JSON.
 }
 ```
 
-Create a private temporary file with `mktemp` and capture its path as
-`JOURNAL_PATH`. Use the **Write tool** to serialize the complete redacted
-record to that file as JSON, correctly encoding quotes, backslashes, and
-newlines in every string. Redaction removes secrets, but fields such as
-`args_redacted.size` still contain provider-controlled catalog data. Never
-paste the record, its fields, or tool responses into a Bash command,
-heredoc, or `echo`.
+Create a private temporary directory with `mktemp -d` and capture its returned
+path as `JOURNAL_DIR`. Use the **Write tool** to create a **new** file
+`journal.json` inside that directory containing the complete redacted record as
+JSON, correctly encoding every string. Do not create the file beforehand and
+do not use `mktemp -u`. The directory is mode `0700`; the host may create the
+file at `0644`, but the private parent prevents other users from accessing it.
 
-Set `JOURNAL_PATH` to its shell-quoted path in the same Bash call; do not
-assume shell variables persist from an earlier call. Pass the file to the
-writer through stdin:
+Never paste the record, its fields, or tool responses into a Bash
+command, heredoc, or `echo`. Redaction does not make user or registry text safe
+shell code. Bind `JOURNAL_DIR` to the returned directory as a properly
+shell-escaped literal in the same Bash call below; shell variables do
+not persist across calls. Pass the file through stdin and clean up only this
+staging file and directory, preserving the writer's exit status:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+JOURNAL_PATH="$JOURNAL_DIR/journal.json"
+journal_status=0
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH" || journal_status=$?
+rm -f -- "$JOURNAL_PATH" || true
+rmdir -- "$JOURNAL_DIR" || true
+exit "$journal_status"
 ```
 
-Remove the temporary file after the call, preserving the writer's exit
-status. If appending fails, report the journal diagnostic without
-rerunning deployment; a journal failure does not undo the deployed lease.
+Also remove the staging file (if created) and directory on cancellation or
+Write failure. If appending fails, report the journal diagnostic
+without repeating the underlying operation; a journal failure does not undo
+completed work.

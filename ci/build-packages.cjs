@@ -40,6 +40,13 @@ function workflowFiles(root = ROOT) {
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md')).map((entry) => entry.name).sort();
 }
 
+function workflowFragmentFiles(root = ROOT) {
+  const directory = join(root, 'workflows', 'fragments');
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.md')).map((entry) => entry.name).sort();
+}
+
 function renderSkill(source, host, { root = ROOT, name } = {}) {
   if (!['claude', 'codex'].includes(host)) throw new Error(`Unknown host: ${host}`);
   const knownSkills = new Set(workflowFiles(root).map((file) => file.slice(0, -3)));
@@ -63,7 +70,7 @@ function renderSkill(source, host, { root = ROOT, name } = {}) {
       : 'Codex applies its tool approval policy before execution. The adapter requests native MCP form confirmation for this direct mutation and forwards it only after acceptance. Decline, cancellation, timeout or missing form support stops before the provider call.',
     restart_confirmation: name === 'restart-app' ? fs.readFileSync(join(root, 'hosts', host, 'restart-confirmation.md'), 'utf8').trimEnd() : '',
   };
-  let rendered = source.replace(/\{\{([^{}]+)\}\}/g, (_, token) => {
+  const replaceToken = (_, token) => {
     if (token.startsWith('tool:')) {
       const [, server, tool] = /^tool:([a-z]+)\/([a-z_]+)$/.exec(token) || [];
       if (!SERVERS.includes(server) || !tool) throw new Error(`Invalid tool token: ${token}`);
@@ -76,7 +83,20 @@ function renderSkill(source, host, { root = ROOT, name } = {}) {
     }
     if (!(token in values)) throw new Error(`Unknown workflow token: ${token}`);
     return values[token];
-  });
+  };
+  // Fragments may use host vocabulary, but cannot include other fragments.
+  // Render them first: String.replace does not expand tokens in replacements.
+  const fragments = Object.fromEntries(workflowFragmentFiles(root).map((file) => {
+    const fragment = fs.readFileSync(join(root, 'workflows', 'fragments', file), 'utf8').trimEnd();
+    const rendered = fragment.replace(/\{\{([^{}]+)\}\}/g, replaceToken);
+    if (/\{\{|\}\}/.test(rendered)) throw new Error(`Unresolved fragment template token: ${file}`);
+    return [file.slice(0, -3).replaceAll('-', '_'), rendered];
+  }));
+  for (const [token, fragment] of Object.entries(fragments)) {
+    if (token in values) throw new Error(`Duplicate workflow token: ${token}`);
+    values[token] = fragment;
+  }
+  let rendered = source.replace(/\{\{([^{}]+)\}\}/g, replaceToken);
   if (/\{\{|\}\}/.test(rendered)) throw new Error('Unresolved workflow template token.');
   if (host === 'codex') {
     rendered = rendered.replace(/^allowed-tools:.*\n/gm, '');
@@ -245,4 +265,4 @@ function main(argv = process.argv.slice(2)) {
 if (require.main === module) {
   try { main(); } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
-module.exports = { renderSkill, mutationPolicy, codexPolicy, writeClaudeSkills, buildCodex, workflowFiles };
+module.exports = { renderSkill, mutationPolicy, codexPolicy, writeClaudeSkills, buildCodex, workflowFiles, workflowFragmentFiles };

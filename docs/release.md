@@ -60,8 +60,14 @@ The release workflow then:
 There's no fixed cadence. Cut a release when:
 
 - A user-visible feature has shipped to `main` and you want it discoverable in Claude Code's marketplace UI.
-- A bug fix needs to roll out to existing installs (marketplace installs pull the latest tagged release, not `main`).
+- A bug fix needs to roll out to existing installs; publish a version bump and update the marketplace source/ref as applicable.
 - A `manifest-mcp-node` bump shipped — these change the MCP tool surface and should be tagged so users know to reconnect.
+
+A GitHub Release does not select a marketplace's installed revision. Claude
+Git sources use the repository's default branch unless the marketplace pins
+a branch, tag, or commit. Check the distributing marketplace's source and
+update its pin when publishing a new version. See the
+[Claude marketplace source reference](https://code.claude.com/docs/en/plugin-marketplaces#github-repositories).
 
 ## Pre-release checklist
 
@@ -81,7 +87,29 @@ headless installs without a keychain must explicitly select the file fallback.
 Legacy config migration verifies storage before removing plaintext. See
 [identity setup and recovery](identity.md) and the [implementation plan](eng-85-plan.md).
 The existing 0.4.0 host acceptance records remain historical; this bump does
-not make them evidence for 0.5.0 or publish a release.
+not make them evidence for 0.5.0 or publish a release. Fresh Linux
+[terminal and app-server reports](host-acceptance.md#050-preparation-status)
+and [native preservation evidence](current-install-acceptance-0.5.0.md) now bind
+reviewed source `4bbd5af14c504ac280fc6dc8c14383c6fff6c832`. Both hosts passed
+automatic 0.4.0 plaintext migration, native reinstall, offline wallet signing,
+saved-record checks, and automatic runtime repair. These runs explicitly
+selected file credentials.
+The reviewed preservation run used a warmed npm cache and needed no native
+chain reconnect. The [initial preservation run](host-evidence/current-install-preservation-0.5.0.json)
+at `c6fcc565` recorded a cold-start 30-second MCP timeout and native Claude
+Reconnect recovery. Native remove/install upgrade was tested, not marketplace
+update-in-place.
+
+Both hosts completed the [live testnet lifecycle](live-testnet-acceptance-0.5.0.md),
+including cleanup of temporary deployments, domains, hosts and wallet profiles.
+That reviewed live replay required operator-driven runtime bootstrap and
+native Claude reconnect recovery, separately from the warmed preservation run.
+The [0.5.0 checklist](release-0.5.0.md) tracks release-gate validation and the
+remaining publication steps; PR CI checks apply to the reviewed commit.
+The [initial 0.5.0 validation report](host-evidence/release-validation-0.5.0.json)
+at `c6fcc565` remains unchanged historical evidence.
+Native macOS Keychain and Windows Credential Manager/ACL acceptance remains
+unverified; Linux CLI evidence does not establish those platforms or GUI behavior.
 
 ## Native Codex compatibility release (ENG-894)
 
@@ -99,7 +127,7 @@ Cancelled or timed-out operations after broadcast can remain paid partial or
 unknown; users must inspect existing state before retrying. Headless hosts
 that cannot present native prompts support the read-only workflow subset.
 
-Current evidence includes the real Codex 0.153.4 app-server with harmless
+Historical 0.4.0 evidence includes the real Codex 0.153.4 app-server with harmless
 fixtures, both pinned launchers and published callback contracts, CLI terminal
 observations, the live testnet lifecycle, and
 [current-version reinstall and repair](current-install-acceptance.md).
@@ -128,7 +156,10 @@ Don't tag the hotfix branch directly. The release workflow refuses to release a 
 
 GitHub Releases can be deleted; the underlying tag can be deleted with `git push origin :v<version>`. Marketplace caches may still serve the yanked version until Claude Code refreshes them. Prefer cutting a new patch release with the fix over deleting; the bump path is faster and surfaces the fix in changelogs.
 
-## Next release: runtime compatibility and lease states (ENG-893, ENG-158)
+## Historical 0.4.0 changes: runtime compatibility and lease states (ENG-893, ENG-158)
+
+These changes shipped in 0.4.0 and provide upgrade context. The feature
+commits predated that release's version/tag preparation.
 
 - Requires Node 22.19.0+; CI covers that floor and Node 24. MCP is pinned to
   0.22.0 with a tracked lockfile. Consumer overrides carry upstream ENG-269/270/748
@@ -154,9 +185,10 @@ GitHub Releases can be deleted; the underlying tag can be deleted with `git push
   not in the chain enum; the string remains terminal for compatibility with
   agent-core's public type and terminal set, without a numeric mapping.
   Orchestrated flows continue to decode states upstream.
-- ENG-260 still owns full
-  SKU/provider UUID selection and persistence; authoring saves required size and
-  stops on ambiguous names. MCP 0.22.0's saved wrapper still lacks UUID selectors.
+- ENG-260 added exact SKU/provider UUID selection to authored drafts and
+  journals. MCP 0.22.0 honors compute selectors, but its saved wrapper still
+  lacks those UUID fields. Storage identity metadata remains a plugin-side
+  catalog check rather than an upstream storage selector.
 
 Record final package/launcher checks and any outstanding upstream dependency
 advisories in the PR. The prior Claude host evidence is recorded separately in

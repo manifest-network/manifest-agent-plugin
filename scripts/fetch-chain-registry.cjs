@@ -6,8 +6,9 @@
  *
  * Usage: node fetch-chain-registry.cjs [--data-dir $MANIFEST_PLUGIN_DATA]
  *
- * Writes to <data-dir>/chains/{mainnet,testnet}.json and updates .last-registry-fetch.
- * Outputs JSON summary to stdout.
+ * Writes to <data-dir>/chains/{mainnet,testnet}.json and updates .last-registry-fetch
+ * when at least one network is saved. Stdout contains only successfully saved
+ * networks. Partial success exits 0 with a stderr warning; zero success exits 1.
  */
 
 const major = parseInt(process.versions.node, 10);
@@ -120,9 +121,11 @@ function extractChainData(chainRaw, assetList) {
   chmodSync(dataDir, 0o700);
 
   const result = {};
+  const failed = [];
 
   for (const [network, urls] of Object.entries(CHAINS)) {
     console.error(`Fetching ${network} chain data...`);
+    let phase = 'fetching';
     try {
       // Asset list is optional (used only for symbol lookup), so allow it to
       // fail without aborting the whole network. Promise.allSettled keeps the
@@ -132,30 +135,39 @@ function extractChainData(chainRaw, assetList) {
         fetchJson(urls.assets),
       ]);
       if (chainRes.status === 'rejected') {
-        console.error(`  Failed: ${chainRes.reason.message}`);
-        continue;
+        throw chainRes.reason;
       }
       const chainRaw = chainRes.value;
       const assetList = assetRes.status === 'fulfilled' ? assetRes.value : null;
       const data = extractChainData(chainRaw, assetList);
       if (urls.converterAddress) data.converterAddress = urls.converterAddress;
       if (urls.faucetUrl) data.faucetUrl = urls.faucetUrl;
-      result[network] = data;
-
       const outPath = join(chainsDir, `${network}.json`);
       // Chain registry data is public — explicitly write at 0o644 so the
       // file mode matches its sensitivity. The parent dir is 0o700 so the
       // file is still effectively private to the user; this is just for
       // future-proofing if the dir mode ever loosens.
+      phase = 'writing';
       atomicWrite(outPath, JSON.stringify(data, null, 2) + '\n', { mode: 0o644 });
+      result[network] = data;
       console.error(`  Wrote ${outPath}`);
     } catch (err) {
-      console.error(`  Error fetching ${network}: ${err.message}`);
+      failed.push(network);
+      console.error(`  Error ${phase} ${network} chain data: ${err.message}`);
     }
   }
 
-  const tsPath = join(dataDir, '.last-registry-fetch');
-  atomicWrite(tsPath, String(Math.floor(Date.now() / 1000)), { mode: 0o644 });
+  const saved = Object.keys(result);
+  if (saved.length === 0) {
+    console.error('No chain data files were refreshed. Existing files and the last successful fetch timestamp were preserved.');
+    process.exitCode = 1;
+  } else {
+    const tsPath = join(dataDir, '.last-registry-fetch');
+    atomicWrite(tsPath, String(Math.floor(Date.now() / 1000)), { mode: 0o644 });
+    if (failed.length) {
+      console.error(`Partial registry refresh: saved ${saved.join(', ')}; failed ${failed.join(', ')}. Existing data for failed networks was retained.`);
+    }
+  }
 
   console.log(JSON.stringify(result, null, 2));
 })().catch((err) => {

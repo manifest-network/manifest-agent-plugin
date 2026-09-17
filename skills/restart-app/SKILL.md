@@ -4,10 +4,10 @@ description: >
   Restart a deployed app on Manifest via the provider, without closing
   its lease. Useful to apply config changes or recover from a crash.
   Optional argument: a lease UUID (omit to pick from active leases or
-  saved post-deploy records). Goes through textual confirmation and
-  the PreToolUse permission prompt; verifies post-restart status by
+  saved post-deploy records). Uses the host's action-confirmation and
+  permission flow; verifies post-restart status by
   re-querying app_status.
-allowed-tools: Bash(*), Read
+allowed-tools: Bash(*), Read, Write
 ---
 
 <!-- Generated from workflows/restart-app.md by ci/build-packages.cjs. -->
@@ -18,8 +18,8 @@ You are restarting a running Manifest app via its provider. The lease
 stays open; the container is signaled to stop and start again.
 `restart_app` is an HTTPS call to the provider — NOT a Cosmos
 transaction. There is no on-chain broadcast, no gas, and no fee
-estimate. The PreToolUse hook still requests host permission and the
-runtime policy calls for a textual confirmation. Do not query balances
+estimate. Follow the host-specific confirmation in Step 4 and its
+permission flow in Step 5. Do not query balances
 or call `cosmos_estimate_fee` for this skill.
 
 **For all user choices in this skill, use the `AskUserQuestion` tool.**
@@ -45,8 +45,10 @@ Run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If it fails, tell the user to run `/manifest-agent:init-agent` first
-and stop. Otherwise parse the JSON; you need `activeChain` for the
+If it fails, report the diagnostic and stop. Recommend
+`/manifest-agent:init-agent` only for an explicitly missing config; preserve
+and repair an unreadable or malformed existing config. Otherwise parse
+the JSON; you need `activeChain` for the
 mainnet warning in Step 3.
 
 **Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly.
@@ -58,11 +60,11 @@ Branches in priority order, mirroring `manage-domain` Step 3 and
 
 1. **From `$ARGUMENTS`**: if `$ARGUMENTS` is a non-empty UUID-shaped
    string, use it directly. Validate against the strict UUID pattern
-   (8-4-4-4-12 lowercase hex with dashes — the canonical regex lives
+   (8-4-4-4-12 case-insensitive hex with dashes — the canonical regex lives
    in `scripts/_uuid.cjs`); reject anything else with a clear error.
 2. **From `manifest://leases/active` MCP resource**: read the resource.
    If it returns one or more leases, present them via `AskUserQuestion`
-   (lease UUID, image, size). Let the user pick.
+   (UUID, state, provider UUID, creation time). Let the user pick.
 3. **Fallback to saved manifests**:
    ```bash
    node "$MANIFEST_PLUGIN_ROOT/scripts/list-saved-manifests.cjs"
@@ -73,6 +75,15 @@ Branches in priority order, mirroring `manage-domain` Step 3 and
    from `size` on an older record.
 4. **Last resort**: ask the user to paste a UUID. Validate against the
    UUID regex before continuing.
+
+The Fred resource JSON contains `active[]` and `pending[]` arrays.
+Each summary has `uuid`, `state`, `provider_uuid`, and `created_at`; it
+does not contain image, size, service inventory, or custom domains. Show
+the returned fields and use `uuid` as the picker value. Enrich from a
+matching saved record only when available, labeling it as a local snapshot.
+Do not invent missing values or interpret resource failure as an empty
+account; use the saved-record/manual fallback. The resource is a bounded
+snapshot, not a guarantee that every historical lease is listed.
 
 Store the chosen UUID as `LEASE_UUID`.
 
@@ -123,7 +134,7 @@ Options: **Yes** / **No**. Stop on No.
 (No "costs gas" wording — `restart_app` is a provider HTTPS call, not
 a Cosmos broadcast; the user is not paying gas for it.)
 
-## Step 4 — Textual confirm
+## Step 4 — Confirm the restart
 
 Use `AskUserQuestion` (Yes / No):
 
@@ -204,8 +215,11 @@ optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
 the writer is fail-closed and will exit 1 rather than append such
 records.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. The placeholders
+describe values, not serialized JSON; use actual booleans, arrays and nulls
+where indicated. Never substitute runtime values into shell source.
+
+```text
 {
   "skill": "restart-app",
   "active_chain": "<activeChain from Step 0>",
@@ -243,8 +257,35 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": <JOURNAL_RECOVERY_ACTIONS from Step 6>
 }
-JOURNAL_EOF
 ```
+
+Create a private temporary directory with `mktemp -d` and capture its returned
+path as `JOURNAL_DIR`. Use the **Write tool** to create a **new** file
+`journal.json` inside that directory containing the complete redacted record as
+JSON, correctly encoding every string. Do not create the file beforehand and
+do not use `mktemp -u`. The directory is mode `0700`; the host may create the
+file at `0644`, but the private parent prevents other users from accessing it.
+
+Never paste the record, its fields, or tool responses into a Bash
+command, heredoc, or `echo`. Redaction does not make user or registry text safe
+shell code. Bind `JOURNAL_DIR` to the returned directory as a properly
+shell-escaped literal in the same Bash call below; shell variables do
+not persist across calls. Pass the file through stdin and clean up only this
+staging file and directory, preserving the writer's exit status:
+
+```bash
+JOURNAL_PATH="$JOURNAL_DIR/journal.json"
+journal_status=0
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH" || journal_status=$?
+rm -f -- "$JOURNAL_PATH" || true
+rmdir -- "$JOURNAL_DIR" || true
+exit "$journal_status"
+```
+
+Also remove the staging file (if created) and directory on cancellation or
+Write failure. If appending fails, report the journal diagnostic
+without repeating the underlying operation; a journal failure does not undo
+completed work.
 
 Use `success` when the restart returned successfully and the one status
 snapshot reports ACTIVE with a healthy provider; this records acceptance

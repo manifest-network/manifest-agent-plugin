@@ -5,7 +5,7 @@ description: >
   hours for a Manifest tenant. Read-only. Defaults to the agent's own
   address; pass a bech32 address as the argument to query a different
   tenant.
-allowed-tools: Bash(*), Read
+allowed-tools: Bash(*), Read, Write
 ---
 
 # Balance
@@ -32,8 +32,10 @@ Run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If it fails, tell the user to run `{{invoke:init-agent}}` first
-and stop. Otherwise parse the JSON; you need:
+If it fails, report the diagnostic and stop. Recommend
+`{{invoke:init-agent}}` only for an explicitly missing config; preserve
+and repair an unreadable or malformed existing config. Otherwise parse
+the JSON; you need:
 - `activeChain` — used to point the renderer at
   `$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json` for denom
   humanization.
@@ -78,14 +80,29 @@ In both cases, `TENANT` is still used in Step 3 as the renderer's
 
 ## Step 3 — Render
 
-Pipe the JSON response through the renderer:
+Read `structuredContent` or parse the JSON text fallback. Check for MCP
+`isError: true` / JSON `error: true` before rendering; a failed query must
+not become an empty or healthy report. Create a private directory with
+`mktemp -d` and capture its path as `RESPONSE_DIR`. Use **{{write_tool}}** to
+create a new `response.json` inside it containing the successful payload as
+JSON; do not create that file beforehand or use `mktemp -u`. The directory
+is mode `0700`, so a host-created file at `0644` remains private inside it.
+Never interpolate response values into a shell command, heredoc, or `echo`.
+Bind `RESPONSE_DIR` and `RESPONSE_PATH` (the directory's `response.json`) to
+shell-quoted paths in the same {{shell_tool}} call where they are used.
+Also bind `TENANT` and the active-chain data path as shell-quoted values
+in this call; user-supplied addresses are data, never shell source. Redirect
+the file to the renderer's stdin:
 
 ```bash
-echo '<credit_balance response>' \
-  | node "$MANIFEST_PLUGIN_ROOT/scripts/render-balance.cjs" \
-      --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json" \
-      --address "$TENANT"
+node "$MANIFEST_PLUGIN_ROOT/scripts/render-balance.cjs" \
+  --chain-data-file "$MANIFEST_PLUGIN_DATA/chains/<activeChain>.json" \
+  --address "$TENANT" < "$RESPONSE_PATH"
 ```
+
+Remove `RESPONSE_PATH` and then the empty `RESPONSE_DIR` after rendering,
+retaining the renderer's exit status. Also clean them up on cancellation or
+{{write_tool}} failure. On renderer failure, report the diagnostic and stop.
 
 **Print the script's stdout verbatim.** The renderer emits a heading
 (`### Balance for <address>`) followed by four bullet rows: wallet,

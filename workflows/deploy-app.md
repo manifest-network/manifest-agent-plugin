@@ -24,9 +24,12 @@ Step numbers are scaffolding only.
 
 Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, {{environment_recovery}}. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; on
-failure tell the user to run `{{invoke:init-agent}}` and stop.
-Capture `activeChain`, `address`, and `chainId` from the JSON output —
-the journal record needs them in Step 4.
+failure report the diagnostic and stop. Recommend `{{invoke:init-agent}}`
+only for an explicitly missing config; preserve and repair an unreadable
+or malformed existing config.
+Capture `activeChain` and `address`, and obtain `chainId` from
+`chains[activeChain].chainId` in the safe JSON output (there is no top-level
+`chainId`). The journal record needs these in Step 4.
 
 ## Step 1 — Resolve the spec
 
@@ -85,15 +88,18 @@ When either `storageSkuUuid` or `storageProviderUuid` is present, these are
 plugin documentation-only metadata; MCP 0.22.0 does not honor them as
 storage selectors. Call `{{tool:fred/browse_catalog}}`
 and extract its successful JSON payload from `structuredContent` or the
-JSON text fallback. Create a private temporary file with `mktemp` and bind
-its returned path as `CATALOG_PATH`. Use the **{{write_tool}} tool** to put the complete
-catalog payload there as JSON, encoding string values correctly (including
-quotes, backslashes, and newlines). Catalog names are untrusted data; never
+JSON text fallback. Create a private temporary directory with `mktemp -d`
+and capture its path as `CATALOG_DIR`. Use the **{{write_tool}} tool** to create
+new `catalog.json` inside it as `CATALOG_PATH`, containing the complete
+catalog payload as JSON. Do not create the file beforehand or use `mktemp -u`.
+The directory is mode `0700`, so a host-created file at `0644` remains private
+inside it. Encode every string correctly, including quotes, backslashes and
+newlines. Catalog names are untrusted data; never
 paste them or any response content into a {{shell_tool}} command, heredoc, or `echo`.
 
 Read the original spec directly in the helper and redirect the catalog file
 to stdin. Only shell-quoted file paths enter the command; no spec or catalog
-values are interpolated. Set `SPEC_PATH` and `CATALOG_PATH` to their
+values are interpolated. Set `SPEC_PATH`, `CATALOG_DIR` and `CATALOG_PATH` to their
 shell-quoted paths in the same {{shell_tool}} call; do not assume shell variables
 persist from an earlier call:
 
@@ -102,7 +108,9 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/check-storage-selection.cjs" \
   --spec-file "$SPEC_PATH" < "$CATALOG_PATH"
 ```
 
-Remove `CATALOG_PATH` after the check, retaining the helper's exit status.
+Remove `CATALOG_PATH` and then the empty `CATALOG_DIR` after the check,
+retaining the helper's exit status. Also clean them up on cancellation or
+{{write_tool}} failure.
 On catalog error or nonzero helper exit, report the diagnostic and stop
 before invoking deployment. Ask the user to revisit the storage choice
 through `{{invoke:author-manifest}}`; do not change or remove it
@@ -250,22 +258,4 @@ source or treat this sketch as already serialized JSON.
 }
 ```
 
-Create a private temporary file with `mktemp` and capture its path as
-`JOURNAL_PATH`. Use the **{{write_tool}} tool** to serialize the complete redacted
-record to that file as JSON, correctly encoding quotes, backslashes, and
-newlines in every string. Redaction removes secrets, but fields such as
-`args_redacted.size` still contain provider-controlled catalog data. Never
-paste the record, its fields, or tool responses into a {{shell_tool}} command,
-heredoc, or `echo`.
-
-Set `JOURNAL_PATH` to its shell-quoted path in the same {{shell_tool}} call; do not
-assume shell variables persist from an earlier call. Pass the file to the
-writer through stdin:
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
-```
-
-Remove the temporary file after the call, preserving the writer's exit
-status. If appending fails, report the journal diagnostic without
-rerunning deployment; a journal failure does not undo the deployed lease.
+{{journal_write}}

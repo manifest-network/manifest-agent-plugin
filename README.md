@@ -35,10 +35,19 @@ It handles keypair generation and import, chain configuration (testnet/mainnet),
 
 - [Claude Code](https://claude.ai/code), or Codex with native plugin discovery and MCP form elicitation (see the host matrix for tested surfaces)
 - Stable Node.js >= 22.19.0 (Node 24 is also tested)
+- Bash for the shipped hook and workflow commands
 - An unlocked OS credential store; Linux also requires `secret-tool` (libsecret).
   See [credential setup and the explicit headless fallback](docs/identity.md).
 
+Release acceptance covers Linux terminals. Native macOS Keychain and Windows
+Credential Manager integration is implemented but has not been tested on those
+systems; it is not part of the verified 0.5.0 platform scope.
+
 ## Installation
+
+Run the terminal examples in Bash. Assignments such as `NAME=$(...)` use POSIX
+shell syntax and do not work as written in fish. From fish, run `bash` first
+and stay in that Bash session through any temporary-file cleanup.
 
 ### Codex
 
@@ -65,7 +74,7 @@ The following installation and quick-start instructions are for Claude Code.
 ### For development
 
 ```bash
-git clone https://github.com/liftedinit/manifest-agent-plugin.git
+git clone https://github.com/manifest-network/manifest-agent-plugin.git
 claude --plugin-dir ./manifest-agent-plugin
 ```
 
@@ -87,6 +96,13 @@ This walks you through:
 4. Generating a new keypair, or importing an existing mnemonic
 5. Writing the agent configuration
 
+Reinitializing an existing agent currently resets a custom gas multiplier to
+the default `1.5`. To swap wallets while retaining gas settings, use
+`/manifest-agent:import-key`; it restores the previous multiplier after writing
+the new wallet config. If restoration fails, the new wallet is already
+configured and the operation remains partial: resolve the diagnostic and retry
+only the multiplier update, without importing the wallet again.
+
 After setup, **restart Claude Code** (or run `/mcp` and reconnect) so the five MCP servers can pick up the new config.
 
 ### 2. Verify your setup
@@ -94,7 +110,7 @@ After setup, **restart Claude Code** (or run `/mcp` and reconnect) so the five M
 Once the MCP servers are connected, verify the agent is wired up correctly:
 
 - **Wallet address & balance** — ask the agent: *"What's my wallet address and balance?"* It will use `mcp__plugin_manifest-agent_manifest-chain__cosmos_query` (`module: bank, subcommand: balances`).
-- **Active chain** — the agent can read `$MANIFEST_PLUGIN_DATA/config.json`'s `activeChain` field. You can also infer it from the `mcp__plugin_manifest-agent_manifest-chain__cosmos_query` results.
+- **Active chain** — run `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status` in the host's tool shell to inspect safe configuration fields. Do not read config directly into conversation: a legacy copy can still contain a wallet password.
 - **Saved deployments** — `$MANIFEST_PLUGIN_DATA/manifests/` lists one JSON wrapper per past deployment (named `<lease_uuid>.json`). The `troubleshoot-deployment` skill includes a saved-manifest picker.
 
 `$MANIFEST_PLUGIN_DATA` resolves to `~/.claude/plugins/data/<plugin-id>/` and is exposed to scripts as `$MANIFEST_PLUGIN_DATA`. It's where all your runtime state lives — config, keys, chain data, saved deployments. The plugin root is read-only; nothing is written to your clone or marketplace cache.
@@ -125,7 +141,11 @@ Once your wallet is funded, you deploy in two steps: author a spec file, then de
 /manifest-agent:author-manifest
 ```
 
-Walks you through choosing single-service vs multi-service stack, picking a SKU, entering image refs, ports, env vars, optional custom domain, etc. Saves the spec to `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json` (or a user-chosen absolute path). The file is plain JSON — hand-edit it, version-control it, generate it from a script, share it across deploys.
+Walks you through choosing single-service vs multi-service stack, picking a SKU,
+entering image refs, ports, env vars and an optional custom domain. Saves the spec
+to `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json`, or an absolute path
+under the drafts directory or system temporary directory. The file is plain
+JSON; hand-edit it or copy it into your app repository for version control.
 
 For each image, authoring recommends a user-supplied
 `name@sha256:<64 hex characters>` reference and preserves it exactly. To
@@ -161,27 +181,45 @@ The orchestrated tool handles plan rendering, fee itemization, dual-tx broadcast
 
 ### Sensitive env values (file-pipe pattern)
 
-For secrets like database passwords, the env prompt in `/manifest-agent:author-manifest` offers a "From a file" option. Create a dotenv file in a separate terminal first:
+For secrets like database passwords, the env prompt in `/manifest-agent:author-manifest` offers a "From a file" option. Create a dotenv file in a separate Bash terminal first (run `bash` first if your usual shell is fish):
 
 ```bash
-cat > /tmp/wordpress.env
+umask 077
+ENV_INPUT_PATH=$(mktemp)
+cat > "$ENV_INPUT_PATH"
 WORDPRESS_DB_HOST=mysql
 WORDPRESS_DB_PASSWORD=hunter2
 ^D
-chmod 600 /tmp/wordpress.env
+printf '%s\n' "$ENV_INPUT_PATH"
 ```
 
-Then tell the agent the path. Values flow through a script pipe into the spec file; they never enter the chat input box and the agent never echoes them in summaries. Mirrors the mnemonic-import pattern from `init-agent` / `import-key`.
+Press Ctrl-D where `^D` is shown, then tell the agent the printed path. `mktemp`
+creates a fresh file with mode `0600`; an older file's permissions cannot carry
+over. Values flow through a script pipe into the spec file; they never enter
+the chat input box and the agent never echoes them in summaries. This uses the
+same fresh-file pattern as mnemonic import in `init-agent` / `import-key`.
+After a successful merge, remove the input file from the same terminal with
+`rm -- "$ENV_INPUT_PATH"`.
 
-Note: env values still appear in the `deploy_app_orchestrated` MCP tool call args at broadcast time — eliminating that exposure entirely needs upstream MCP changes.
+Note: env values still appear in `build_manifest_preview` and
+`deploy_app_orchestrated` MCP tool arguments during validation and deployment.
+Eliminating that exposure entirely needs upstream MCP changes.
 
 #### Spec file shape
 
-The spec is the same JSON shape `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview` and `mcp__plugin_manifest-agent_manifest-fred__deploy_app` accept:
+The saved file is a `DeploySpec` passed as `{spec: ...}` to
+`deploy_app_orchestrated`. It requires `size` and either `image` or `services`.
+Preview receives only the manifest fields (for an authored stack,
+`{services: spec.services}`); the direct Fred deployment tool has a separate
+argument contract. Compute selectors and custom-domain fields below are
+deployment metadata, not preview inputs.
 
 ```jsonc
 // Single-service
 {
+  "size": "<provider SKU name>",
+  "skuUuid": "<selected compute SKU UUID>",
+  "providerUuid": "<selected provider UUID>",
   "image": "docker.io/library/nginx:1.27",
   "port": 80,
   "env": { "FOO": "bar" },               // optional
@@ -189,7 +227,7 @@ The spec is the same JSON shape `mcp__plugin_manifest-agent_manifest-fred__build
   "command": ["/bin/sh"],                // optional
   "args": ["-c", "..."],                 // optional
   "health_check": { /* … */ },           // optional
-  "storage": { /* … */ },                // optional
+  "storage": "<provider storage SKU name>", // optional
   "tmpfs": { /* … */ },                  // optional
   "init": false,                         // optional
   "customDomain": "app.example.com"      // optional, see below
@@ -197,18 +235,23 @@ The spec is the same JSON shape `mcp__plugin_manifest-agent_manifest-fred__build
 
 // Multi-service stack
 {
+  "size": "<provider SKU name>",
+  "skuUuid": "<selected compute SKU UUID>",
+  "providerUuid": "<selected provider UUID>",
   "services": {
-    "wordpress": { "image": "...", "ports": [80], "env": { /* … */ } },
-    "mysql":     { "image": "...", "ports": [3306], "env": { /* … */ } }
+    "wordpress": { "image": "...", "ports": { "80/tcp": { "ingress": true } }, "env": { /* … */ } },
+    "mysql":     { "image": "...", "ports": { "3306/tcp": {} }, "env": { /* … */ } }
   },
-  "storage": { /* … */ },                // optional
-  "depends_on": { /* … */ },             // optional
+  "storage": "<provider storage SKU name>", // optional
   "customDomain": "app.example.com",     // optional
   "serviceName": "wordpress"             // required when customDomain set on a stack
 }
 ```
 
-Authoritative validation lives in the Fred manifest JSON Schema bundled in `manifest-mcp-fred`. `build_manifest_preview` validates against it before any broadcast, so a malformed spec fails before spending gas.
+The Fred schema validates container manifest fields during preview. The
+orchestrator separately validates the complete deployment spec and checks the
+selected catalog entries before showing its plan. Preview does not establish
+image availability, provider readiness, domain availability or deployment cost.
 
 ### What happens before broadcast
 
@@ -222,7 +265,10 @@ The host and orchestrated tool handle different parts of approval:
 
 The agent does not need to repeat or forward native elicitation prompts. The hook sees the outer tool call and cannot inspect its internal SDK operations or verify that a fee recap was displayed. Host prompt behavior must be validated for the Claude version and permission mode in use; see [approval validation](docs/approval-validation.md).
 
-Failed deploys (partial-success — lease created but manifest upload failed) raise a recovery-choice elicitation prompt: retry set-domain + upload, salvage without domain, or close the lease.
+When a failure leaves a lease behind, the orchestrator can request a
+state-dependent recovery choice, such as retrying upload, continuing without
+the domain, or closing the lease. Read the typed result even after declining
+recovery; that decline does not undo earlier spending.
 
 ## Custom domains
 
@@ -244,11 +290,17 @@ You can't point your CNAME until you know the provider's ingress hostname, which
 2. Note the provider FQDN from the success block.
 3. Set your CNAME (or A record for an apex) at the provider FQDN.
 4. Wait for DNS to propagate.
-5. TLS is provisioned by the provider after the lease item picks up the domain — typically a few minutes after both the chain claim and DNS are in place.
+5. Follow the provider's custom-domain and TLS instructions, then verify HTTPS.
+   The release acceptance covers on-chain domain assignment and clearing;
+   custom DNS and TLS provisioning were not tested.
 
 ### Partial-success failure
 
-The upstream `deploy_app` runs `create-lease` → `set-item-custom-domain` → manifest upload → readiness poll. If anything after `create-lease` fails (most commonly the FQDN is already claimed by another tenant — the upstream `Deploy partially succeeded:` error), the lease was created on-chain but the manifest was NEVER uploaded, so no app is running yet.
+The upstream `deploy_app` runs `create-lease` → `set-item-custom-domain` → manifest
+upload → readiness poll. A failure after lease creation can leave a paid lease.
+A domain-assignment failure occurs before upload, but later failures can leave
+an uploaded or running app. Preserve the lease and transaction IDs and inspect
+its current state before retrying.
 
 The orchestrated tool detects this case, queries the lease state, and offers state-aware recovery via an MCP elicitation prompt:
 
@@ -266,7 +318,7 @@ The orchestrated tool detects this case, queries the lease state, and offers sta
 
 Switches between testnet and mainnet. Mainnet selection requires explicit confirmation (the agent shows the chain ID and the wallet address before writing the change). After switching, restart Claude Code so the MCP servers reconnect with the new config.
 
-### Updating gas price or multiplier
+### Updating gas fee token or multiplier
 
 ```
 /manifest-agent:set-gas-price
@@ -275,7 +327,9 @@ Switches between testnet and mainnet. Mainnet selection requires explicit confir
 Lets you change:
 
 - **Gas fee token** — `umfx` (default) or factory `upwr`. Both are valid fee tokens on Manifest.
-- **Gas price** — the per-unit price (e.g. `0.001`).
+- **Gas price** — selecting a fee token uses its registry minimum price.
+  A custom full `<amount><denom>` price can be set with the
+  [configuration helper](docs/scripts.md).
 - **Gas multiplier** — applied to the simulated gas to produce the broadcast `gasLimit` (default `1.5`). Bump this if you frequently see out-of-gas errors.
 
 ### Refreshing chain registry data
@@ -298,7 +352,10 @@ This does NOT update the bundled Fred manifest schema (that's pinned in `manifes
 /manifest-agent:troubleshoot-deployment
 ```
 
-Bundles `app_status`, `app_diagnostics`, and recent `get_logs` for a deployed lease into one report. The lease picker offers three options: enter a UUID, pick from saved manifests, or look up by custom domain. Offers `close_lease` cleanup at the end if you want to reclaim the lease.
+Queries the lease's chain state through the read-only troubleshooting
+orchestrator. Provider status, diagnostics and logs are separate optional checks.
+The lease picker accepts a UUID, active leases, saved manifests or a custom
+domain. Cleanup uses a separately confirmed `close_lease_orchestrated` call.
 
 ### Listing your saved deployments
 
@@ -312,7 +369,13 @@ The wrappers persist after a lease expires or is closed — they're a historical
 
 ### Updating the plugin
 
-Marketplace installs auto-update when Claude Code refreshes the marketplace (typically on session start). Your `$MANIFEST_PLUGIN_DATA` directory survives plugin updates, so config, keys, and saved deployments are preserved. The SessionStart hook checks the tracked package and lockfile plus installed dependency files. It runs the shared setup command when dependencies changed, are missing, or were left incomplete. Setup installs with `npm ci --omit=dev --ignore-scripts` into the data directory, leaving the plugin root untouched.
+Use Claude Code's plugin controls to update a marketplace installation. Your
+`$MANIFEST_PLUGIN_DATA` directory survives plugin updates, so config, keys, and
+saved deployments are preserved. The SessionStart hook checks the tracked
+package and lockfile plus installed dependency files. It runs the shared setup
+command when dependencies changed, are missing, or were left incomplete. Setup
+installs with `npm ci --omit=dev --ignore-scripts` into the data directory,
+leaving the plugin root untouched.
 
 For development installs (`claude --plugin-dir`), pull the latest commits in your clone and restart Claude Code. MCP launchers wait for concurrent SessionStart setup, including a short grace period before its lock exists. If an unusually slow install exceeds startup's 25-second wait or the host timeout, let setup finish and reconnect the MCP servers.
 
@@ -348,7 +411,7 @@ checked with encrypted wallets and saved records; see
 | `/manifest-agent:init-agent` | Full interactive setup — install deps, choose chain, generate or import key |
 | `/manifest-agent:import-key` | Import an existing mnemonic phrase into the agent config |
 | `/manifest-agent:switch-chain` | Switch between testnet and mainnet |
-| `/manifest-agent:set-gas-price` | Change the gas fee token, price, and/or gas multiplier |
+| `/manifest-agent:set-gas-price` | Select the gas fee token at its registry minimum price and/or change the gas multiplier |
 | `/manifest-agent:refresh-registry` | Re-fetch chain data from the Cosmos chain registry |
 | `/manifest-agent:deploy-app <path>` | Deploy a containerized app end-to-end via `mcp__plugin_manifest-agent_manifest-agent__deploy_app_orchestrated`. Required argument: path to a JSON spec file produced by `/manifest-agent:author-manifest`. The orchestrated tool requires a complete `DeploySpec` (`validateSpec()` runs first), so non-file input directs at author-manifest. Plan / confirm / partial-success recovery via MCP elicitation; manifest persistence via `MANIFEST_AGENT_DATA_DIR` |
 | `/manifest-agent:author-manifest` | Build and validate a Fred deployment spec interactively (single-service or multi-service stack). Saves a JSON spec file (default location `$MANIFEST_PLUGIN_DATA/manifests-drafts/`) ready to feed to `/manifest-agent:deploy-app`. Optionally collects a custom domain (FQDN + service for stacks) |
@@ -410,11 +473,17 @@ OS temp cleaner can remove leftovers from abrupt termination.
 
 ### "Out of gas" during a broadcast
 
-The plugin auto-retries once with `gas_multiplier` bumped by `0.1`. If the retry also fails, the agent reports both failures and stops. Persistent OOG errors usually mean the gas multiplier in your config is too low; bump it via `/manifest-agent:set-gas-price` (the multiplier defaults to `1.5`; try `2.0` if you're hitting OOG repeatedly).
+For a direct `cosmos_tx` call, the runtime policy permits one retry with
+`gas_multiplier` raised by `0.1`, after a new fee estimate and confirmation.
+Orchestrated operations own their internal retry behavior. A timeout or unclear
+deployment outcome requires inspecting the existing lease before any retry.
+Use `/manifest-agent:set-gas-price` to change the configured multiplier.
 
 ### "Deploy partially succeeded:" error
 
-A deploy with a custom domain failed after the lease was created but before the manifest was uploaded. See [Custom domains → Partial-success failure](#partial-success-failure) — the orchestrator handles this automatically and offers state-aware recovery.
+A deployment failed after creating a lease. Preserve its identifiers and inspect
+the typed result and current state; an app may already exist. See
+[Partial-success failure](#partial-success-failure) for recovery choices.
 
 ### "FQDN already claimed by another tenant"
 
@@ -422,7 +491,10 @@ The custom domain you specified is already attached to another lease on-chain. C
 
 ### Permission prompts keep firing for read tools
 
-Bypass permissions mode (`--dangerously-skip-permissions`) is permanently reset after the first broadcast prompt due to upstream Claude Code bug [#37420](https://github.com/anthropics/claude-code/issues/37420). This is a known trade-off — see [Security](#security) below.
+Check the host version, permission mode and exact tool name. The plugin hook
+targets reviewed mutations; other prompts can come from host permissions.
+An older bypass-mode reset report has not been reproduced in the tested current
+host. See [approval validation](docs/approval-validation.md) for the verified scope.
 
 ### Credential store unavailable or wallet backup missing
 
@@ -472,7 +544,10 @@ Chain data (endpoints, gas prices, explorer URLs) is fetched live from the [Cosm
 ```
 
 - **Plugin root is read-only** in production (marketplace cache). All mutable state lives in `$MANIFEST_PLUGIN_DATA` — Claude Code's per-plugin persistent data directory at `~/.claude/plugins/data/<id>/`. The directory survives plugin updates and is cleaned on uninstall.
-- **Dependencies** (`@cosmjs/proto-signing`, `@manifest-network/manifest-mcp-node`, `request-filtering-agent`) are installed to `$MANIFEST_PLUGIN_DATA/node_modules/` automatically by the SessionStart hook (diff-checked against the plugin's bundled `package.json` on every session start), not in the plugin directory. The umbrella package now includes `manifest-mcp-agent` as a peer dep.
+- **Dependencies** are installed to `$MANIFEST_PLUGIN_DATA/node_modules/` by the
+  shared locked installer. Claude calls it from SessionStart; Codex calls it from
+  each launcher. It validates both package manifests and installed dependency
+  files, and never installs into the plugin directory.
 - **MCP servers** are launched by a wrapper script (`start-server.cjs`) that reads `config.json` and passes the appropriate environment variables to the server binary. The `manifest-agent` server additionally gets `MANIFEST_AGENT_DATA_DIR=$MANIFEST_PLUGIN_DATA` (so `agent-core`'s `saveManifest()` writes wrappers to the same path the read-only helpers index) and `MANIFEST_CHAIN_DATA_FILE` (for denom-map humanization).
 - **Orchestration** (plan rendering, fee itemization, partial-success recovery, verify-and-recover, persistence) lives in `@manifest-network/manifest-agent-core` — not in the plugin. Skill prose invokes the orchestrated MCP tools and surfaces their typed return values; the plugin no longer owns plan-rendering scripts, classification scripts, or verify-and-recover dispatch.
 - **Keypairs** are encrypted with a random 256-bit password and stored with `0600` permissions.
@@ -499,7 +574,7 @@ For the full architectural picture (data flow, scripts inventory, hook contracts
   processes running as the same user; this is not hardware signer isolation.
 - Hook behavior depends on the Claude version and permission mode. An older [upstream report](https://github.com/anthropics/claude-code/issues/37420) described bypass mode being reset after an `ask` decision; its behavior on current releases has not been established here. See [approval validation](docs/approval-validation.md) for what local tests cover and what requires a real host run.
 - The hook is an MCP entry-point guard, not signer isolation. The launcher supplies a decrypted password to its MCP child, and processes with access to the credential store and keyfile can use the wallet; shell commands or direct SDK calls do not pass through this MCP hook.
-- Env values supplied via the file-pipe pattern stay out of chat input and prose summaries, but they DO enter the agent's API context as part of the `build_manifest_preview` and `deploy_app` MCP tool call args at validation/broadcast time. Eliminating that exposure entirely needs upstream MCP support for "load env from this path" and is out of scope here.
+- Env values supplied via the file-pipe pattern stay out of chat input and prose summaries, but they DO enter the agent's API context as part of the `build_manifest_preview` and `deploy_app_orchestrated` MCP tool call args at validation/broadcast time. Eliminating that exposure entirely needs upstream MCP support for "load env from this path" and is out of scope here.
 
 ## Contributing
 

@@ -2,8 +2,10 @@
 
 The plugin now pins `@manifest-network/manifest-mcp-node@0.22.0`. The Claude
 host evidence below was collected for 0.10.0 in ENG-892; it remains historical
-host-boundary evidence, not a new end-to-end validation of 0.22.0. The current
-release adds the gated `restore_app` mutation and a dedicated read-only
+host-boundary evidence, not a new end-to-end validation of 0.22.0. For the
+release-specific Claude/Codex terminal and live evidence, start with
+[host-acceptance.md](host-acceptance.md). The 0.4.0 update added the gated
+`restore_app` mutation and a dedicated read-only
 `lookup_custom_domain_orchestrated`; every manage-domain call stays gated.
 ENG-893 runs the installed-inventory and real-launcher transport checks against
 the new locked package.

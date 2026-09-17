@@ -2,7 +2,7 @@
 name: journal
 description: >
   Query the operation journal — the read-only audit trail of every
-  state-changing skill invocation. Filter by date, skill, lease UUID,
+  recorded state-changing skill invocation. Filter by date, skill, lease UUID,
   signer address, or outcome. Use when the user requests this operation.
 allowed-tools: Bash(*)
 disable-model-invocation: true
@@ -13,10 +13,13 @@ disable-model-invocation: true
 Browse the append-only operation journal at
 `$MANIFEST_PLUGIN_DATA/journal/<YYYY-MM-DD>.jsonl`. Every state-changing
 skill (deploy-app, manage-domain set/clear, init-agent, switch-chain,
-set-gas-price, refresh-registry, import-key, author-manifest,
-troubleshoot-deployment with close_lease) writes one record per
-invocation: intent, plan summary, tool calls (args redacted), outcome,
-errors, recovery actions, final state.
+set-gas-price, refresh-registry, import-key, author-manifest, restart-app,
+troubleshoot-deployment with close_lease) is instructed to write one record
+per invocation: intent, plan summary, tool calls (args redacted), outcome,
+errors, recovery actions, final state. This is a workflow-maintained local
+log, not an automatic ledger of every MCP call. Direct calls, interrupted
+sessions and failed journal writes can leave gaps; verify chain/provider
+state when a record is absent.
 
 This skill is read-only. It does NOT mutate the journal.
 
@@ -61,7 +64,7 @@ for it after the mode pick:
 - **By skill** → ask for `SKILL_NAME` (offer common ones via
   `{{ask}}`: `deploy-app`, `manage-domain`, `init-agent`,
   `switch-chain`, `set-gas-price`, `refresh-registry`, `import-key`,
-  `author-manifest`, `troubleshoot-deployment`).
+  `author-manifest`, `restart-app`, `troubleshoot-deployment`).
 - **By lease UUID** → ask for `LEASE_UUID`. Validate it loosely (8-4-4-4-12
   hex with dashes); the script enforces strict UUID-shape.
 - **By outcome** → ask for `OUTCOME` via `{{ask}}` from the five
@@ -80,7 +83,11 @@ Store as `FORMAT`.
 
 ## Step 3 — Query the journal
 
-Compose the argv based on `MODE` and run:
+Compose argv from fixed flag names and the selected values. Shell-quote
+each value as a single literal argument, including signer, skill, dates
+and format. Never interpolate a user answer into shell source or execute
+command substitutions embedded in an answer. Set any shell variables in
+the same {{shell_tool}} call. Run:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/journal-read.cjs" \

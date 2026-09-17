@@ -9,7 +9,7 @@ description: >
   a read-only orchestrated chain query; set and clear flow through the
   orchestrated MCP tool, which requests native action confirmation,
   broadcasts, and verifies on-chain state.
-allowed-tools: Bash(*), Read
+allowed-tools: Bash(*), Read, Write
 ---
 
 # Manage Custom Domain
@@ -28,7 +28,9 @@ Step numbers are scaffolding for skill authors only.
 
 Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, {{environment_recovery}}. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; if it
-fails, tell the user to run `{{invoke:init-agent}}` first and stop.
+fails, report the diagnostic and stop. Recommend `{{invoke:init-agent}}`
+only for an explicitly missing config; preserve and repair an unreadable
+or malformed existing config.
 Capture `activeChain` and `address` from the JSON for the journal record.
 
 ## Step 1 — Pick the action
@@ -37,8 +39,7 @@ Use `{{ask}}`:
 
 - **Set** — attach a new FQDN to a lease item.
 - **Clear** — remove the FQDN currently attached to a lease item.
-- **Lookup** — find which lease (and which service inside it) currently
-  owns a given FQDN.
+- **Lookup** — find which lease currently owns a given FQDN.
 
 Store as `ACTION`. Lookup uses the dedicated read-only orchestrated tool;
 set and clear use the mutating orchestrated tool.
@@ -73,11 +74,11 @@ Lookup is read-only — do NOT write a journal record. Stop here.
 If `ACTION === "set"` or `ACTION === "clear"`:
 
 **Resolve `LEASE_UUID`**, in priority order:
-1. From `{{arguments}}` if non-empty and UUID-shaped (8-4-4-4-12 lowercase
+1. From `{{arguments}}` if non-empty and UUID-shaped (8-4-4-4-12 case-insensitive
    hex with dashes — the strict pattern in `scripts/_uuid.cjs`).
 2. From `manifest://leases/active` MCP resource — if it returns one or
-   more leases, surface lease UUID, image, and current `customDomain`
-   per item via `{{ask}}`. Let the user pick.
+   more leases, surface UUID, state, provider UUID and creation time
+   via `{{ask}}`. Let the user pick.
 3. From `list-saved-manifests.cjs`:
    ```bash
    node "$MANIFEST_PLUGIN_ROOT/scripts/list-saved-manifests.cjs"
@@ -88,6 +89,15 @@ If `ACTION === "set"` or `ACTION === "clear"`:
    from `size` on an older record.
 4. Ask the user to paste a UUID. Validate against the regex.
 
+The Fred resource JSON contains `active[]` and `pending[]` arrays.
+Each summary has `uuid`, `state`, `provider_uuid`, and `created_at`; it
+does not contain image, size, service inventory, or custom domains. Show
+the returned fields and use `uuid` as the picker value. Enrich from a
+matching saved record only when available, labeling it as a local snapshot.
+Do not invent missing values or interpret resource failure as an empty
+account; use the saved-record/manual fallback. The resource is a bounded
+snapshot, not a guarantee that every historical lease is listed.
+
 **Collect FQDN (set only)**: ask the user for the FQDN as a plain string.
 Do NOT pre-validate client-side — the orchestrated tool runs
 `validateArgs` server-side (RFC 1123 hostname check, scheme rejection,
@@ -96,7 +106,8 @@ Do NOT pre-validate client-side — the orchestrated tool runs
 **Select the lease item for set or clear**: use the lease's service
 inventory when available. For multiple items, ask which service is the
 target and pass its `serviceName`; clearing is scoped to an item too.
-For a single item the name may be omitted. If the inventory is unknown,
+Pass the name for a named service even when it is the only item. Omit it
+only for a legacy single item whose service name is empty. If the inventory is unknown,
 use `{{invoke:troubleshoot-deployment}} <LEASE_UUID>` to resolve it
 before asking the user to choose; do not guess a service.
 
@@ -107,7 +118,7 @@ before asking the user to choose; do not guess a service.
   action: ACTION,
   lease_uuid: LEASE_UUID,
   fqdn: FQDN,          // set only
-  service_name: SERVICE_NAME   // required to disambiguate multiple lease items
+  service_name: SERVICE_NAME   // use for every named service; omit only for a legacy unnamed item
 })
 ```
 
@@ -164,8 +175,11 @@ the invocation began, leave `tool_calls` empty.
 
 Do NOT mention the journal write in your reply to the user.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. The placeholders
+describe values, not serialized JSON; use actual booleans, arrays and nulls
+where indicated. Never substitute runtime values into shell source.
+
+```text
 {
   "skill": "manage-domain",
   "active_chain": "<activeChain from Step 0>",
@@ -191,8 +205,9 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": []
 }
-JOURNAL_EOF
 ```
+
+{{journal_write}}
 
 **Saved manifest wrapper note (unchanged):** the wrapper at
 `$MANIFEST_PLUGIN_DATA/manifests/<LEASE_UUID>.json` is intentionally
