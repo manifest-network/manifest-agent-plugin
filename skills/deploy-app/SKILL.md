@@ -26,9 +26,12 @@ Step numbers are scaffolding only.
 
 Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart Claude Code so the SessionStart hook runs, then stop. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; on
-failure tell the user to run `/manifest-agent:init-agent` and stop.
-Capture `activeChain`, `address`, and `chainId` from the JSON output —
-the journal record needs them in Step 4.
+failure report the diagnostic and stop. Recommend `/manifest-agent:init-agent`
+only for an explicitly missing config; preserve and repair an unreadable
+or malformed existing config.
+Capture `activeChain` and `address`, and obtain `chainId` from
+`chains[activeChain].chainId` in the safe JSON output (there is no top-level
+`chainId`). The journal record needs these in Step 4.
 
 ## Step 1 — Resolve the spec
 

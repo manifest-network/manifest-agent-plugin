@@ -6,13 +6,17 @@ skill and MCP discovery, independent bootstrap, and native form confirmation.
 Publishing a Codex release archive requires the Codex terminal/desktop and
 live testnet evidence listed in the repository's `docs/host-acceptance.md`.
 Pending Codex evidence does not block Claude-only releases.
-Codex CLI 0.153.4's app-server has passed the local fixture matrix; that result
-does not establish support for every Codex surface or version.
+Codex CLI 0.154.0 is the tested interactive Linux terminal. The separate
+app-server fixture uses CLI 0.153.4. Neither result establishes support for
+desktop GUIs, other CLI versions, or native macOS/Windows credential access.
 
 ## Install
 
-Use stable Node 22.19.0+ (Node 24 is also tested), npm, and Codex CLI 0.153.4.
-From a checkout of `liftedinit/manifest-agent-plugin`:
+Use stable Node 22.19.0+ (Node 24 is also tested), npm, Bash, and Codex CLI 0.154.0
+for the tested terminal flow. Linux also requires `secret-tool` and an unlocked
+Secret Service session, or an explicitly selected
+[file fallback](identity.md#headless-and-ci-fallback).
+From a checkout of `manifest-network/manifest-agent-plugin`:
 
 ```bash
 npm run build:codex
@@ -83,8 +87,10 @@ starting its MCP servers. Codex ignores ambient `CLAUDE_PLUGIN_DATA` and
 shell's wallet by accident.
 
 The supported arrangement isolates all mutable data by host. Do not point
-both hosts at the same directory: the installer lock protects dependencies,
-but it does not serialize chain selection or wallet changes in two hosts.
+both hosts at the same directory. The installer lock protects dependencies and
+the config lock serializes config writes, but a running MCP process retains
+its startup wallet and chain settings; sharing a directory can leave hosts
+using different identities from the config currently on disk.
 There is no automatic migration between host data directories, wallet import or chain selection. To reuse
 a spec, explicitly copy that draft to the other host and revalidate its
 provider/SKU selection. To reuse a wallet, explicitly run the import workflow

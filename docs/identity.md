@@ -10,8 +10,18 @@ backend and entry ID. Claude and Codex retain their separate identities.
 | System | Default store | Requirement |
 | --- | --- | --- |
 | Linux | Secret Service through libsecret | `secret-tool` on PATH and an unlocked Secret Service session, such as GNOME Keyring |
-| macOS | Keychain | Built-in `/usr/bin/security` and an unlocked login keychain |
+| macOS | Keychain | Built-in `/usr/bin/security` and an unlocked default keychain (usually the login keychain) |
 | Windows | Credential Manager | Windows PowerShell and access to the current user's credential store |
+
+The refreshed 0.5.0 terminal and live-testnet acceptance runs use Linux with
+explicit file storage. Separately, ENG-85 exercised real libsecret storage in
+an isolated Linux Secret Service session; see the
+[identity implementation plan](https://github.com/manifest-network/manifest-agent-plugin/blob/main/docs/eng-85-plan.md#validation).
+The macOS and Windows rows describe implemented adapters;
+native credential access and the complete host workflows remain unverified on
+those systems. Windows ACL checks are mocked. The shipped workflow commands
+also require a Bash shell; the PowerShell helper alone does not establish
+native Windows host compatibility.
 
 On Debian/Ubuntu, `secret-tool` is supplied by `libsecret-tools`; install the
 package and start the host inside your desktop/keyring session. A missing D-Bus
@@ -59,7 +69,7 @@ password, or a fallback to an inherited wallet/password environment variable.
 
 ## Existing installs
 
-The first Claude SessionStart after upgrade migrates a plaintext
+The first new Claude session after upgrade migrates a plaintext
 `agent.keyPassword`. All MCP launchers also migrate before loading the wallet,
 which covers Codex and launchers that run before the hook. Config-changing
 scripts use the same migration and lock; `update-config.cjs --status` stays
@@ -110,7 +120,9 @@ Atomic replacement removes the plaintext field from the current config; it
 cannot erase copies in backups, snapshots or filesystem history. Do not restore
 an old plaintext config as a routine dependency repair.
 
-For a manual migration, load the host environment first, then run:
+For a manual migration, run this in Claude's initialized tool shell, or source
+the installed Codex skill's `env.sh` as described in the
+[Codex guide](https://github.com/manifest-network/manifest-agent-plugin/blob/main/docs/codex.md#data-and-upgrades), then run:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs"
@@ -121,10 +133,13 @@ The no-argument command above retries immediately. The hook's recovery message
 asks the agent to run it because the host exports these variables into the
 agent's tool shell, not the user's terminal.
 
-If an older Codex package cannot forward the headless selection, run the migration
-from a plain shell after selecting the intended host data directory:
+If an older Codex package cannot forward the headless selection, use a current
+checkout or package in a plain shell and explicitly select both its root and
+the intended persistent data directory before running migration:
 
 ```bash
+export MANIFEST_PLUGIN_ROOT=/absolute/path/to/current/manifest-agent
+export MANIFEST_PLUGIN_DATA=/absolute/path/to/intended/host-data
 MANIFEST_CREDENTIAL_STORE=file node "$MANIFEST_PLUGIN_ROOT/scripts/migrate-credentials.cjs"
 ```
 
@@ -183,7 +198,10 @@ internal hook-report flags are retained for developer tests.
 
 ## Backup and recovery
 
-Keep the original mnemonic in your own secure backup. A config plus encrypted
+For an imported wallet, keep the original mnemonic in your own secure backup.
+The plugin's key-generation workflow does not display or export its generated
+mnemonic, so a generated wallet depends on a complete credential-aware backup.
+A config plus encrypted
 keyfile alone is no longer a complete wallet backup: recovery also needs the
 referenced OS keychain entry, or `credentials/` for the file fallback. Preserve
 the full data directory and back up the OS credential store using the platform's

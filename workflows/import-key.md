@@ -4,7 +4,7 @@ description: >
   Import an existing mnemonic phrase into the Manifest agent config.
   The mnemonic flows through scripts via stdin and never enters the
   conversation. Use when the user requests this operation.
-allowed-tools: Bash(*)
+allowed-tools: Bash(*), Write
 disable-model-invocation: true
 ---
 
@@ -38,7 +38,10 @@ before importing: the user must repair its JSON privately to preserve any legacy
 password, or move it aside as a private backup before initialization. Do not
 delete it or ask the user to paste its contents. Otherwise parse the JSON;
 `activeChain` AND `gasPrice` are required in Step 2 to preserve the existing chain
-and gas settings when re-writing the config.
+and gas price when re-writing the config. Also note `gasMultiplier`: the config
+writer resets that optional setting to its default of 1.5. Before importing,
+explain this if a custom multiplier is configured; offer `{{invoke:set-gas-price}}`
+after the import if the user wants to restore it.
 
 **Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password. Always use `update-config.cjs --status` to read safe fields.
 
@@ -48,6 +51,7 @@ Ask the user to provide the **path to a file** containing their mnemonic. They
 should create this file themselves in a separate terminal, e.g.:
 
 ```bash
+umask 077
 cat > /tmp/mnemonic.txt
 # paste mnemonic, press Enter, then Ctrl+D
 chmod 600 /tmp/mnemonic.txt
@@ -72,9 +76,11 @@ do not work around it by writing a plaintext password into config.
 Run (replacing `MNEMONIC_FILE` with the user's file path, `ACTIVE_CHAIN`
 with the `activeChain` from Step 0, and `CURRENT_GAS_PRICE` with the
 `gasPrice` from Step 0):
+Use properly shell-escaped literals for the supplied path and saved values,
+including any apostrophes; never insert unescaped text into shell source.
 
 ```bash
-cat MNEMONIC_FILE | node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain ACTIVE_CHAIN --gas-price CURRENT_GAS_PRICE
+node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest < 'MNEMONIC_FILE' | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain 'ACTIVE_CHAIN' --gas-price 'CURRENT_GAS_PRICE'
 ```
 
 The mnemonic flows through the pipe (file → import-key → write-config).
@@ -100,6 +106,10 @@ Tell the user:
 1. Their imported agent address
 2. The keyfile location
 3. That MCP servers need to be restarted to pick up the new key
+4. Any configured gas multiplier was reset to its default of 1.5; the selected
+   chain and gas price were retained
+5. Backups require the config, encrypted keyfile and referenced credential;
+   the original mnemonic is the independent recovery option
 
 ## Step 4 — Record this run in the journal
 
@@ -113,8 +123,11 @@ optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
 the writer is fail-closed and will exit 1 rather than append such
 records. This is the defense in depth for this skill.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. Placeholders describe
+in-memory values; never substitute them into shell source or treat the sketch
+as already serialized JSON.
+
+```text
 {
   "skill": "import-key",
   "active_chain": "<activeChain from Step 0>",
@@ -130,8 +143,23 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": []
 }
-JOURNAL_EOF
 ```
+
+Create a private temporary file with `mktemp` and capture its path as
+`JOURNAL_PATH`. Use the **{{write_tool}} tool** to serialize the complete redacted
+record to that file as JSON, correctly encoding quotes, backslashes and newlines.
+Never put the record, its fields or tool responses into a {{shell_tool}} command,
+heredoc or `echo`; redaction does not make user text safe shell code.
+Set `JOURNAL_PATH` to its shell-quoted path in the same {{shell_tool}} call; shell
+variables do not persist across calls. Pass the file through stdin:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+```
+
+Remove the temporary file after the call, preserving the writer's exit status.
+If appending fails, report its diagnostic without repeating the import; a journal
+failure does not undo the saved wallet configuration.
 
 Do NOT mention the journal write in your reply to the user.
 

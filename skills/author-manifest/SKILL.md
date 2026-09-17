@@ -47,7 +47,10 @@ Run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If it fails, tell the user to run `/manifest-agent:init-agent` first and stop.
+If it fails, surface the diagnostic and stop. Recommend
+`/manifest-agent:init-agent` only when it explicitly reports a missing config;
+an unreadable or malformed config needs repair while preserving the
+existing identity, not reinitialization.
 Otherwise parse the JSON; show the user `activeChain` and `address`.
 
 **Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password.
@@ -197,7 +200,8 @@ saved spec file by hand.
 **Health check** — ask: "Add a health check? (Yes / Skip)". On Yes,
 collect `test` (string array, e.g. `["CMD", "curl", "-f",
 "http://localhost:8080/health"]`), and optional `interval`, `timeout`,
-`retries`, `start_period`.
+`retries`, `start_period`. Durations use Go duration strings (for example
+`"30s"`) or integer nanoseconds; an integer is not interpreted as seconds.
 
 **Storage** — ask: "Add a persistent disk? (Yes / No)". On Yes, show active
 catalog entries on `PROVIDER_UUID` only, using the Step 2 picker. The catalog
@@ -238,11 +242,13 @@ list of paths.
 If the user picks **From a file**, ask them to create the file in a
 **separate terminal**, e.g.:
 ```bash
-cat > /tmp/<service>.env
+umask 077
+ENV_INPUT_PATH=$(mktemp)
+cat > "$ENV_INPUT_PATH"
 KEY1=value1
 KEY2=value2
 ^D
-chmod 600 /tmp/<service>.env
+printf '%s\n' "$ENV_INPUT_PATH"
 ```
 Tell them not to use `echo` (it lands in shell history). Wait for them to
 type the path back in chat. Store the path; the values are merged into the
@@ -391,13 +397,10 @@ If `validation.valid === false`:
 3. Loop back to Step 4 to fix. Re-call `build_manifest_preview`. Repeat until
    `validation.valid === true`.
 
-**Note on file-sourced env values**: `build_manifest_preview` here only sees
-the env vars the user typed in chat. Vars merged from a file in Step 7 are
-NOT validated at this point — they are validated when the saved spec is
-loaded by `/manifest-agent:deploy-app` (which routes through the
-orchestrated tool, which re-validates internally). If a file-sourced env
-key is invalid (e.g. reserved name like `PATH`), the failure surfaces at
-deploy time, not here.
+**Note on file-sourced env values**: this initial preview only sees env
+values already in the spec. Step 7 merges file values and immediately
+re-previews the saved services; invalid merged keys must stop authoring
+there. The deployment orchestrator also validates again at deploy time.
 
 Capture `meta_hash_hex` as `META_HASH`. **If Step 7 merges env files into
 the saved spec, the hash will change** — Step 7 re-validates and refreshes
@@ -421,39 +424,42 @@ Pipe the spec through stdin via a file (NOT a bash `echo` of the inline JSON
 — `echo` would re-render the spec, including any user-supplied env values,
 into the chat transcript as a literal command):
 
-1. Use the `Write` tool to materialize the SPEC JSON at a tempfile path,
-   e.g. `/tmp/.spec-PROCESS_PID-TIMESTAMP.json` (uppercase placeholders —
-   substitute the agent's bash `$$` and `$(date +%s)` respectively, do not
-   leave them as literals). The Write tool
-   renders the content as a structured tool call (one render, no shell
-   echo).
+1. Create a private temporary file with `mktemp`, capture its path as
+   `SPEC_TEMP_PATH`, and use `Write` to serialize SPEC there as
+   JSON. Only shell-quoted file paths enter shell commands; never paste
+   spec values into a command or heredoc. Bind path variables in the same
+   Bash call where they are used.
 2. Pipe the file to the helper via stdin redirection. For the default
    path, omit `--path`:
 
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" < /tmp/.spec-PROCESS_PID-TIMESTAMP.json
-   rm -f /tmp/.spec-PROCESS_PID-TIMESTAMP.json
+   node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" < "$SPEC_TEMP_PATH"
    ```
 
    For a user-chosen path:
 
    ```bash
-   node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" --path /absolute/path/to/spec.json < /tmp/.spec-PROCESS_PID-TIMESTAMP.json
-   rm -f /tmp/.spec-PROCESS_PID-TIMESTAMP.json
+   node "$MANIFEST_PLUGIN_ROOT/scripts/save-manifest-draft.cjs" --path "$CUSTOM_SPEC_PATH" < "$SPEC_TEMP_PATH"
    ```
 
-The script rejects malformed digests before writing and prints the saved
-file path on stdout on success. Capture it as `SAVED_PATH`. On failure,
-repair the reference and repeat its Step 3 choice before trying to save again.
+For a custom destination, bind `CUSTOM_SPEC_PATH` to the user's path as a
+shell-quoted literal. Remove the private temporary input after the helper
+finishes, preserving its exit status. The script rejects malformed digests
+before writing and prints the saved file path on stdout on success.
+Capture it as `SAVED_PATH`. On failure, report the actual diagnostic;
+repair malformed references through Step 3, or resolve the reported path
+or permission problem. Never overwrite an existing draft to force a save.
 
 **If the user picked "From a file" for env in Step 4** (single-service or
 per-service in stacks), merge the file values into the saved spec now. For
-each (service-name, env-file-path) pair the user provided:
+each (service-name, env-file-path) pair the user provided, bind
+`SAVED_PATH`, `SERVICE_NAME` and `ENV_FILE_PATH` as shell-quoted literals in
+the same call. Do not display the env file or interpolate its values:
 
 ```bash
-cat <env-file-path> | node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" \
+node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" \
   --spec-file "$SAVED_PATH" \
-  --service-name "<service-name>"
+  --service-name "$SERVICE_NAME" < "$ENV_FILE_PATH"
 ```
 
 (Omit `--service-name` only if the spec uses the legacy flat single-service
@@ -477,8 +483,8 @@ spec via `Read` (returns the spec as a structured tool result; any merged
 env values enter your context here) and re-call `build_manifest_preview`
 with `{ services: SAVED_SPEC.services }`. If validation fails, report the
 errors and leave the draft for repair; do not report it as ready to deploy. Capture the new `meta_hash_hex` and overwrite
-`META_HASH` so Step 8's report shows the hash that matches the saved
-file's bytes.
+`META_HASH` so Step 8 reports the generated Fred manifest hash for the
+saved services. It is not a hash of the surrounding spec file's bytes.
 
 ## Step 8 — Report
 
@@ -560,8 +566,11 @@ records. Do NOT embed the spec's env values; `tool_calls[].args_redacted`
 for `build_manifest_preview` MUST follow the env-keys-only convention
 (see `scripts/_journal.cjs#redactArgs`).
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. The placeholders
+describe values, not serialized JSON; use actual booleans, arrays and nulls
+where indicated. Never substitute runtime values into shell source.
+
+```text
 {
   "skill": "author-manifest",
   "active_chain": "<activeChain from Step 0>",
@@ -593,8 +602,24 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": []
 }
-JOURNAL_EOF
 ```
+
+Create a private temporary file with `mktemp` and capture its path as
+`JOURNAL_PATH`. Use the **Write tool** to serialize the complete
+redacted record there as JSON, correctly encoding all strings. Never paste
+record fields, user input, or tool responses into a Bash command,
+heredoc, or `echo`.
+
+Set `JOURNAL_PATH` to its shell-quoted path in the same Bash call;
+shell variables do not persist across calls. Redirect the file to stdin:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+```
+
+Remove the temporary file after the call, preserving the writer's exit
+status. If writing fails, report the journal diagnostic without repeating
+the underlying operation; a journal failure does not undo completed work.
 
 If the user cancelled mid-flow (skipping optional env fields is not cancellation), set
 `outcome` to `"cancelled"` and reduce `final_state` accordingly. If

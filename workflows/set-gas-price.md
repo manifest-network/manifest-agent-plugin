@@ -1,10 +1,10 @@
 ---
 name: set-gas-price
 description: >
-  Change the default gas fee token, price, and/or gas multiplier used by
-  the Manifest MCP servers. Shows available fee tokens from the chain
+  Select the default gas fee token at its registry minimum price and/or
+  change the gas multiplier used by the Manifest MCP servers. Shows tokens from the chain
   registry. Use when the user requests this operation.
-allowed-tools: Bash(*)
+allowed-tools: Bash(*), Write
 disable-model-invocation: true
 ---
 
@@ -33,7 +33,10 @@ Run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If it fails, tell the user to run `{{invoke:init-agent}}` first and stop. Otherwise parse the JSON output. Show the user their current settings:
+If config is absent, tell the user to run `{{invoke:init-agent}}` first and stop.
+If an existing config is unreadable or invalid, show the sanitized diagnostic
+and stop; repair it privately or preserve a private backup before initialization.
+Otherwise parse the JSON output. Show the user their current settings:
 - Gas price (token and amount)
 - Gas multiplier (if set, otherwise "default: 1.5")
 - Active chain
@@ -95,7 +98,10 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token GAS_TOKEN --g
 Replace `GAS_TOKEN` with the symbol the user chose in Step 2 (e.g., `MFX`).
 Passing no flags is a usage error.
 
-Parse the JSON output to confirm the update.
+If the update fails, stop and report its diagnostic; do not claim success or
+write a success journal entry. A legacy credential migration can require an
+unlocked credential store before the change succeeds. Parse successful JSON
+output to confirm the update.
 
 ## Step 5 — Report
 
@@ -115,8 +121,11 @@ optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
 the writer is fail-closed and will exit 1 rather than append such
 records.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. Placeholders describe
+in-memory values; never substitute them into shell source or treat the sketch
+as already serialized JSON.
+
+```text
 {
   "skill": "set-gas-price",
   "active_chain": "<activeChain from Step 0 status>",
@@ -129,11 +138,25 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": []
 }
-JOURNAL_EOF
 ```
 
-Substitute the bracketed values inline before running the heredoc; no
-`<...>` placeholders should remain. If the user cancelled mid-flow (e.g.
+Create a private temporary file with `mktemp` and capture its path as
+`JOURNAL_PATH`. Use the **{{write_tool}} tool** to serialize the complete redacted
+record to that file as JSON, correctly encoding quotes, backslashes and newlines.
+Never put the record, its fields or tool responses into a {{shell_tool}} command,
+heredoc or `echo`; redaction does not make user or registry text safe shell code.
+Set `JOURNAL_PATH` to its shell-quoted path in the same {{shell_tool}} call; shell
+variables do not persist across calls. Pass the file through stdin:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+```
+
+Remove the temporary file after the call, preserving the writer's exit status.
+If appending fails, report its diagnostic without repeating the config update;
+a journal failure does not undo the saved gas settings.
+
+If the user cancelled mid-flow (e.g.
 in Step 1), set `outcome` to `"cancelled"` and adjust `final_state`
 accordingly. Do NOT mention the journal write in your reply to the user
 — it's an internal audit trail.

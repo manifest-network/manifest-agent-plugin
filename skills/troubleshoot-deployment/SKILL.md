@@ -9,7 +9,7 @@ description: >
   records). The orchestrated MCP tool produces a unified Markdown
   report; the skill optionally drives close_lease_orchestrated when
   the user wants cleanup.
-allowed-tools: Bash(*), Read
+allowed-tools: Bash(*), Read, Write
 ---
 
 <!-- Generated from workflows/troubleshoot-deployment.md by ci/build-packages.cjs. -->
@@ -34,7 +34,9 @@ Step numbers are scaffolding for skill authors only.
 
 Run `echo "$MANIFEST_PLUGIN_ROOT"`. If empty, tell the user to restart Claude Code so the SessionStart hook runs, then stop. Run
 `node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status`; if it
-fails, tell the user to run `/manifest-agent:init-agent` first and stop.
+fails, report the diagnostic and stop. Recommend `/manifest-agent:init-agent`
+only for an explicitly missing config; preserve and repair an unreadable
+or malformed existing config.
 Capture `activeChain` and `address` for the journal record (only used
 when cleanup actually fires in Step 3).
 
@@ -47,8 +49,8 @@ Branches in priority order:
    UUID inside its `inputSchema`, so don't pre-check.
 2. **From `manifest://leases/active` MCP resource**: read the resource.
    If it returns one or more leases, present them via `AskUserQuestion`
-   (lease UUID, image, size, created-at, and `items[].customDomain`
-   when non-empty). Include a "Lookup by custom domain" option in the
+   (UUID, state, provider UUID and creation time). Include a
+   "Lookup by custom domain" option in the
    same picker.
 3. **Fallback to saved manifests**: if the resource is empty or
    unavailable, list saved post-deploy records:
@@ -73,6 +75,15 @@ Branches in priority order:
    response is a failed lookup, not evidence that no lease exists.
 5. **Last resort**: tell the user no leases found; ask them to paste a
    UUID. If they don't have one, stop.
+
+The Fred resource JSON contains `active[]` and `pending[]` arrays.
+Each summary has `uuid`, `state`, `provider_uuid`, and `created_at`; it
+does not contain image, size, service inventory, or custom domains. Show
+the returned fields and use `uuid` as the picker value. Enrich from a
+matching saved record only when available, labeling it as a local snapshot.
+Do not invent missing values or interpret resource failure as an empty
+account; use the saved-record/manual fallback. The resource is a bounded
+snapshot, not a guarantee that every historical lease is listed.
 
 Store the chosen UUID as `LEASE_UUID`.
 
@@ -177,8 +188,11 @@ journal record — matches today's posture.
 
 Do NOT mention the journal write in your reply to the user.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. The placeholders
+describe values, not serialized JSON; use actual booleans, arrays and nulls
+where indicated. Never substitute runtime values into shell source.
+
+```text
 {
   "skill": "troubleshoot-deployment",
   "active_chain": "<activeChain from Step 0>",
@@ -208,5 +222,21 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": []
 }
-JOURNAL_EOF
 ```
+
+Create a private temporary file with `mktemp` and capture its path as
+`JOURNAL_PATH`. Use the **Write tool** to serialize the complete
+redacted record there as JSON, correctly encoding all strings. Never paste
+record fields, user input, or tool responses into a Bash command,
+heredoc, or `echo`.
+
+Set `JOURNAL_PATH` to its shell-quoted path in the same Bash call;
+shell variables do not persist across calls. Redirect the file to stdin:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+```
+
+Remove the temporary file after the call, preserving the writer's exit
+status. If writing fails, report the journal diagnostic without repeating
+the underlying operation; a journal failure does not undo completed work.

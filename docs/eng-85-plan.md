@@ -2,8 +2,11 @@
 
 Issue: [ENG-85](https://linear.app/liftedinit/issue/ENG-85).
 
-Status: implemented locally for 0.5.0; ready for maintainer review. Live macOS
-and Windows credential-store acceptance remains outstanding.
+Status: merged in [PR #19](https://github.com/manifest-network/manifest-agent-plugin/pull/19)
+for 0.5.0. Native macOS and Windows credential-store acceptance remains
+untested because platform access is unavailable. Validation entries below
+record the implementation and review runs; release acceptance is tracked in
+[host-acceptance.md](host-acceptance.md).
 
 ## Implementation plan
 

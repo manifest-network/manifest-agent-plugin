@@ -5,7 +5,7 @@ description: >
   Defaults to active providers only; pass `--all` as the argument to
   include inactive entries. Foundational for SKU picking and
   provider-aware deploy flows.
-allowed-tools: Bash(*), Read
+allowed-tools: Bash(*), Read, Write
 ---
 
 # List Providers
@@ -47,12 +47,20 @@ Call:
 {{tool:lease/get_providers}}({ active_only: ACTIVE_ONLY })
 ```
 
-Then pipe the JSON response through the renderer:
+Read `structuredContent` or parse the JSON text fallback. Check for MCP
+`isError: true` / JSON `error: true` before rendering; a failed query must
+not become an empty or healthy report. Create a private file with `mktemp`,
+capture its path as `RESPONSE_PATH`, and use **{{write_tool}}** to write the
+successful payload as JSON. Never interpolate response values into a shell
+command, heredoc, or `echo`. Bind the file path using shell quoting in the
+same {{shell_tool}} call, then redirect it to the renderer's stdin:
 
 ```bash
-echo '<get_providers response>' \
-  | node "$MANIFEST_PLUGIN_ROOT/scripts/render-providers.cjs"
+node "$MANIFEST_PLUGIN_ROOT/scripts/render-providers.cjs" < "$RESPONSE_PATH"
 ```
+
+Remove `RESPONSE_PATH` after rendering, retaining the renderer's exit
+status. On renderer failure, report the diagnostic and stop.
 
 **Print the script's stdout verbatim.** Do not paraphrase the table or
 re-order the rows; the script owns the canonical Markdown.

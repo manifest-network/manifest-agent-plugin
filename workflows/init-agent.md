@@ -5,7 +5,7 @@ description: >
   after installing the plugin (or to re-key); it picks a chain, generates or
   imports a wallet, and writes config.json. User-invoked only — not for
   {{host}} to auto-discover.
-allowed-tools: Bash(*)
+allowed-tools: Bash(*), Write
 disable-model-invocation: true
 ---
 
@@ -163,6 +163,7 @@ Ask the user to provide the **path to a file** containing their mnemonic.
 They create the file themselves in a separate terminal:
 
 ```bash
+umask 077
 cat > /tmp/mnemonic.txt    # paste mnemonic, Enter, Ctrl+D
 chmod 600 /tmp/mnemonic.txt
 ```
@@ -173,13 +174,16 @@ mnemonic must never enter {{host}}'s context.
 
 Wait for the user to provide the path. Then run (substitute `MNEMONIC_FILE`,
 `CHOSEN_CHAIN` from Step 2, `GAS_TOKEN` from Step 3):
+Use a properly shell-escaped literal for the supplied path, including any
+apostrophes; never insert an unescaped path into shell source.
 
 ```bash
-cat MNEMONIC_FILE | node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest < 'MNEMONIC_FILE' | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
 ```
 
-Parse the JSON output to get `address` and `activeChain`. Suggest the
-user `rm` their mnemonic file after.
+If the pipeline fails, stop and report the sanitized diagnostic and retained
+keyfile path before retrying. Parse successful JSON output to get `address`
+and `activeChain`. Suggest the user delete their mnemonic file after success.
 
 ## Step 6 — Report results
 
@@ -189,7 +193,10 @@ Tell the user:
 3. Which chain is active
 4. The gas fee token in use
 5. That MCP servers need to be restarted to use the new config — they can do
-   this by running `/mcp` and reconnecting, or by restarting {{host}}
+   this through their host's MCP controls or by restarting {{host}}
+6. Generated wallets do not display a mnemonic. Back up the config, encrypted
+   keyfile and referenced OS credential entry (or the explicit file fallback).
+   Imported wallets can also be recovered using the original mnemonic.
 
 ## Step 7 — Offer testnet funding
 
@@ -209,8 +216,11 @@ the writer is fail-closed and will exit 1 rather than append such
 records. This is the defense in depth for this skill — mnemonics flow
 only through stdin pipes between scripts and never enter the journal.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. Placeholders describe
+in-memory values; never substitute them into shell source or treat the sketch
+as already serialized JSON.
+
+```text
 {
   "skill": "init-agent",
   "active_chain": "<chosen chain — testnet or mainnet>",
@@ -227,8 +237,23 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": []
 }
-JOURNAL_EOF
 ```
+
+Create a private temporary file with `mktemp` and capture its path as
+`JOURNAL_PATH`. Use the **{{write_tool}} tool** to serialize the complete redacted
+record to that file as JSON, correctly encoding quotes, backslashes and newlines.
+Never put the record, its fields or tool responses into a {{shell_tool}} command,
+heredoc or `echo`; redaction does not make user or registry text safe shell code.
+Set `JOURNAL_PATH` to its shell-quoted path in the same {{shell_tool}} call; shell
+variables do not persist across calls. Pass the file through stdin:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+```
+
+Remove the temporary file after the call, preserving the writer's exit status.
+If appending fails, report its diagnostic without repeating key generation or
+import; a journal failure does not undo the saved wallet configuration.
 
 If the user declined the existing-key warning in Step 4 or cancelled at
 any choice prompt, set `outcome` to `"cancelled"`. Do NOT mention the

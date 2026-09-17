@@ -4,10 +4,10 @@ description: >
   Restart a deployed app on Manifest via the provider, without closing
   its lease. Useful to apply config changes or recover from a crash.
   Optional argument: a lease UUID (omit to pick from active leases or
-  saved post-deploy records). Goes through textual confirmation and
-  the PreToolUse permission prompt; verifies post-restart status by
+  saved post-deploy records). Uses the host's action-confirmation and
+  permission flow; verifies post-restart status by
   re-querying app_status.
-allowed-tools: Bash(*), Read
+allowed-tools: Bash(*), Read, Write
 ---
 
 # Restart App
@@ -16,8 +16,8 @@ You are restarting a running Manifest app via its provider. The lease
 stays open; the container is signaled to stop and start again.
 `restart_app` is an HTTPS call to the provider — NOT a Cosmos
 transaction. There is no on-chain broadcast, no gas, and no fee
-estimate. The PreToolUse hook still requests host permission and the
-runtime policy calls for a textual confirmation. Do not query balances
+estimate. Follow the host-specific confirmation in Step 4 and its
+permission flow in Step 5. Do not query balances
 or call `cosmos_estimate_fee` for this skill.
 
 **For all user choices in this skill, use the `{{ask}}` tool.**
@@ -43,8 +43,10 @@ Run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If it fails, tell the user to run `{{invoke:init-agent}}` first
-and stop. Otherwise parse the JSON; you need `activeChain` for the
+If it fails, report the diagnostic and stop. Recommend
+`{{invoke:init-agent}}` only for an explicitly missing config; preserve
+and repair an unreadable or malformed existing config. Otherwise parse
+the JSON; you need `activeChain` for the
 mainnet warning in Step 3.
 
 **Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly.
@@ -56,11 +58,11 @@ Branches in priority order, mirroring `manage-domain` Step 3 and
 
 1. **From `{{arguments}}`**: if `{{arguments}}` is a non-empty UUID-shaped
    string, use it directly. Validate against the strict UUID pattern
-   (8-4-4-4-12 lowercase hex with dashes — the canonical regex lives
+   (8-4-4-4-12 case-insensitive hex with dashes — the canonical regex lives
    in `scripts/_uuid.cjs`); reject anything else with a clear error.
 2. **From `manifest://leases/active` MCP resource**: read the resource.
    If it returns one or more leases, present them via `{{ask}}`
-   (lease UUID, image, size). Let the user pick.
+   (UUID, state, provider UUID, creation time). Let the user pick.
 3. **Fallback to saved manifests**:
    ```bash
    node "$MANIFEST_PLUGIN_ROOT/scripts/list-saved-manifests.cjs"
@@ -71,6 +73,15 @@ Branches in priority order, mirroring `manage-domain` Step 3 and
    from `size` on an older record.
 4. **Last resort**: ask the user to paste a UUID. Validate against the
    UUID regex before continuing.
+
+The Fred resource JSON contains `active[]` and `pending[]` arrays.
+Each summary has `uuid`, `state`, `provider_uuid`, and `created_at`; it
+does not contain image, size, service inventory, or custom domains. Show
+the returned fields and use `uuid` as the picker value. Enrich from a
+matching saved record only when available, labeling it as a local snapshot.
+Do not invent missing values or interpret resource failure as an empty
+account; use the saved-record/manual fallback. The resource is a bounded
+snapshot, not a guarantee that every historical lease is listed.
 
 Store the chosen UUID as `LEASE_UUID`.
 
@@ -121,7 +132,7 @@ Options: **Yes** / **No**. Stop on No.
 (No "costs gas" wording — `restart_app` is a provider HTTPS call, not
 a Cosmos broadcast; the user is not paying gas for it.)
 
-## Step 4 — Textual confirm
+## Step 4 — Confirm the restart
 
 {{restart_confirmation}}
 
@@ -195,8 +206,11 @@ optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
 the writer is fail-closed and will exit 1 rather than append such
 records.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. The placeholders
+describe values, not serialized JSON; use actual booleans, arrays and nulls
+where indicated. Never substitute runtime values into shell source.
+
+```text
 {
   "skill": "restart-app",
   "active_chain": "<activeChain from Step 0>",
@@ -234,8 +248,24 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": <JOURNAL_RECOVERY_ACTIONS from Step 6>
 }
-JOURNAL_EOF
 ```
+
+Create a private temporary file with `mktemp` and capture its path as
+`JOURNAL_PATH`. Use the **{{write_tool}} tool** to serialize the complete
+redacted record there as JSON, correctly encoding all strings. Never paste
+record fields, user input, or tool responses into a {{shell_tool}} command,
+heredoc, or `echo`.
+
+Set `JOURNAL_PATH` to its shell-quoted path in the same {{shell_tool}} call;
+shell variables do not persist across calls. Redirect the file to stdin:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+```
+
+Remove the temporary file after the call, preserving the writer's exit
+status. If writing fails, report the journal diagnostic without repeating
+the underlying operation; a journal failure does not undo completed work.
 
 Use `success` when the restart returned successfully and the one status
 snapshot reports ACTIVE with a healthy provider; this records acceptance

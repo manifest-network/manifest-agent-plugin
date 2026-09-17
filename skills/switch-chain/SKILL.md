@@ -4,7 +4,7 @@ description: >
   Switch the Manifest agent's active chain between testnet and mainnet.
   Re-fetches the Cosmos chain registry data and updates config.json.
   Use when the user requests this operation.
-allowed-tools: Bash(*)
+allowed-tools: Bash(*), Write
 disable-model-invocation: true
 ---
 
@@ -35,7 +35,11 @@ Run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-If it fails, tell the user to run `/manifest-agent:init-agent` first and stop. Otherwise parse the JSON to get `activeChain` and `address`. Show the user their current active chain and agent address.
+If config is absent, tell the user to run `/manifest-agent:init-agent` first and stop.
+If an existing config is unreadable or invalid, show the sanitized diagnostic
+and stop. It must be repaired privately or moved aside as a private backup;
+it may still contain a recoverable legacy password. Otherwise parse the JSON
+to get `activeChain` and `address`. Show the current active chain and address.
 
 **Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password. Always use `update-config.cjs --status` to read safe fields.
 
@@ -77,7 +81,12 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain CHOSEN_CHAIN --re
 
 Replace `CHOSEN_CHAIN` with `testnet` or `mainnet`.
 
-Parse the JSON output to confirm the chain was switched.
+If the update fails, stop and report its diagnostic; do not claim a switch or
+write a success journal entry. A legacy credential migration can require an
+unlocked credential store before the change succeeds. Parse successful JSON
+output to confirm the chain was switched. The existing gas price is retained;
+if it uses a factory denom, check that denom belongs to the new chain and offer
+`/manifest-agent:set-gas-price` when it needs changing.
 
 ## Step 5 — Report
 
@@ -100,8 +109,11 @@ optional `_`/`-` separators; canonical regex in `scripts/_journal.cjs`);
 the writer is fail-closed and will exit 1 rather than append such
 records.
 
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
+Build the redacted record as an object with this shape. Placeholders describe
+in-memory values; never substitute them into shell source or treat the sketch
+as already serialized JSON.
+
+```text
 {
   "skill": "switch-chain",
   "active_chain": "<new active chain — testnet or mainnet>",
@@ -114,8 +126,23 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" <<'JOURNAL_EOF'
   "errors": [],
   "recovery_actions": []
 }
-JOURNAL_EOF
 ```
+
+Create a private temporary file with `mktemp` and capture its path as
+`JOURNAL_PATH`. Use the **Write tool** to serialize the complete redacted
+record to that file as JSON, correctly encoding quotes, backslashes and newlines.
+Never put the record, its fields or tool responses into a Bash command,
+heredoc or `echo`; redaction does not make user or registry text safe shell code.
+Set `JOURNAL_PATH` to its shell-quoted path in the same Bash call; shell
+variables do not persist across calls. Pass the file through stdin:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+```
+
+Remove the temporary file after the call, preserving the writer's exit status.
+If appending fails, report its diagnostic without repeating the chain switch;
+a journal failure does not undo the saved configuration.
 
 If the user cancelled (Step 1 "already on chain" early-out, or Step 2
 mainnet decline), set `outcome` to `"cancelled"` and adjust

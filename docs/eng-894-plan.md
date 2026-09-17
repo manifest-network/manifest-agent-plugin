@@ -1,5 +1,9 @@
 # ENG-894 implementation plan
 
+Historical plan and validation record for the 0.4.0 compatibility release,
+published on 2026-09-15. Current code is prepared for 0.5.0; see
+[release status](release.md) and [host acceptance](host-acceptance.md).
+
 Goal: ship the existing complete-spec Manifest workflows in Claude Code and
 Codex with one maintained workflow source and one deterministic runtime.
 Prerequisites ENG-892 and ENG-893 are merged. The upstream runtime remains
@@ -56,12 +60,13 @@ zero mutations; accepted calls and paid-partial recovery retain the expected
 marker counts. Progress and post-broadcast cancellation visibility limitations
 are documented with the captured screens in [the acceptance matrix](host-acceptance.md).
 
-Both hosts now have completed [live-testnet and cleanup evidence](live-testnet-acceptance.md)
+For 0.4.0, both hosts completed [live-testnet and cleanup evidence](live-testnet-acceptance.md)
 and [current-install preservation evidence](current-install-acceptance.md).
 The repository owner excluded legacy-version migration because there are no
 existing users of the old plugin; native reinstall and runtime repair are
-the required replacement checks. The separate compatibility version/tag
-release remains. No GUI validation is included. Package versions remain 0.4.0.
+the required replacement checks for that release. No GUI validation was
+included. Those observations used package version 0.4.0 and do not certify
+subsequent versions.
 
 Sources checked during implementation (2026-09-11):
 

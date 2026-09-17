@@ -209,7 +209,7 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 - `ci/check-powershell.ps1` parses the shipped PowerShell scripts without running Windows APIs. Tests verify syntax-error rejection, Unicode stdin, and that ACL/invalid operations skip native compilation.
 - `ci/terminal-host-smoke.cjs` drives the actual Claude and Codex terminal UIs through a private tmux socket, a loopback model fixture, and marker-only MCP tools. It records rendered prompts, input keys, progress, results and mutation counts. See `docs/host-acceptance.md` for the pinned CLI versions and scope.
 - `ci/lease-state-parity.cjs --data-dir <runtime-dir>` compares the plugin's numeric `STATES` table with the installed manifestjs `LeaseState` enum, excluding the SDK's `UNRECOGNIZED = -1` sentinel. CI runs it after runtime installation; its unit tests use fixtures and require no runtime packages.
-- Use `rg -n '<script>.cjs' skills/ scripts/` to locate callers — the call graph drifts and isn't worth restating in prose.
+- Use `rg -n '<script>.cjs' workflows/ skills/ scripts/ ci/` to locate callers. Change shared workflow sources and regenerate shipped skills together.
 
 ## config.json → MCP env var mapping
 
@@ -227,7 +227,7 @@ The per-script catalog (CLI entry points, renderer-exception modules, `_<topic>.
 | `agent.keyFile` | `MANIFEST_KEY_FILE` | yes (existing file) |
 | `agent.keyPasswordRef` → credential store | `MANIFEST_KEY_PASSWORD` | yes (resolved string, including empty; legacy plaintext migrated first) |
 
-**Agent-server-only env vars** (set unconditionally when `serverName === 'agent'`, see `start-server.cjs`):
+**Agent-server-only env vars** (the first two are always set for `agent`; the guarded-fetch override is forwarded only when present):
 
 | Computed value | Env var | Required |
 |---|---|---|
@@ -351,7 +351,13 @@ See [the integration plan](docs/eng-117-plan.md) for the release gate.
 
 ### Sensitive env values (file-pipe pattern)
 
-Mirrors the mnemonic-import pattern used by `init-agent` / `import-key`. The user creates a dotenv file in a separate terminal (`cat > /tmp/<svc>.env` … Ctrl+D, then `chmod 600`), names the path in chat, and the agent pipes it through `scripts/merge-env.cjs` to mutate the spec file in place. The script outputs only the merged keys (never values), so the chat input box stays clean and the agent never echoes secrets in summaries. Author flow merges into the saved spec at `--spec-file <SAVED_PATH>`; deploy flow materializes the in-memory spec to a `/tmp/.spec-env-<pid>.json`, merges, then `Read`s it back.
+The user creates a private dotenv file in a separate terminal, names only
+its path in chat, and the agent pipes it into `scripts/merge-env.cjs`. Create
+the file with restrictive permissions before writing values, for example
+with `umask 077` and `mktemp`, then edit it locally. Authoring merges into
+the saved draft at `--spec-file <SAVED_PATH>`; the helper emits only key
+names. `deploy-app` loads a complete saved spec and has no inline env-entry
+or env-merge branch. Follow the shared authoring workflow for file cleanup.
 
 What this protects: the chat input never carries secrets, and prose summaries (intent recap, deployment plan) are keys-only by construction. The orchestrated tools' plan + recap renderers (inside `manifest-agent-core/internals/render-*`) use the same env-keys-only discipline; the plugin-side `summarize-manifest.cjs` keeps the redaction discipline for the read-only discovery surface.
 
@@ -371,7 +377,13 @@ What it doesn't: env values still flow into the `build_manifest_preview` and `de
 
 **Dual-tx broadcast (deploy-app with `customDomain`):** the orchestrated tool itemizes both fees in its plan-elicitation prompt, broadcasts both inside one MCP tool call, and routes partial-success failures through agent-core's recovery dispatch (retry-set-domain / salvage-without-domain / cancel-or-close). Host permission is requested before the outer orchestrated call. Lease creation and domain assignment are separate, sequential transactions; one can succeed while the next fails.
 
-**Known limitation (unchanged from pre-rewire):** `manage-domain` set/clear operations do NOT refresh the saved wrapper's `custom_domain` field — the persistence path requires the canonical `manifest_json` bytes which manage-domain never has. The wrapper's `custom_domain` may go stale until the next `deploy-app` run for that lease; consumers needing the live value should query the chain via `mcp__plugin_manifest-agent_manifest-lease__leases_by_tenant` or `mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain`.
+**Known limitation:** `manage-domain` set/clear operations do not refresh
+the saved wrapper's `custom_domain` field. Treat it as a historical deployment
+snapshot and query the chain for the current assignment via
+`mcp__plugin_manifest-agent_manifest-lease__leases_by_tenant` or
+`mcp__plugin_manifest-agent_manifest-lease__lease_by_custom_domain`.
+Calling `deploy-app` again creates a new lease; it is not a way to refresh
+the existing lease's record.
 
 ## Saved post-deploy records
 

@@ -23,11 +23,11 @@ Runtime support starts at Node 22.19.0. CI tests that exact floor and Node 24
 with the tracked MCP 0.22.0 dependency lock.
 
 ```bash
-# Inside Claude Code, with deps already installed in $MANIFEST_PLUGIN_DATA:
+# Dependency-free unit suite, inside or outside a host:
 npm test
 
-# Outside Claude Code, where SessionStart hasn't run, install deps to a
-# scratch dir and point NODE_PATH at it:
+# For installed-runtime checks and executable examples, install the lock
+# outside the plugin checkout and point NODE_PATH at it:
 INSTALL_DIR="$HOME/.manifest-agent-dev"   # outside the plugin checkout; CI uses $HOME/.manifest-agent
 MANIFEST_PLUGIN_DATA="$INSTALL_DIR" node scripts/setup-runtime.cjs
 NODE_PATH="$INSTALL_DIR/node_modules" node --test tests/*.test.cjs
@@ -120,12 +120,11 @@ When the script under test emits a single line of JSON, assert on `result.json` 
 
 ## Fixtures
 
-There is no `tests/fixtures/` directory. Fixtures are inlined as JS literals in each test file. Two reasons:
-
-1. The shapes are small (most fit on one screen).
-2. Inlining keeps the assertion adjacent to the input, which makes failures debuggable without flipping between files.
-
-If a fixture grows large enough that this trade-off flips (more than ~50 lines, or shared by 3+ tests), promote it to a top-level `const FIXTURE = ...` in the test file. Don't extract to a separate file unless the same fixture is needed by multiple test files.
+Keep small input/output fixtures inline so the assertion stays beside its
+input. Shared executable fixtures live in `tests/fixtures/`: JSON-RPC peers,
+the harmless native-host MCP server, the Claude MCP fixture, and the local
+terminal model driver. CI syntax-checks these files. Extract a separate
+fixture when multiple tests or host harnesses need the same behavior.
 
 ## Writing a new test
 
@@ -193,27 +192,37 @@ exercising the commands by hand.
 <!-- docs-ci network -->
 ```bash
 export MANIFEST_PLUGIN_DATA="${MANIFEST_PLUGIN_DATA:-$HOME/.manifest-agent-dev}"
-node scripts/setup-runtime.cjs
+node scripts/setup-runtime.cjs || exit
 export NODE_PATH="${NODE_PATH:-$MANIFEST_PLUGIN_DATA/node_modules}"
+printf 'Runtime ready: %s\n' "$MANIFEST_PLUGIN_DATA"
 ```
 
 ### Fetch chain registry
 
-<!-- docs-ci network -->
+<!-- docs-ci network expect="mainnet" expect="testnet" -->
 ```bash
 node scripts/fetch-chain-registry.cjs
 ```
 
-### Generate a key
+### Generate and configure a test key
 
 `gen-agent-key.cjs` mints a fresh 24-word wallet, encrypts it under a
 randomly generated password, and prints `{ address, keyfile, password,
 agentId }` as JSON on stdout (all human-readable logs go to stderr). It
-writes the encrypted keyfile under `$MANIFEST_PLUGIN_DATA/keys/`.
+writes the encrypted keyfile under `$MANIFEST_PLUGIN_DATA/keys/`. Pipe its
+output directly into `write-config.cjs` so the password does not appear in
+terminal output or captured logs. Fetch chain data first when running this
+example manually. Use only a disposable developer data directory: this
+command selects a new wallet in its config.
+
+This example explicitly selects private-file credential storage for a
+headless test environment. For native credential storage, follow
+[identity setup](identity.md).
 
 <!-- docs-ci -->
 ```bash
-node scripts/gen-agent-key.cjs --prefix manifest
+node scripts/gen-agent-key.cjs --prefix manifest |
+  MANIFEST_CREDENTIAL_STORE=file node scripts/write-config.cjs --chain testnet --gas-price 1umfx
 ```
 
 ### Render a balance report
@@ -273,8 +282,11 @@ echo '{
 
 ### Test an MCP wrapper end-to-end
 
-Requires a real `config.json` and blocks on the spawned MCP server, so it
-is intentionally NOT tagged for docs-ci.
+Requires initialized config, its encrypted wallet and accessible credential
+storage. Each command starts a stdio JSON-RPC server and waits for a client;
+it does not itself send a request. Run one at a time, or use
+`ci/launcher-transport.cjs` above for an automated offline transport check.
+These commands are intentionally not tagged for docs-ci.
 
 ```bash
 node scripts/start-server.cjs chain
@@ -290,7 +302,11 @@ Post-ENG-130 most orchestration logic lives in `@manifest-network/manifest-agent
 - `tests/session-start.test.cjs` — the runtime policy heredoc references the orchestrated tools as the canonical confirmation surface (no longer mentions `render-deployment-plan.cjs` / `format-success.cjs`).
 - All read-only renderers (`tests/render-{balance,providers,releases}.test.cjs`), the journal (`tests/_journal.test.cjs`, `tests/journal-{read,write}.test.cjs`), the I/O primitives (`tests/_io.test.cjs`, `tests/_uuid.test.cjs`), the spec helpers (`tests/_spec.test.cjs`), the env merge (`tests/merge-env.test.cjs`), and the saved-manifest summarizer (`tests/summarize-manifest.test.cjs`).
 
-For end-to-end exercise of the orchestrated flow itself, see `manifest-mcp-mono`'s test suite. A live testnet smoke run from this plugin is in scope for ENG-130 #18 but optional pending wallet/credit availability.
+For the orchestrator's own tests, see `manifest-mcp-mono`. This repository
+also exercises its published callback contracts with `ci/host-contracts.cjs`.
+Live host/chain/provider acceptance is a separate, funded run described in
+[host-acceptance.md](host-acceptance.md); it is required for the current
+version's Codex release archive, not for ordinary unit-test runs.
 
 ## Doc/code drift checks
 
@@ -446,7 +462,9 @@ this stream-control harness does not itself exercise the terminal UI.
    `ci/check-powershell.ps1` also parses `scripts/*.ps1` and `ci/*.ps1` without
    invoking Windows APIs; its regression test rejects deliberately malformed syntax.
 3. `JSON.parse` on every tracked `.json` file.
-4. Version consistency: `package.json` and `.claude-plugin/plugin.json` must match.
+4. Version consistency: `package.json`, `.claude-plugin/plugin.json`,
+   `hosts/codex/manifest-agent/.codex-plugin/plugin.json`, and the lockfile's
+   root package version must match.
 5. Installed MCP tool inventory: `ci/mcp-tool-policy.cjs` discovers the actual tools published by all configured servers, checks metadata and anchored scoped matcher coverage, and preserves the explicit read-only/testnet-faucet exceptions. It sends initialization and `tools/list` requests only, using an isolated synthetic signer fixture with outbound network operations blocked. It never invokes a transaction or provider tool.
 6. PreToolUse policy completeness (`npm run test:policy-completeness` → `ci/policy-completeness.cjs`): every matcher-gated tool is named in the `scripts/session-start.sh` runtime policy (the R3 fix), AND the `CLAUDE.md` "Tools gated by the PreToolUse hook" list set-equals the matcher (principle #6). See "Doc/code drift checks" above for the matching contract and allowlist rules.
 7. SessionStart policy: `bash scripts/session-start.sh` must produce non-empty stdout that contains `cosmos_estimate_fee`.
@@ -455,6 +473,14 @@ this stream-control harness does not itself exercise the terminal UI.
 10. Unit tests: `node --test tests/*.test.cjs`. Post-ENG-130 the suite covers wrapper plumbing (`tests/start-server.test.cjs` — env-var contract for all five servers including `agent`), the journal layer (`tests/_journal.test.cjs` + `tests/journal-{read,write}.test.cjs` — including the four new orchestrated-tool reducers), the read-only renderers, the env merge, the saved-manifest summarizer, and the two drift-check harnesses (`tests/docs-ci.test.cjs`, `tests/policy-completeness.test.cjs` — the demonstrated-drift proofs). Orchestration logic itself (plan rendering, classification, recovery dispatch) is tested upstream in `manifest-mcp-mono`.
 11. Real launcher transport: `ci/launcher-transport.cjs --data-dir "$INSTALL_DIR"` initializes all five published servers through the shipped launcher with an encrypted public fixture wallet and outbound networking blocked.
 12. Executable docs (`npm run test:docs` → `ci/docs-ci.cjs docs/testing.md`): runs the `docs-ci`-tagged shell examples and asserts their `expect`/`expect-not` directives hold. Runs after the runtime-deps install so `NODE_PATH` resolves. See "Doc/code drift checks" above.
+
+CI also builds the generated Claude/Codex packages, validates historical
+evidence provenance and release-row status/schema, checks installed lease-state
+parity and both-host callback contracts, and uploads the Codex package. A
+separate job installs Codex 0.153.4, runs the eight app-server fixture cases,
+and validates their fresh report against the checkout. It does not run the
+interactive terminal or funded testnet matrix. The main job runs on Node
+22.19.0 and Node 24.
 
 When the published MCP surface changes, review the installed-inventory check, hook matcher, runtime policy, and `CLAUDE.md` gated-tool list together. Policy parity, package discovery, local hook tests, and actual Claude-host behavior establish different things; see [`approval-validation.md`](approval-validation.md).
 
@@ -523,7 +549,9 @@ Dispatch tests intercept `Add-Type` and prove ACL/invalid operations skip it,
 including mutations that incorrectly hoist compilation before validation.
 These are protocol and behavior tests, not a live RPC or desktop UI acceptance
 record. An isolated Linux D-Bus/GNOME Keyring session additionally verified actual
-libsecret storage, readback and migration. Before a compatibility release,
-record macOS Keychain and Windows Credential Manager round trips, migration,
-and the host's display of the startup report. The previous 0.4.0 host reports
-remain historical evidence.
+libsecret storage, readback and migration. Native macOS Keychain and Windows
+Credential Manager round trips, migration and Windows ACL behavior remain
+untested; platform access is unavailable for the 0.5.0 release preparation.
+Record those limits in the release notes and do not claim native acceptance
+on those platforms. Linux CLI acceptance separately checks the host's startup
+report. The previous 0.4.0 host reports remain historical evidence.
