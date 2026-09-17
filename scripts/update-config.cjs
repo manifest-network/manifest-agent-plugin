@@ -163,6 +163,13 @@ function readChainFile(chainsDir, network) {
       if (testnetData) config.chains.testnet = testnetData;
     }
 
+    // A partial registry fetch may leave only the other network available.
+    // Validate after merging files so a newly fetched target is usable, while
+    // an ordinary --chain cannot select metadata absent from the config.
+    if ((args.chain || args.refreshChains) && !config.chains?.[config.activeChain]) {
+      throw new Error(`Chain data not found for ${config.activeChain}. Run fetch-chain-registry.cjs, verify that network was saved, then retry with --refresh-chains.`);
+    }
+
     // Write config back with the credential reference preserved.
     atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
   });

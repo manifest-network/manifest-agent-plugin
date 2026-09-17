@@ -70,13 +70,18 @@ Options: **Yes** / **No**. Stop on No.
 node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
 ```
 
-This refreshes both chains' data from the Cosmos chain registry.
+Check the exit status and parse the JSON output. Each present network key
+identifies data successfully fetched and saved. Require `CHOSEN_CHAIN` in
+that output before continuing. If the helper fails or that key is absent,
+report the diagnostic and stop before updating config; an older cached file
+is not proof of a fresh fetch. Report any partial refresh without claiming
+both networks are current.
 
 ## Step 4 — Update config
 
 Run:
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain CHOSEN_CHAIN --refresh-chains
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain 'CHOSEN_CHAIN' --refresh-chains
 ```
 
 Replace `CHOSEN_CHAIN` with `testnet` or `mainnet`.
@@ -128,21 +133,33 @@ as already serialized JSON.
 }
 ```
 
-Create a private temporary file with `mktemp` and capture its path as
-`JOURNAL_PATH`. Use the **Write tool** to serialize the complete redacted
-record to that file as JSON, correctly encoding quotes, backslashes and newlines.
-Never put the record, its fields or tool responses into a Bash command,
-heredoc or `echo`; redaction does not make user or registry text safe shell code.
-Set `JOURNAL_PATH` to its shell-quoted path in the same Bash call; shell
-variables do not persist across calls. Pass the file through stdin:
+Create a private temporary directory with `mktemp -d` and capture its returned
+path as `JOURNAL_DIR`. Use the **Write tool** to create a **new** file
+`journal.json` inside that directory containing the complete redacted record as
+JSON, correctly encoding every string. Do not create the file beforehand and
+do not use `mktemp -u`. The directory is mode `0700`; the host may create the
+file at `0644`, but the private parent prevents other users from accessing it.
+
+Never paste the record, its fields, or tool responses into a Bash
+command, heredoc, or `echo`. Redaction does not make user or registry text safe
+shell code. Bind `JOURNAL_DIR` to the returned directory as a properly
+shell-escaped literal in the same Bash call below; shell variables do
+not persist across calls. Pass the file through stdin and clean up only this
+staging file and directory, preserving the writer's exit status:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+JOURNAL_PATH="$JOURNAL_DIR/journal.json"
+journal_status=0
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH" || journal_status=$?
+rm -f -- "$JOURNAL_PATH" || true
+rmdir -- "$JOURNAL_DIR" || true
+exit "$journal_status"
 ```
 
-Remove the temporary file after the call, preserving the writer's exit status.
-If appending fails, report its diagnostic without repeating the chain switch;
-a journal failure does not undo the saved configuration.
+Also remove the staging file (if created) and directory on cancellation or
+Write failure. If appending fails, report the journal diagnostic
+without repeating the underlying operation; a journal failure does not undo
+completed work.
 
 If the user cancelled (Step 1 "already on chain" early-out, or Step 2
 mainnet decline), set `outcome` to `"cancelled"` and adjust

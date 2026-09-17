@@ -46,9 +46,8 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
 ```
 
 Parse the JSON output: each present network key (`mainnet` / `testnet`)
-identifies fetched chain data. Also check stderr for file-write errors
-before claiming the corresponding file was saved. The helper can
-exit 0 with a partial result or `{}` after network failures; omitted keys
+identifies chain data successfully fetched and saved. A partial result exits
+0 with a diagnostic; no successful networks emits `{}` and exits 1. Omitted keys
 mean that network was not refreshed, and any older file remains. Preserve
 stderr diagnostics. If neither network succeeded, report failure and
 skip the config update. If only one succeeded, report the partial refresh;
@@ -126,22 +125,7 @@ where indicated. Never substitute runtime values into shell source.
 }
 ```
 
-Create a private temporary file with `mktemp` and capture its path as
-`JOURNAL_PATH`. Use the **{{write_tool}} tool** to serialize the complete
-redacted record there as JSON, correctly encoding all strings. Never paste
-record fields, user input, or tool responses into a {{shell_tool}} command,
-heredoc, or `echo`.
-
-Set `JOURNAL_PATH` to its shell-quoted path in the same {{shell_tool}} call;
-shell variables do not persist across calls. Redirect the file to stdin:
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
-```
-
-Remove the temporary file after the call, preserving the writer's exit
-status. If writing fails, report the journal diagnostic without repeating
-the underlying operation; a journal failure does not undo completed work.
+{{journal_write}}
 
 Use `chains_changed: []` when there was no comparable config change.
 Set `config_updated` to a boolean reflecting the actual config write,

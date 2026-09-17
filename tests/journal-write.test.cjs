@@ -90,8 +90,12 @@ test('deploy skill journal command reads serialized records without interpreting
       final_state: {},
     }));
     assert.equal(recordJson.includes(secret), false, 'reduce environment values before serialization');
-    const journalPath = join(dataDir, 'journal record.json');
-    writeFileSync(journalPath, recordJson, { mode: 0o600 });
+    const journalDir = mkdtempSync(join(dataDir, "journal staging's "));
+    const journalPath = join(journalDir, 'journal.json');
+    // Native Claude Write may create mode 0644; the fresh private parent is
+    // the confidentiality boundary until the writer persists the 0600 record.
+    writeFileSync(journalPath, recordJson, { mode: 0o644, flag: 'wx' });
+    assert.equal(statSync(journalDir).mode & 0o777, 0o700);
 
     // Execute the documented command, so returning to an interpolated heredoc
     // breaks this regression even when the journal writer itself is unchanged.
@@ -102,10 +106,12 @@ test('deploy skill journal command reads serialized records without interpreting
         MANIFEST_PLUGIN_ROOT: pluginRoot,
         MANIFEST_PLUGIN_DATA: dataDir,
         MANIFEST_SESSION_ID: '',
-        JOURNAL_PATH: journalPath,
+        JOURNAL_DIR: journalDir,
       },
+      timeout: 10000,
     });
     assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+    assert.equal(existsSync(journalDir), false, 'staging file and directory must be removed');
     const filePath = join(dataDir, 'journal', `${todayUtc()}.jsonl`);
     assert.equal(r.stdout.trim(), filePath, 'stdout must contain only the journal path');
     const contents = readFileSync(filePath, 'utf8');
@@ -132,6 +138,26 @@ test('auto-fills timestamp_iso, timestamp_unix, schema_version when absent', () 
     assert.match(record.timestamp_iso, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     assert.equal(typeof record.timestamp_unix, 'number');
     assert.equal(record.schema_version, 1);
+  });
+});
+
+test('shared journal command cleans private staging and preserves a writer failure under errexit', () => {
+  withDataDir((dataDir) => {
+    const pluginRoot = join(__dirname, '..');
+    const fragment = readFileSync(join(pluginRoot, 'workflows/fragments/journal-write.md'), 'utf8');
+    const command = /```bash\n([\s\S]*?)\n```/.exec(fragment)[1];
+    const journalDir = mkdtempSync(join(dataDir, 'failed-journal-'));
+    writeFileSync(join(journalDir, 'journal.json'), 'invalid JSON');
+    const result = spawnSync('bash', ['-ec', command], {
+      encoding: 'utf8', timeout: 10000,
+      env: { PATH: process.env.PATH, MANIFEST_PLUGIN_ROOT: pluginRoot,
+        MANIFEST_PLUGIN_DATA: dataDir, JOURNAL_DIR: journalDir },
+    });
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(existsSync(journalDir), false);
+    assert.equal(existsSync(join(dataDir, 'journal')), false);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /JSON/);
   });
 });
 

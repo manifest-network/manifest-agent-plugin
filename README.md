@@ -174,16 +174,25 @@ For secrets like database passwords, the env prompt in `/manifest-agent:author-m
 
 ```bash
 umask 077
-cat > /tmp/wordpress.env
+ENV_INPUT_PATH=$(mktemp)
+cat > "$ENV_INPUT_PATH"
 WORDPRESS_DB_HOST=mysql
 WORDPRESS_DB_PASSWORD=hunter2
 ^D
-chmod 600 /tmp/wordpress.env
+printf '%s\n' "$ENV_INPUT_PATH"
 ```
 
-Then tell the agent the path. Values flow through a script pipe into the spec file; they never enter the chat input box and the agent never echoes them in summaries. Mirrors the mnemonic-import pattern from `init-agent` / `import-key`.
+Press Ctrl-D where `^D` is shown, then tell the agent the printed path. `mktemp`
+creates a fresh file with mode `0600`; an older file's permissions cannot carry
+over. Values flow through a script pipe into the spec file; they never enter
+the chat input box and the agent never echoes them in summaries. This uses the
+same fresh-file pattern as mnemonic import in `init-agent` / `import-key`.
+After a successful merge, remove the input file from the same terminal with
+`rm -- "$ENV_INPUT_PATH"`.
 
-Note: env values still appear in the `deploy_app_orchestrated` MCP tool call args at broadcast time — eliminating that exposure entirely needs upstream MCP changes.
+Note: env values still appear in `build_manifest_preview` and
+`deploy_app_orchestrated` MCP tool arguments during validation and deployment.
+Eliminating that exposure entirely needs upstream MCP changes.
 
 #### Spec file shape
 
@@ -219,8 +228,8 @@ deployment metadata, not preview inputs.
   "skuUuid": "<selected compute SKU UUID>",
   "providerUuid": "<selected provider UUID>",
   "services": {
-    "wordpress": { "image": "...", "ports": [80], "env": { /* … */ } },
-    "mysql":     { "image": "...", "ports": [3306], "env": { /* … */ } }
+    "wordpress": { "image": "...", "ports": { "80/tcp": { "ingress": true } }, "env": { /* … */ } },
+    "mysql":     { "image": "...", "ports": { "3306/tcp": {} }, "env": { /* … */ } }
   },
   "storage": "<provider storage SKU name>", // optional
   "customDomain": "app.example.com",     // optional
@@ -298,7 +307,7 @@ The orchestrated tool detects this case, queries the lease state, and offers sta
 
 Switches between testnet and mainnet. Mainnet selection requires explicit confirmation (the agent shows the chain ID and the wallet address before writing the change). After switching, restart Claude Code so the MCP servers reconnect with the new config.
 
-### Updating gas price or multiplier
+### Updating gas fee token or multiplier
 
 ```
 /manifest-agent:set-gas-price

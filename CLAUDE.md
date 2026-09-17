@@ -125,7 +125,7 @@ Invoked as `/manifest-agent:<skill-name>`. All skills guard that `$MANIFEST_PLUG
 - **init-agent** — Full setup: install deps, fetch registry, choose chain, generate or import key, write config
 - **import-key** — Import existing mnemonic (requires init-agent first)
 - **switch-chain** — Switch testnet/mainnet with mainnet confirmation before write
-- **set-gas-price** — Change gas fee token, price, and/or gas multiplier
+- **set-gas-price** — Select the gas fee token at its registry minimum price and/or change the gas multiplier
 - **refresh-registry** — Re-fetch chain data from Cosmos chain registry
 - **author-manifest** — Plugin-side draft creation. Builds + validates a Fred spec via `mcp__plugin_manifest-agent_manifest-fred__build_manifest_preview`, saves via `save-manifest-draft.cjs` to `$MANIFEST_PLUGIN_DATA/manifests-drafts/<auto-name>.json` (or a user-chosen path). Preserves supplied image digests and asks for an explicit mutable-tag choice per service. No readiness pre-flight — the orchestrated deploy tool re-checks at broadcast time. No client-side image inspection or domain validation. MCP 0.22.0 exposes no tag-resolution API; preview validates the manifest, not registry contents. See DECISION 1 and the ENG-117 boundary below.
 - **troubleshoot-deployment** — Picker (`$ARGUMENTS` → `manifest://leases/active` → `list-saved-manifests.cjs` → lookup-by-FQDN → user-paste) plus a thin invocation of `mcp__plugin_manifest-agent_manifest-agent__troubleshoot_deployment_orchestrated`, which is a pure chain query returning pre-rendered Markdown. The cleanup elicitation, when the user opts in, drives `mcp__plugin_manifest-agent_manifest-agent__close_lease_orchestrated` as a separate tool call. The outer close invocation is gated before execution; its internal SDK operations do not trigger separate host PreToolUse events.
@@ -353,8 +353,10 @@ See [the integration plan](docs/eng-117-plan.md) for the release gate.
 
 The user creates a private dotenv file in a separate terminal, names only
 its path in chat, and the agent pipes it into `scripts/merge-env.cjs`. Create
-the file with restrictive permissions before writing values, for example
-with `umask 077` and `mktemp`, then edit it locally. Authoring merges into
+the fresh file with `umask 077` and `ENV_INPUT_PATH=$(mktemp)`, then write or
+edit it locally using the quoted `"$ENV_INPUT_PATH"`. Use the same pattern
+with `MNEMONIC_INPUT_PATH` for mnemonic import; do not reuse a fixed filename,
+because `umask` does not change an existing file's permissions. Authoring merges into
 the saved draft at `--spec-file <SAVED_PATH>`; the helper emits only key
 names. `deploy-app` loads a complete saved spec and has no inline env-entry
 or env-merge branch. Follow the shared authoring workflow for file cleanup.
@@ -423,9 +425,14 @@ Every state-changing skill appends one record per invocation to `$MANIFEST_PLUGI
 
 **Writing**: skills pipe a JSON record to `journal-write.cjs`. The writer auto-fills `timestamp_iso`, `timestamp_unix`, `schema_version`, and `session_id` (from `$MANIFEST_SESSION_ID`); runs `validateRecord` (fail-closed against `SECRET_KEY_DENYLIST` — see below); appends one line via `fs.appendFileSync(... { flag: 'a' })`. Concurrency story: on Linux ext4 / xfs the inode mutex serializes concurrent `write(2)` calls to a regular file, so a record under `MAX_RECORD_BYTES` (4 KiB) appends without interleaving in practice — best-effort, not a POSIX guarantee (`PIPE_BUF` formally applies to pipes / FIFOs only). Records exceeding 4 KiB are replaced with a smaller `journal_truncated` marker so realistic concurrent writes stay in the single-`write(2)` regime and the daily file never carries a torn line.
 
-`deploy-app` serializes the complete redacted record with the host Write
-tool into a private temporary file, then passes it via stdin redirection.
-Only the file path enters shell source. Redaction removes secret values;
+Every journal-writing workflow uses the shared `workflows/fragments/journal-write.md`
+fragment to serialize the complete redacted record with the host Write tool.
+It creates a private directory with `mktemp -d` (mode `0700`) and writes a
+new filename inside it, then passes the file via stdin redirection. Claude's
+Write tool can create the new file without first reading it; a file created
+with mode `0644` remains private through its `0700` parent. The workflow
+removes both temporary artifacts after the append attempt. Only quoted
+temporary paths enter shell source. Redaction removes secret values;
 it does not make remaining values such as provider-controlled SKU names
 safe to interpolate into a shell command or heredoc.
 

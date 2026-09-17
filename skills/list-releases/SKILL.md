@@ -75,18 +75,23 @@ Store the chosen UUID as `LEASE_UUID`.
 Call `mcp__plugin_manifest-agent_manifest-fred__app_releases({ lease_uuid: LEASE_UUID })`.
 Read `structuredContent` or parse the JSON text fallback. Check for MCP
 `isError: true` / JSON `error: true` before rendering; a failed query must
-not become an empty or healthy report. Create a private file with `mktemp`,
-capture its path as `RESPONSE_PATH`, and use **Write** to write the
-successful payload as JSON. Never interpolate response values into a shell
-command, heredoc, or `echo`. Bind the file path using shell quoting in the
-same Bash call, then redirect it to the renderer's stdin:
+not become an empty or healthy report. Create a private directory with
+`mktemp -d` and capture its path as `RESPONSE_DIR`. Use **Write** to
+create a new `response.json` inside it containing the successful payload as
+JSON; do not create that file beforehand or use `mktemp -u`. The directory
+is mode `0700`, so a host-created file at `0644` remains private inside it.
+Never interpolate response values into a shell command, heredoc, or `echo`.
+Bind `RESPONSE_DIR` and `RESPONSE_PATH` (the directory's `response.json`) to
+shell-quoted paths in the same Bash call where they are used. Redirect
+the file to the renderer's stdin:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/render-releases.cjs" < "$RESPONSE_PATH"
 ```
 
-Remove `RESPONSE_PATH` after rendering, retaining the renderer's exit
-status. On renderer failure, report the diagnostic and stop.
+Remove `RESPONSE_PATH` and then the empty `RESPONSE_DIR` after rendering,
+retaining the renderer's exit status. Also clean them up on cancellation or
+Write failure. On renderer failure, report the diagnostic and stop.
 
 **Print the script's stdout verbatim.** Do not paraphrase the table or
 re-sort the rows; the script owns the canonical Markdown.

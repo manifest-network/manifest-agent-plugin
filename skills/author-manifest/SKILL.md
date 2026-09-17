@@ -111,11 +111,15 @@ choices to **each service** in Step 4b. Format hint:
 - Mutable: `registry/name:tag` or `registry/name` (implicit `latest`)
 
 Classify every input and replacement with the local syntax checker. Create
-a private temporary file with `mktemp`, bind its path as `IMAGE_SPEC_PATH`,
-and use the **Write tool** to write `{ "image": <the exact input> }`
-as JSON. Only shell-quoted paths enter the command; never interpolate an
-image into shell source, a heredoc, or `echo`. Set `IMAGE_SPEC_PATH` in the
-same Bash call; shell variables do not persist between calls.
+a private temporary directory with `mktemp -d`, captured as `IMAGE_SPEC_DIR`.
+Use the **Write tool** to create new `image.json` inside it as
+`IMAGE_SPEC_PATH`, containing `{ "image": <the exact input> }` as JSON. Do
+not create the file beforehand or use `mktemp -u`. The directory is mode
+`0700`, so a host-created file at `0644` remains private inside it.
+Only shell-quoted paths enter the command; never interpolate an
+image into shell source, a heredoc, or `echo`. Set `IMAGE_SPEC_DIR` and
+`IMAGE_SPEC_PATH` in the same Bash call; shell variables do not
+persist between calls.
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/check-image-references.cjs" --spec-file "$IMAGE_SPEC_PATH"
@@ -126,7 +130,9 @@ branch below. `malformed-digest` exits 1 with `valid: false`: report
 **Malformed digest; repair required**, ask for a corrected reference or
 cancel, and rerun the check. Do not label it a pin, strip its digest, or
 offer keeping the malformed value. Other checker errors also stop this
-choice until corrected. Remove the temporary file after reading the result.
+choice until corrected. Remove `IMAGE_SPEC_PATH` and then the empty
+`IMAGE_SPEC_DIR` after reading the result, including failed checks. Also
+clean them up on cancellation or Write failure.
 The check accepts the supported lowercase SHA-256 syntax only; it does not
 query a registry or validate the full OCI repository grammar.
 
@@ -424,11 +430,14 @@ Pipe the spec through stdin via a file (NOT a bash `echo` of the inline JSON
 — `echo` would re-render the spec, including any user-supplied env values,
 into the chat transcript as a literal command):
 
-1. Create a private temporary file with `mktemp`, capture its path as
-   `SPEC_TEMP_PATH`, and use `Write` to serialize SPEC there as
-   JSON. Only shell-quoted file paths enter shell commands; never paste
-   spec values into a command or heredoc. Bind path variables in the same
-   Bash call where they are used.
+1. Create a private temporary directory with `mktemp -d`, captured as
+   `SPEC_TEMP_DIR`. Use `Write` to create new `spec.json` inside it as
+   `SPEC_TEMP_PATH`, serializing SPEC as JSON. Do not create the file
+   beforehand or use `mktemp -u`. The directory is mode `0700`, so a
+   host-created file at `0644` remains private inside it. Only shell-quoted
+   file paths enter shell commands; never paste spec values into a command
+   or heredoc. Bind both path variables in the same Bash call
+   where they are used.
 2. Pipe the file to the helper via stdin redirection. For the default
    path, omit `--path`:
 
@@ -443,9 +452,11 @@ into the chat transcript as a literal command):
    ```
 
 For a custom destination, bind `CUSTOM_SPEC_PATH` to the user's path as a
-shell-quoted literal. Remove the private temporary input after the helper
-finishes, preserving its exit status. The script rejects malformed digests
-before writing and prints the saved file path on stdout on success.
+shell-quoted literal. Remove `SPEC_TEMP_PATH` and then the empty
+`SPEC_TEMP_DIR` after the helper finishes, preserving its exit status. Also
+clean them up on cancellation or Write failure. The script rejects
+malformed digests before writing and prints the saved file path on stdout
+on success.
 Capture it as `SAVED_PATH`. On failure, report the actual diagnostic;
 repair malformed references through Step 3, or resolve the reported path
 or permission problem. Never overwrite an existing draft to force a save.
@@ -472,8 +483,9 @@ verbatim and stop; the saved spec at `$SAVED_PATH` is left in a partial
 state and the user should investigate before deploying.
 
 Suggest the user delete each env file once they've confirmed the saved spec
-looks right (e.g. `rm /tmp/wordpress.env`). The values are now in the spec
-at `$SAVED_PATH` (mode 0600) and on the user's responsibility to manage.
+looks right (e.g. `rm -- "$ENV_INPUT_PATH"` in the same separate terminal
+where they created it). The values are now in the spec at `$SAVED_PATH`
+(mode 0600) and on the user's responsibility to manage.
 
 After the merge phase (whether or not any env files were actually merged),
 refresh `META_HASH` from the on-disk spec — re-loading + re-validating is
@@ -604,22 +616,33 @@ where indicated. Never substitute runtime values into shell source.
 }
 ```
 
-Create a private temporary file with `mktemp` and capture its path as
-`JOURNAL_PATH`. Use the **Write tool** to serialize the complete
-redacted record there as JSON, correctly encoding all strings. Never paste
-record fields, user input, or tool responses into a Bash command,
-heredoc, or `echo`.
+Create a private temporary directory with `mktemp -d` and capture its returned
+path as `JOURNAL_DIR`. Use the **Write tool** to create a **new** file
+`journal.json` inside that directory containing the complete redacted record as
+JSON, correctly encoding every string. Do not create the file beforehand and
+do not use `mktemp -u`. The directory is mode `0700`; the host may create the
+file at `0644`, but the private parent prevents other users from accessing it.
 
-Set `JOURNAL_PATH` to its shell-quoted path in the same Bash call;
-shell variables do not persist across calls. Redirect the file to stdin:
+Never paste the record, its fields, or tool responses into a Bash
+command, heredoc, or `echo`. Redaction does not make user or registry text safe
+shell code. Bind `JOURNAL_DIR` to the returned directory as a properly
+shell-escaped literal in the same Bash call below; shell variables do
+not persist across calls. Pass the file through stdin and clean up only this
+staging file and directory, preserving the writer's exit status:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+JOURNAL_PATH="$JOURNAL_DIR/journal.json"
+journal_status=0
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH" || journal_status=$?
+rm -f -- "$JOURNAL_PATH" || true
+rmdir -- "$JOURNAL_DIR" || true
+exit "$journal_status"
 ```
 
-Remove the temporary file after the call, preserving the writer's exit
-status. If writing fails, report the journal diagnostic without repeating
-the underlying operation; a journal failure does not undo completed work.
+Also remove the staging file (if created) and directory on cancellation or
+Write failure. If appending fails, report the journal diagnostic
+without repeating the underlying operation; a journal failure does not undo
+completed work.
 
 If the user cancelled mid-flow (skipping optional env fields is not cancellation), set
 `outcome` to `"cancelled"` and reduce `final_state` accordingly. If

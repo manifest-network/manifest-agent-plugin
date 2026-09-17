@@ -68,13 +68,18 @@ Options: **Yes** / **No**. Stop on No.
 node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
 ```
 
-This refreshes both chains' data from the Cosmos chain registry.
+Check the exit status and parse the JSON output. Each present network key
+identifies data successfully fetched and saved. Require `CHOSEN_CHAIN` in
+that output before continuing. If the helper fails or that key is absent,
+report the diagnostic and stop before updating config; an older cached file
+is not proof of a fresh fetch. Report any partial refresh without claiming
+both networks are current.
 
 ## Step 4 — Update config
 
 Run:
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain CHOSEN_CHAIN --refresh-chains
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain 'CHOSEN_CHAIN' --refresh-chains
 ```
 
 Replace `CHOSEN_CHAIN` with `testnet` or `mainnet`.
@@ -126,21 +131,7 @@ as already serialized JSON.
 }
 ```
 
-Create a private temporary file with `mktemp` and capture its path as
-`JOURNAL_PATH`. Use the **{{write_tool}} tool** to serialize the complete redacted
-record to that file as JSON, correctly encoding quotes, backslashes and newlines.
-Never put the record, its fields or tool responses into a {{shell_tool}} command,
-heredoc or `echo`; redaction does not make user or registry text safe shell code.
-Set `JOURNAL_PATH` to its shell-quoted path in the same {{shell_tool}} call; shell
-variables do not persist across calls. Pass the file through stdin:
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
-```
-
-Remove the temporary file after the call, preserving the writer's exit status.
-If appending fails, report its diagnostic without repeating the chain switch;
-a journal failure does not undo the saved configuration.
+{{journal_write}}
 
 If the user cancelled (Step 1 "already on chain" early-out, or Step 2
 mainnet decline), set `outcome` to `"cancelled"` and adjust

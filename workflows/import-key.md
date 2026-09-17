@@ -38,10 +38,10 @@ before importing: the user must repair its JSON privately to preserve any legacy
 password, or move it aside as a private backup before initialization. Do not
 delete it or ask the user to paste its contents. Otherwise parse the JSON;
 `activeChain` AND `gasPrice` are required in Step 2 to preserve the existing chain
-and gas price when re-writing the config. Also note `gasMultiplier`: the config
-writer resets that optional setting to its default of 1.5. Before importing,
-explain this if a custom multiplier is configured; offer `{{invoke:set-gas-price}}`
-after the import if the user wants to restore it.
+and gas price when re-writing the config. Capture `gasMultiplier` as
+`PREVIOUS_GAS_MULTIPLIER` too. If it is non-null, restore that exact value after
+the config write in Step 2; `write-config.cjs` does not retain it itself. An
+absent/null value needs no update and continues to use the default of 1.5.
 
 **Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password. Always use `update-config.cjs --status` to read safe fields.
 
@@ -52,9 +52,10 @@ should create this file themselves in a separate terminal, e.g.:
 
 ```bash
 umask 077
-cat > /tmp/mnemonic.txt
+MNEMONIC_INPUT_PATH=$(mktemp)
+cat > "$MNEMONIC_INPUT_PATH"
 # paste mnemonic, press Enter, then Ctrl+D
-chmod 600 /tmp/mnemonic.txt
+printf '%s\n' "$MNEMONIC_INPUT_PATH"
 ```
 
 **Do NOT use `echo` — it appears in shell history.**
@@ -73,11 +74,11 @@ For headless use without a keychain, explain the private-file fallback and set
 failure must stop the import, with the existing wallet configuration preserved;
 do not work around it by writing a plaintext password into config.
 
-Run (replacing `MNEMONIC_FILE` with the user's file path, `ACTIVE_CHAIN`
-with the `activeChain` from Step 0, and `CURRENT_GAS_PRICE` with the
-`gasPrice` from Step 0):
 Use properly shell-escaped literals for the supplied path and saved values,
 including any apostrophes; never insert unescaped text into shell source.
+Run, replacing `MNEMONIC_FILE` with the user's file path, `ACTIVE_CHAIN`
+with `activeChain` from Step 0, and `CURRENT_GAS_PRICE` with `gasPrice`
+from Step 0:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest < 'MNEMONIC_FILE' | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain 'ACTIVE_CHAIN' --gas-price 'CURRENT_GAS_PRICE'
@@ -98,7 +99,26 @@ After the user restores store access, the manual
 legacy migration immediately. Explicit config writes also bypass the brief pause
 used by automatic startup attempts.
 
-Suggest the user delete their mnemonic file after a successful import.
+After the pipeline succeeds, if `PREVIOUS_GAS_MULTIPLIER` from Step 0 is
+non-null, restore it before reporting completion. Substitute that value as a
+properly shell-escaped literal:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-multiplier 'PREVIOUS_GAS_MULTIPLIER'
+```
+
+Check the update's exit status and returned `gasMultiplier`. If restoration
+fails, the imported wallet is already configured: report the partial result
+and diagnostic, retain the previous multiplier, and retry only this
+`update-config.cjs` call after resolving the error. **Do not rerun the import**
+to restore gas settings. Do not claim success or write a success journal
+record until restoration succeeds. If it cannot be restored in this run,
+record a `partial` outcome in Step 4 with the restoration diagnostic and
+actual final settings, then stop.
+
+Suggest the user delete their mnemonic file after a successful import
+(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
+created it).
 
 ## Step 3 — Report
 
@@ -106,8 +126,8 @@ Tell the user:
 1. Their imported agent address
 2. The keyfile location
 3. That MCP servers need to be restarted to pick up the new key
-4. Any configured gas multiplier was reset to its default of 1.5; the selected
-   chain and gas price were retained
+4. The selected chain, gas price and any explicitly configured gas multiplier
+   were retained
 5. Backups require the config, encrypted keyfile and referenced credential;
    the original mnemonic is the independent recovery option
 
@@ -138,28 +158,15 @@ as already serialized JSON.
   "outcome": "success",
   "final_state": {
     "address": "<address>",
-    "active_chain": "<activeChain>"
+    "active_chain": "<activeChain>",
+    "gas_multiplier": "<restored previous multiplier, or null when the default applies>"
   },
   "errors": [],
   "recovery_actions": []
 }
 ```
 
-Create a private temporary file with `mktemp` and capture its path as
-`JOURNAL_PATH`. Use the **{{write_tool}} tool** to serialize the complete redacted
-record to that file as JSON, correctly encoding quotes, backslashes and newlines.
-Never put the record, its fields or tool responses into a {{shell_tool}} command,
-heredoc or `echo`; redaction does not make user text safe shell code.
-Set `JOURNAL_PATH` to its shell-quoted path in the same {{shell_tool}} call; shell
-variables do not persist across calls. Pass the file through stdin:
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
-```
-
-Remove the temporary file after the call, preserving the writer's exit status.
-If appending fails, report its diagnostic without repeating the import; a journal
-failure does not undo the saved wallet configuration.
+{{journal_write}}
 
 Do NOT mention the journal write in your reply to the user.
 

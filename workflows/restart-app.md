@@ -250,22 +250,7 @@ where indicated. Never substitute runtime values into shell source.
 }
 ```
 
-Create a private temporary file with `mktemp` and capture its path as
-`JOURNAL_PATH`. Use the **{{write_tool}} tool** to serialize the complete
-redacted record there as JSON, correctly encoding all strings. Never paste
-record fields, user input, or tool responses into a {{shell_tool}} command,
-heredoc, or `echo`.
-
-Set `JOURNAL_PATH` to its shell-quoted path in the same {{shell_tool}} call;
-shell variables do not persist across calls. Redirect the file to stdin:
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
-```
-
-Remove the temporary file after the call, preserving the writer's exit
-status. If writing fails, report the journal diagnostic without repeating
-the underlying operation; a journal failure does not undo completed work.
+{{journal_write}}
 
 Use `success` when the restart returned successfully and the one status
 snapshot reports ACTIVE with a healthy provider; this records acceptance

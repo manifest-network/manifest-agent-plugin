@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const { join, resolve } = require('node:path');
 const { tmpdir } = require('node:os');
 const { spawnSync } = require('node:child_process');
-const { renderSkill, mutationPolicy, codexPolicy, writeClaudeSkills, buildCodex, workflowFiles } = require('../ci/build-packages.cjs');
+const { renderSkill, mutationPolicy, codexPolicy, writeClaudeSkills, buildCodex, workflowFiles, workflowFragmentFiles } = require('../ci/build-packages.cjs');
 const { sourceHashes } = require('../ci/codex-host-smoke.cjs');
 const ROOT = resolve(__dirname, '..');
 
@@ -40,6 +40,38 @@ test('generation fails on unknown tokens, tools and cross-skill names instead of
   }
   assert.throws(() => renderSkill(source, 'other'), /Unknown host/);
   assert.throws(() => renderSkill('no metadata', 'codex'), /Invalid skill metadata/);
+});
+
+test('the shared journal fragment expands host tools before insertion into every journal workflow', () => {
+  const names = workflowFiles().filter((file) => fs.readFileSync(join(ROOT, 'workflows', file), 'utf8').includes('{{journal_write}}'));
+  assert.equal(names.length, 10);
+  assert.deepEqual(workflowFragmentFiles(), ['journal-write.md']);
+  for (const host of ['claude', 'codex']) {
+    const fragments = names.map((file) => {
+      const rendered = renderSkill(fs.readFileSync(join(ROOT, 'workflows', file), 'utf8'), host, { name: file.slice(0, -3) });
+      const fragment = rendered.match(/Create a private temporary directory with `mktemp -d` and capture its returned[\s\S]*?completed work\./)?.[0];
+      assert.ok(fragment, `${host}/${file}`);
+      assert.match(fragment, host === 'claude' ? /\*\*Write tool\*\*/ : /\*\*apply_patch tool\*\*/);
+      assert.match(fragment, /mode `0700`/);
+      assert.match(fragment, /\*\*new\*\* file/);
+      assert.doesNotMatch(fragment, /\{\{/);
+      return fragment;
+    });
+    assert.equal(new Set(fragments).size, 1, `${host} journal instructions must be identical`);
+  }
+});
+
+test('fragment expansion rejects unknown and nested fragments instead of silently shipping tokens', (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'manifest-fragment-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const directory = join(root, 'workflows', 'fragments');
+  fs.mkdirSync(directory, { recursive: true });
+  const source = '---\nname: probe\ndescription: test\n---\n\n{{journal_write}}';
+  fs.writeFileSync(join(directory, 'other.md'), 'plain content');
+  for (const token of ['{{unknown}}', '{{other}}', '{{journal_write}}', '{{broken']) {
+    fs.writeFileSync(join(directory, 'journal-write.md'), token);
+    assert.throws(() => renderSkill(source, 'claude', { root, name: 'probe' }), /Unknown|Unresolved/);
+  }
 });
 
 test('the Claude generated-file check detects a stale file', (t) => {
@@ -138,8 +170,10 @@ test('workflow discovery, package generation and source hashes ignore non-workfl
     fs.cpSync(join(ROOT, name), join(root, name), { recursive: true });
   }
   const original = sourceHashes(root);
-  for (const name of ['fragments', 'directory.md']) fs.mkdirSync(join(root, 'workflows', name));
+  for (const name of ['unrelated', 'directory.md']) fs.mkdirSync(join(root, 'workflows', name));
   fs.writeFileSync(join(root, 'workflows/.DS_Store'), 'ignored');
+  fs.mkdirSync(join(root, 'workflows/fragments/directory.md'));
+  fs.writeFileSync(join(root, 'workflows/fragments/.DS_Store'), 'ignored');
   assert.equal(workflowFiles(root).length, 14);
   assert.deepEqual(sourceHashes(root), original);
   const plugin = buildCodex({ root, out: join(root, 'dist') });

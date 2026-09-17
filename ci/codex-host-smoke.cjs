@@ -11,7 +11,7 @@ const { tmpdir } = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const assert = require('node:assert/strict');
-const { buildCodex, workflowFiles } = require('./build-packages.cjs');
+const { buildCodex, workflowFiles, workflowFragmentFiles } = require('./build-packages.cjs');
 const { prepareFixture, LEASE } = require('../tests/fixtures/native-host-fixture.cjs');
 const { peer } = require('../tests/fixtures/json-rpc-peer.cjs');
 const ROOT = resolve(__dirname, '..');
@@ -21,7 +21,9 @@ function sourceHashes(root = ROOT) {
     'hosts/codex/manifest-agent/.mcp.json', 'hosts/codex/manifest-agent/.codex-plugin/plugin.json',
     ...fs.readdirSync(join(root, 'scripts')).filter((name) => /\.(cjs|ps1)$/.test(name)).map((name) => `scripts/${name}`),
     'scripts/session-start.sh', 'scripts/pre-tool-use.sh', 'hooks/hooks.json', 'package.json', 'package-lock.json', 'docs/codex.md', 'docs/identity.md',
-    ...workflowFiles(root).map((name) => `workflows/${name}`), 'hosts/codex/env.sh', 'hosts/codex/restart-confirmation.md', 'hosts/claude/restart-confirmation.md'];
+    ...workflowFiles(root).map((name) => `workflows/${name}`),
+    ...workflowFragmentFiles(root).map((name) => `workflows/fragments/${name}`),
+    'hosts/codex/env.sh', 'hosts/codex/restart-confirmation.md', 'hosts/claude/restart-confirmation.md'];
   return Object.fromEntries(files.sort().map((name) => [name, createHash('sha256').update(fs.readFileSync(join(root, name))).digest('hex')]));
 }
 

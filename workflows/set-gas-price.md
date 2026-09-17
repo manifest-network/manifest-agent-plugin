@@ -82,7 +82,7 @@ Ask the user for the new gas multiplier value. Explain:
 
 Pass whichever flags changed. If only the token changed:
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token GAS_TOKEN
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token 'GAS_TOKEN'
 ```
 
 If only the multiplier changed:
@@ -92,10 +92,12 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-multiplier 1.8
 
 Both at once:
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token GAS_TOKEN --gas-multiplier 1.8
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-token 'GAS_TOKEN' --gas-multiplier 1.8
 ```
 
-Replace `GAS_TOKEN` with the symbol the user chose in Step 2 (e.g., `MFX`).
+Replace `GAS_TOKEN` with the symbol the user chose in Step 2 (e.g., `MFX`)
+as a properly shell-escaped literal, including any apostrophes. Registry
+symbols are data, not shell code.
 Passing no flags is a usage error.
 
 If the update fails, stop and report its diagnostic; do not claim success or
@@ -140,21 +142,7 @@ as already serialized JSON.
 }
 ```
 
-Create a private temporary file with `mktemp` and capture its path as
-`JOURNAL_PATH`. Use the **{{write_tool}} tool** to serialize the complete redacted
-record to that file as JSON, correctly encoding quotes, backslashes and newlines.
-Never put the record, its fields or tool responses into a {{shell_tool}} command,
-heredoc or `echo`; redaction does not make user or registry text safe shell code.
-Set `JOURNAL_PATH` to its shell-quoted path in the same {{shell_tool}} call; shell
-variables do not persist across calls. Pass the file through stdin:
-
-```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
-```
-
-Remove the temporary file after the call, preserving the writer's exit status.
-If appending fails, report its diagnostic without repeating the config update;
-a journal failure does not undo the saved gas settings.
+{{journal_write}}
 
 If the user cancelled mid-flow (e.g.
 in Step 1), set `outcome` to `"cancelled"` and adjust `final_state`

@@ -72,8 +72,11 @@ still hold a recoverable legacy password. Do not treat that file as absent.
 node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
 ```
 
-Parse the JSON output. This fetches both mainnet and testnet data from the
-Cosmos chain registry.
+Check the exit status and parse the JSON output. Each present network key
+identifies data successfully fetched and saved; omitted networks were not
+refreshed. On nonzero exit or no successful networks, report the diagnostic
+and stop before creating a key or writing config. Preserve partial-refresh
+diagnostics and do not claim both networks were refreshed when only one was.
 
 ## Step 2 — Choose chain
 
@@ -82,7 +85,10 @@ Use AskUserQuestion to ask which chain to use, with these options:
 - **testnet** — manifest-ledger-testnet (recommended for development)
 - **mainnet** — manifest-ledger-mainnet (real assets, use with care)
 
-Store the answer as `CHOSEN_CHAIN` (`testnet` or `mainnet`).
+Store the answer as `CHOSEN_CHAIN` (`testnet` or `mainnet`). Require that key
+in the successful Step 1 output before continuing. If it is absent, report
+that the selected network was not refreshed and stop before creating a key
+or writing config; an older cached file is not proof of a fresh fetch.
 
 ## Step 3 — Choose gas fee token
 
@@ -140,11 +146,12 @@ The key script pipes directly into write-config so the password never enters the
 conversation:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+node "$MANIFEST_PLUGIN_ROOT/scripts/gen-agent-key.cjs" --prefix manifest | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain 'CHOSEN_CHAIN' --gas-token 'GAS_TOKEN'
 ```
 
 Replace `CHOSEN_CHAIN` with the user's choice from Step 2 and `GAS_TOKEN`
-with the symbol they chose in Step 3 (e.g., `MFX`).
+with the symbol they chose in Step 3 (e.g., `MFX`), using properly shell-escaped
+literals including any apostrophes. Registry symbols are data, not shell code.
 
 Parse the JSON output from stdout to get `address` and `activeChain`.
 
@@ -166,26 +173,30 @@ They create the file themselves in a separate terminal:
 
 ```bash
 umask 077
-cat > /tmp/mnemonic.txt    # paste mnemonic, Enter, Ctrl+D
-chmod 600 /tmp/mnemonic.txt
+MNEMONIC_INPUT_PATH=$(mktemp)
+cat > "$MNEMONIC_INPUT_PATH"
+# paste mnemonic, press Enter, then Ctrl+D
+printf '%s\n' "$MNEMONIC_INPUT_PATH"
 ```
 
 **Do NOT use `echo`** (shell history). **Do NOT ask the user to paste the
 mnemonic in the conversation. Do NOT `Read` the mnemonic file.** The
 mnemonic must never enter Claude Code's context.
 
-Wait for the user to provide the path. Then run (substitute `MNEMONIC_FILE`,
-`CHOSEN_CHAIN` from Step 2, `GAS_TOKEN` from Step 3):
-Use a properly shell-escaped literal for the supplied path, including any
-apostrophes; never insert an unescaped path into shell source.
+Wait for the user to provide the path. Use properly shell-escaped literals
+for the supplied path and registry symbol, including any apostrophes; never
+insert unescaped text into shell source. Run, substituting `MNEMONIC_FILE`,
+`CHOSEN_CHAIN` from Step 2 and `GAS_TOKEN` from Step 3:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest < 'MNEMONIC_FILE' | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain CHOSEN_CHAIN --gas-token GAS_TOKEN
+node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest < 'MNEMONIC_FILE' | node "$MANIFEST_PLUGIN_ROOT/scripts/write-config.cjs" --chain 'CHOSEN_CHAIN' --gas-token 'GAS_TOKEN'
 ```
 
 If the pipeline fails, stop and report the sanitized diagnostic and retained
 keyfile path before retrying. Parse successful JSON output to get `address`
-and `activeChain`. Suggest the user delete their mnemonic file after success.
+and `activeChain`. Suggest the user delete their mnemonic file after success
+(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
+created it).
 
 ## Step 6 — Report results
 
@@ -241,21 +252,33 @@ as already serialized JSON.
 }
 ```
 
-Create a private temporary file with `mktemp` and capture its path as
-`JOURNAL_PATH`. Use the **Write tool** to serialize the complete redacted
-record to that file as JSON, correctly encoding quotes, backslashes and newlines.
-Never put the record, its fields or tool responses into a Bash command,
-heredoc or `echo`; redaction does not make user or registry text safe shell code.
-Set `JOURNAL_PATH` to its shell-quoted path in the same Bash call; shell
-variables do not persist across calls. Pass the file through stdin:
+Create a private temporary directory with `mktemp -d` and capture its returned
+path as `JOURNAL_DIR`. Use the **Write tool** to create a **new** file
+`journal.json` inside that directory containing the complete redacted record as
+JSON, correctly encoding every string. Do not create the file beforehand and
+do not use `mktemp -u`. The directory is mode `0700`; the host may create the
+file at `0644`, but the private parent prevents other users from accessing it.
+
+Never paste the record, its fields, or tool responses into a Bash
+command, heredoc, or `echo`. Redaction does not make user or registry text safe
+shell code. Bind `JOURNAL_DIR` to the returned directory as a properly
+shell-escaped literal in the same Bash call below; shell variables do
+not persist across calls. Pass the file through stdin and clean up only this
+staging file and directory, preserving the writer's exit status:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH"
+JOURNAL_PATH="$JOURNAL_DIR/journal.json"
+journal_status=0
+node "$MANIFEST_PLUGIN_ROOT/scripts/journal-write.cjs" < "$JOURNAL_PATH" || journal_status=$?
+rm -f -- "$JOURNAL_PATH" || true
+rmdir -- "$JOURNAL_DIR" || true
+exit "$journal_status"
 ```
 
-Remove the temporary file after the call, preserving the writer's exit status.
-If appending fails, report its diagnostic without repeating key generation or
-import; a journal failure does not undo the saved wallet configuration.
+Also remove the staging file (if created) and directory on cancellation or
+Write failure. If appending fails, report the journal diagnostic
+without repeating the underlying operation; a journal failure does not undo
+completed work.
 
 If the user declined the existing-key warning in Step 4 or cancelled at
 any choice prompt, set `outcome` to `"cancelled"`. Do NOT mention the
