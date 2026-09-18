@@ -252,6 +252,7 @@ function bootstrapFixture(t, setupSource) {
   writeFileSync(join(root, 'scripts/setup-runtime.cjs'), setupSource);
   writeFileSync(join(root, 'scripts/migrate-credentials.cjs'), '');
   cpSync(join(__dirname, '../scripts/session-identity.cjs'), join(root, 'scripts/session-identity.cjs'));
+  cpSync(join(__dirname, '../scripts/_chain-config.cjs'), join(root, 'scripts/_chain-config.cjs'));
   const env = { PATH: process.env.PATH, CLAUDE_PLUGIN_ROOT: root, CLAUDE_PLUGIN_DATA: data, CLAUDE_ENV_FILE: join(dir, 'session env') };
   const run = (extra = {}, input = '{"session_id":"bootstrap-session"}', options = {}) => {
     const result = spawnSync('/bin/bash', ['-c', hooks.hooks.SessionStart[0].hooks[0].command], {

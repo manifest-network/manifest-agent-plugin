@@ -24,7 +24,7 @@ function fixture(t, { amount = '10000', gasPrice = '0.025umfx', activeChain = 't
   const lifecycleFile = join(dir, 'lifecycle');
   mkdirSync(scripts);
   mkdirSync(dataDir);
-  cpSync(join(__dirname, '../scripts/session-identity.cjs'), join(scripts, 'session-identity.cjs'));
+  for (const name of ['session-identity.cjs', '_chain-config.cjs']) cpSync(join(__dirname, '../scripts', name), join(scripts, name));
   const config = { activeChain, gasPrice, chains: { [activeChain]: {
     chainId: 'manifest-ledger-test-1', rpcUrl: `https://unused.invalid/${SECRET}`,
     faucetUrl: `https://unused.invalid/${SECRET}`,

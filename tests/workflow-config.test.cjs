@@ -40,6 +40,64 @@ function hostFixture(t, host) {
   return { base, root, host };
 }
 
+for (const host of ['claude', 'codex']) {
+  for (const both of [false, true]) {
+    test(`${host} gas ${both ? 'token and multiplier' : 'token'} workflow synchronizes displayed prices and refuses later registry changes`, t => {
+      const f = hostFixture(t, host);
+      f.data = fs.mkdtempSync(join(f.base, 'gas-data-'));
+      fs.mkdirSync(join(f.data, 'chains'));
+      f.skillDir = join(f.root, 'skills', 'set-gas-price');
+      f.env = { PATH: process.env.PATH, MANIFEST_PLUGIN_ROOT: f.root,
+        MANIFEST_PLUGIN_DATA: f.data, MANIFEST_CODEX_DATA: f.data, MANIFEST_CREDENTIAL_STORE: 'file' };
+      const configPath = join(f.data, 'config.json');
+      const registryPath = join(f.data, 'chains', 'testnet.json');
+      const chain = { chainId: 'manifest-ledger-testnet', rpcUrl: 'https://rpc.example.invalid',
+        feeTokens: [{ symbol: 'MFX', denom: 'umfx', fixedMinGasPrice: 1 }] };
+      fs.writeFileSync(configPath, JSON.stringify({ activeChain: 'testnet', gasPrice: '9umfx',
+        gasMultiplier: 2.25, chains: { testnet: chain }, agent: { address: 'manifest1fixture' } }));
+      const commands = blocks(fs.readFileSync(join(f.skillDir, 'SKILL.md'), 'utf8'));
+      const status = commands.find(command => command.includes('update-config.cjs" --status'));
+      const sync = commands.find(command => command.includes('update-config.cjs" --refresh-chains'));
+      const apply = commands.find(command => command.includes('--gas-token') && command.includes('--gas-multiplier') === both);
+      assert.ok(sync && apply, 'execute the generated synchronization and update commands');
+      assert.ok(commands.indexOf(status) < commands.indexOf(sync) && commands.indexOf(sync) < commands.indexOf(apply));
+      assert.equal(JSON.parse(run(f, status).stdout).chains.testnet.feeTokens[0].fixedMinGasPrice, 1);
+      const replaceRegistry = price => fs.writeFileSync(registryPath, JSON.stringify({
+        ...chain, feeTokens: [{ symbol: 'MFX', denom: 'umfx', fixedMinGasPrice: price }],
+      }));
+      replaceRegistry(4);
+      const preview = run(f, sync);
+      assert.equal(preview.status, 0, preview.stderr);
+      const displayed = JSON.parse(preview.stdout);
+      assert.equal(displayed.gasPrice, '9umfx', 'synchronizing metadata does not apply a gas choice');
+      assert.equal(displayed.chains.testnet.feeTokens[0].fixedMinGasPrice, 4);
+      const choice = { GAS_TOKEN: displayed.chains.testnet.feeTokens[0].symbol };
+      const applied = run(f, apply, choice);
+      assert.equal(applied.status, 0, applied.stderr);
+      const saved = JSON.parse(fs.readFileSync(configPath));
+      assert.equal(saved.gasPrice, '4umfx');
+      assert.equal(saved.gasMultiplier, both ? 1.8 : 2.25);
+      assert.deepEqual(saved.chains, displayed.chains);
+
+      // A file replacement after the displayed snapshot must not change the
+      // saved price until the workflow synchronizes and presents choices again.
+      replaceRegistry(5);
+      const before = fs.readFileSync(configPath);
+      const failed = run(f, apply, choice);
+      assert.equal(failed.status, 1, failed.stderr);
+      assert.match(failed.stderr, /differs from config/);
+      assert.deepEqual(fs.readFileSync(configPath), before);
+      assert.equal(fs.existsSync(join(f.data, '.config.lock')), false);
+      const refreshed = run(f, sync);
+      assert.equal(refreshed.status, 0, refreshed.stderr);
+      assert.equal(JSON.parse(refreshed.stdout).chains.testnet.feeTokens[0].fixedMinGasPrice, 5);
+      const retried = run(f, apply, choice);
+      assert.equal(retried.status, 0, retried.stderr);
+      assert.equal(JSON.parse(retried.stdout).gasPrice, '5umfx');
+    });
+  }
+}
+
 function run(f, command, variables = {}) {
   for (const [key, value] of Object.entries(variables)) command = command.replaceAll(quote(key), quote(value));
   const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c',

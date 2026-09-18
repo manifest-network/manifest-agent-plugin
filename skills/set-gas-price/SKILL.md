@@ -55,11 +55,23 @@ Use AskUserQuestion to ask what the user wants to change:
 
 ## Step 2 — Change gas fee token (if selected)
 
-The Step 0 status output already includes the chain registry data under
-`chains.<activeChain>.feeTokens`. Read the `feeTokens` array from that
-field — each entry has `symbol`, `denom`, and `fixedMinGasPrice`. Do NOT
-`cat` the chain file directly; the status output is the single safe-fields
-source.
+If `activeChain` is neither `testnet` nor `mainnet`, direct the user to
+`/manifest-agent:switch-chain` to explicitly select one, including its mainnet
+confirmation, and stop until that choice is complete.
+
+Before showing token choices, merge the local registry files into config:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --refresh-chains
+```
+
+This preserves the current gas price and multiplier. Use this command's
+successful output for `chains.<activeChain>.feeTokens`, replacing the older
+Step 0 snapshot. Each entry has `symbol`, `denom`, and `fixedMinGasPrice`.
+If synchronization fails, stop before offering tokens and follow the recovery
+guidance below. Missing or malformed files require `/manifest-agent:refresh-registry`;
+verify the selected network was saved before repeating this command. Do NOT
+`cat` chain or config files directly.
 
 Use AskUserQuestion to ask which token to use, showing the **symbol** and
 **min gas price** for each:
@@ -103,7 +115,16 @@ symbols are data, not shell code.
 Passing no flags is a usage error.
 
 If the update fails, stop and report its diagnostic; do not claim success or
-write a success journal entry. A legacy credential migration can require an
+write a success journal entry. Token resolution requires the selected
+network's `chains/<network>.json` file even when status lists cached tokens.
+If that file is missing, use `/manifest-agent:refresh-registry` to fetch it and
+verify the selected network was saved; `--refresh-chains` alone does not
+download metadata. After recovery, read status again and recheck the token
+and its minimum price before retrying the requested flags, retaining any
+requested multiplier. If disk metadata changed after the choices were shown,
+the script refuses the token update. Repeat the synchronization and token
+choice in Step 2 before retrying; do not append `--refresh-chains` to the gas
+command to bypass that review. A legacy credential migration can require an
 unlocked credential store before the change succeeds. Parse successful JSON
 output to confirm the update.
 
