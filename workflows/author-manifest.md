@@ -552,7 +552,7 @@ recipe reassigns `ENV_INPUT_PATH`, so that variable names only the last file.
 List the paths of pre-existing or unconfirmed input files, files with
 conflicting origin confirmations, and files retained by **Continue without
 file values**, without their contents.
-The values are now in the spec at `$SAVED_PATH` (mode 0600) and on the user's
+Any merged values are now in the spec at `$SAVED_PATH` (mode 0600) and on the user's
 responsibility to manage.
 
 After the merge phase (whether or not any env files were actually merged),
@@ -619,12 +619,13 @@ Repeat the storage cost limitation from 4a: the upstream plan omits its
 price, and the fee estimate omits its extra lease item.
 
 **Version control caveat — check for secrets before committing.** If
-the user picked "From a file" for env in Step 4 (single-service or
-per-service in stacks), the saved spec at `<SAVED_PATH>` now contains
-those merged env *values* (DB passwords, API tokens, etc.) verbatim.
+Step 7 merged any nonempty env inputs, the saved spec at `<SAVED_PATH>`
+contains those env *values* (DB passwords, API tokens, etc.) verbatim.
 Tell the user explicitly: "this spec contains the env values you merged
 from `<file paths>` — do NOT commit it to a public repository or share
-it without redacting those values first." Values typed in chat can also be sensitive. Recommend version control
+it without redacting those values first." List only paths that contributed
+values; skipped inputs belong in the retained-file recap. Values typed in
+chat can also be sensitive. Recommend version control
 only after confirming the spec contains no secrets, regardless of input mode.
 
 ## Step 9 — Record this run in the journal

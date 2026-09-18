@@ -71,7 +71,7 @@ confirmed the paste/history fix and identified recovery and coverage gaps.
 
 | Finding | Resolution |
 | --- | --- |
-| 1: an empty env retry can target the last collected file or loop indefinitely | Supply a `cat` re-entry command with the affected service's recorded path as a shell-escaped literal, retaining its input record and origin flag. Offer continuation without file values or cancellation; retain and list skipped files, including shared paths. |
+| 1: an empty env retry can target the last collected file or loop indefinitely | Supply a `cat` re-entry command with the affected service's recorded path as a shell-escaped literal, retaining its input record and origin flag. Offer continuation without file values or cancellation; retain and list skipped files, including shared paths. Base the final values recap on nonempty merges, not on the input mode originally selected. |
 | 2: the origin question and cleanup rules can disappear without a test failure | Check both renders for the host question tool, all three origin choices, conservative flag defaults, the record carried into merging, the confirmed-only cleanup filter, completion of all associated merges, conflicting origins and retained-file reporting. |
 | 3: contributor entry points omit the shell/tool naming rule | Link the convention from the workflow-editing paragraph and add a PR checklist item in `CONTRIBUTING.md`. |
 | Origin and empty-input nits | Trigger the origin question after offering the recipe, without assuming how a supplied path was created. Exercise empty merges with and without an existing env map, documenting the helper's rewrite and `env: {}` insertion. |
