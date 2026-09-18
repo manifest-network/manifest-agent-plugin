@@ -245,20 +245,38 @@ list of paths.
   `build_manifest_preview` is the validator.
 - **Skip** — no env vars.
 
-If the user picks **From a file**, ask them to create the file in a
-**separate terminal**, e.g.:
+If the user picks **From a file**, accept an existing dotenv path or offer
+the recipe below. A supplied path alone does not establish whether it came
+from this recipe.
+
+For a new input file, use a **separate terminal**. Tell them to use the `bash`
+shell: if their usual shell is fish, run `bash` in that terminal before the
+commands below and stay in that shell session through temporary-file cleanup:
+
 ```bash
 umask 077
 ENV_INPUT_PATH=$(mktemp)
 cat > "$ENV_INPUT_PATH"
-KEY1=value1
-KEY2=value2
-^D
+```
+
+The terminal shows no prompt while `cat` waits for input. Type or paste your
+`KEY=VALUE` lines there, press Enter, then Ctrl+D. When the shell prompt
+returns, run:
+
+```bash
 printf '%s\n' "$ENV_INPUT_PATH"
 ```
 Tell them not to use `echo` (it lands in shell history). Wait for them to
-type the path back in chat. Store the path; the values are merged into the
-spec file in Step 7 — they do not flow through this conversation at collection time.
+type the path back in chat. For each path they type back after you offered
+the recipe, use
+`AskUserQuestion`: "Did you create `<path>` with this temporary-file recipe?"
+Offer **Yes, created with this recipe**, **No, existing file**, and **Not
+sure**. Skip this question if they already explicitly confirmed its origin.
+Set `recipe-created` to true only for an explicit Yes; use false for an
+existing file, No, Not sure, or missing/unclear confirmation. Store
+`(service-name, env-file-path, recipe-created)` for each input through Step 7.
+The values are merged into the spec file there — they do not flow through
+this conversation at collection time.
 
 You may combine **Type in chat** and **From a file** (collect non-sensitive
 in chat, then offer the file option for the rest). The file overlays — keys
@@ -273,9 +291,11 @@ present in both are taken from the file.
   `/manifest-agent:deploy-app` later loads the saved spec. Eliminating
   those exposures needs upstream support; do not promise context secrecy.
 
-Suggest the user delete the env file after a successful save.
+Suggest cleanup only for confirmed recipe-created temporary files after
+their values have been merged into the saved spec, as described in Step 7.
 
-**labels** — same loop as `env`.
+**labels** — collect non-sensitive KEY=VALUE pairs in chat: ask for KEY,
+then VALUE, offering **Add another** / **Done**, or **Skip** for no labels.
 
 **init** — ask "Run an init process inside the container? (Yes / Skip,
 default Skip)".
@@ -463,7 +483,7 @@ or permission problem. Never overwrite an existing draft to force a save.
 
 **If the user picked "From a file" for env in Step 4** (single-service or
 per-service in stacks), merge the file values into the saved spec now. For
-each (service-name, env-file-path) pair the user provided, bind
+each `(service-name, env-file-path, recipe-created)` record from Step 4, bind
 `SAVED_PATH`, `SERVICE_NAME` and `ENV_FILE_PATH` as shell-quoted literals in
 the same call. Do not display the env file or interpolate its values:
 
@@ -477,15 +497,65 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" \
 shape — this skill always emits the services-map shape, so always pass it.)
 
 The script outputs `{"service":"<name>","keys_merged":["KEY1",...]}` —
-report the keys to the user (no values appear). If the script errors out
-(invalid dotenv line, unknown service, unreadable file), surface the error
-verbatim and stop; the saved spec at `$SAVED_PATH` is left in a partial
-state and the user should investigate before deploying.
+report the keys to the user (no values appear). If `keys_merged` is empty
+(`[]`), stop the merge loop: no env values were captured. Keep the input
+file and draft. Use `AskUserQuestion` for that service and its recorded input path:
 
-Suggest the user delete each env file once they've confirmed the saved spec
-looks right (e.g. `rm -- "$ENV_INPUT_PATH"` in the same separate terminal
-where they created it). The values are now in the spec at `$SAVED_PATH`
-(mode 0600) and on the user's responsibility to manage.
+- **Re-enter file values** — have the user refill that recorded file using
+  the command below, then retry that service's merge before continuing.
+- **Continue without file values** — remove only that service's input record
+  from the merge loop, preserving any env values already in its saved spec.
+  Keep the input file and remember its path for the retained-file recap;
+  exclude that path from cleanup even if another service uses it. Continue
+  with the remaining service merges. This also handles a service that needs
+  no env values.
+- **Cancel** — stop authoring and report the retained draft and input paths.
+
+For **Re-enter file values**, give the user this command in their separate
+`bash` terminal:
+
+```bash
+cat > 'ENV_RETRY_FILE'
+```
+
+Replace `'ENV_RETRY_FILE'` with that service's recorded `env-file-path` as a
+properly shell-escaped literal, including any apostrophes. Do not use
+`ENV_INPUT_PATH`: repeated recipes leave it pointing at the last file,
+which may belong to another service. Keep the existing input record and
+its `recipe-created` flag; this command reuses the same file.
+
+The terminal shows no prompt while `cat` waits for input. Type or paste the
+KEY=VALUE lines there, press Enter, then Ctrl+D. When the shell prompt
+returns, retry the merge with that same recorded path. Another empty result
+returns to the choices above. Do not report the spec as ready while a file
+input is awaiting the user's retry, skip or cancel choice.
+
+If the script errors out (invalid dotenv line, unknown service, unreadable
+file), surface the error and stop. These input errors leave the saved spec
+unchanged; earlier successful service merges remain. Have the user correct the reported input
+problem privately, then retry the merge for that service and continue any
+remaining service merges before deploying.
+
+Once the user confirms the merged spec looks right, suggest they delete only
+the temporary input files they created with this recipe, in the same `bash`
+session. Preserve pre-existing files and files of unknown origin; do not
+suggest deleting them. Use only records with `recipe-created: true`, and
+wait until every service using that file has merged successfully. Preserve
+the file if its origin confirmations conflict. Give one command per distinct
+recipe-created path:
+
+```bash
+rm -- 'TEMP_ENV_INPUT_FILE'
+```
+
+Replace `'TEMP_ENV_INPUT_FILE'` with the confirmed temporary file's path as
+a properly shell-escaped literal, including any apostrophes. Repeating the
+recipe reassigns `ENV_INPUT_PATH`, so that variable names only the last file.
+List the paths of pre-existing or unconfirmed input files, files with
+conflicting origin confirmations, and files retained by **Continue without
+file values**, without their contents.
+Any merged values are now in the spec at `$SAVED_PATH` (mode 0600) and on the user's
+responsibility to manage.
 
 After the merge phase (whether or not any env files were actually merged),
 refresh `META_HASH` from the on-disk spec — re-loading + re-validating is
@@ -551,12 +621,13 @@ Repeat the storage cost limitation from 4a: the upstream plan omits its
 price, and the fee estimate omits its extra lease item.
 
 **Version control caveat — check for secrets before committing.** If
-the user picked "From a file" for env in Step 4 (single-service or
-per-service in stacks), the saved spec at `<SAVED_PATH>` now contains
-those merged env *values* (DB passwords, API tokens, etc.) verbatim.
+Step 7 merged any nonempty env inputs, the saved spec at `<SAVED_PATH>`
+contains those env *values* (DB passwords, API tokens, etc.) verbatim.
 Tell the user explicitly: "this spec contains the env values you merged
 from `<file paths>` — do NOT commit it to a public repository or share
-it without redacting those values first." Values typed in chat can also be sensitive. Recommend version control
+it without redacting those values first." List only paths that contributed
+values; skipped inputs belong in the retained-file recap. Values typed in
+chat can also be sensitive. Recommend version control
 only after confirming the spec contains no secrets, regardless of input mode.
 
 ## Step 9 — Record this run in the journal

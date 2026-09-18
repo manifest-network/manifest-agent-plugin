@@ -170,19 +170,28 @@ keys). For first-time setup we run the pipe inline because config.json
 doesn't exist yet.
 
 Ask the user to provide the **path to a file** containing their mnemonic.
-They create the file themselves in a separate terminal:
+They create the file themselves in a separate terminal. Tell them to use the
+`bash` shell: if their usual shell is fish, run `bash` in that terminal before
+the commands below and stay in that shell session through temporary-file cleanup:
 
 ```bash
 umask 077
 MNEMONIC_INPUT_PATH=$(mktemp)
 cat > "$MNEMONIC_INPUT_PATH"
-# paste mnemonic, press Enter, then Ctrl+D
+```
+
+The terminal shows no prompt while `cat` waits for input. Paste **only the
+mnemonic words** there, press Enter, then Ctrl+D. When the shell prompt
+returns, run:
+
+```bash
 printf '%s\n' "$MNEMONIC_INPUT_PATH"
 ```
 
 **Do NOT use `echo`** (shell history). **Do NOT ask the user to paste the
-mnemonic in the conversation. Do NOT `Read` the mnemonic file.** The
-mnemonic must never enter Claude Code's context.
+mnemonic in the conversation. Do NOT display the mnemonic file or read its
+contents into Claude Code's context.** Pass it only to the import pipeline below
+via stdin.
 
 Wait for the user to provide the path. Use properly shell-escaped literals
 for the supplied path and registry symbol, including any apostrophes; never
@@ -196,7 +205,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest < 'MNEMONI
 If the pipeline fails, stop and report the sanitized diagnostic and retained
 keyfile path before retrying. Save successful JSON output as `WRITTEN_CONFIG`
 (`address` and `activeChain`). Suggest the user delete their mnemonic file after success
-(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
+(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the same `bash` session where they
 created it).
 
 ### After either successful wallet/config pipeline — Verify saved settings

@@ -10,6 +10,41 @@ const { renderSkill, mutationPolicy, codexPolicy, writeClaudeSkills, buildCodex,
 const { sourceHashes } = require('../ci/codex-host-smoke.cjs');
 const ROOT = resolve(__dirname, '..');
 
+test('secret-input recipes keep shell guidance immediately beside the user commands on both hosts', () => {
+  for (const host of ['claude', 'codex']) {
+    const recipes = [];
+    for (const file of workflowFiles()) {
+      const name = file.slice(0, -3);
+      const rendered = renderSkill(fs.readFileSync(join(ROOT, 'workflows', file), 'utf8'), host, { name });
+      assert.doesNotMatch(rendered, /\bexec_command`?\s+(?:session|shell|terminal)\b/i, `${host}/${name}: shell prose`);
+      for (const block of rendered.matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)) {
+        if (!/\b\w+_INPUT_PATH=\$\(mktemp\)/.test(block[2])) continue;
+        const intro = rendered.slice(0, block.index).trimEnd().split(/\n\s*\n/).at(-1);
+        const label = `${host}/${name}`;
+        assert.match(intro, /\bfish\b/, label);
+        // Stay in the instruction's sentence while allowing e.g./i.e. examples.
+        assert.match(intro, /\brun `bash`(?:e\.g\.|i\.e\.|[^.!?])*?\bbefore\s+(?:(?:the|these)\s+)?(?:commands|recipe)\b/, label);
+        assert.match(intro, /\b(?:stay|remain)\b[\s\S]*\bsession\b[\s\S]*\bcleanup\b/, label);
+        assert.doesNotMatch(intro, /\bexec_command\b/, label);
+        recipes.push(name);
+      }
+    }
+    assert.deepEqual(recipes.sort(), ['author-manifest', 'import-key', 'init-agent']);
+  }
+});
+
+test('mnemonic privacy instructions do not forbid the shell tool needed for stdin import', () => {
+  for (const host of ['claude', 'codex']) {
+    for (const name of ['init-agent', 'import-key']) {
+      const source = fs.readFileSync(join(ROOT, 'workflows', `${name}.md`), 'utf8');
+      assert.doesNotMatch(source, /\b(?:not|NOT|Not|never|NEVER|Never)\b[^.]{0,20}?`\{\{(?:read_tool|shell_tool)\}\}`/, `${name}: negated tool verb`);
+      const rendered = renderSkill(source, host, { name });
+      assert.doesNotMatch(rendered, /\b(?:not|NOT|Not|never|NEVER|Never)\b[^.]{0,20}?`(?:exec_command|Bash)`/, `${host}/${name}`);
+      assert.match(rendered, /import-key\.cjs" --prefix manifest < 'MNEMONIC_FILE' \| node/);
+    }
+  }
+});
+
 test('both host skills resolve each domain invocation and keep the journal keys stable', () => {
   const source = fs.readFileSync(join(ROOT, 'workflows/deploy-app.md'), 'utf8');
   const claude = renderSkill(source, 'claude', { name: 'deploy-app' });
