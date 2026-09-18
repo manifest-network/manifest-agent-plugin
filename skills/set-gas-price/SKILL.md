@@ -55,6 +55,9 @@ Use AskUserQuestion to ask what the user wants to change:
 
 ## Step 2 — Change gas fee token (if selected)
 
+If `activeChain` is neither `testnet` nor `mainnet`, direct the user to
+`/manifest-agent:switch-chain` to explicitly select one before changing the token.
+
 The Step 0 status output already includes the chain registry data under
 `chains.<activeChain>.feeTokens`. Read the `feeTokens` array from that
 field — each entry has `symbol`, `denom`, and `fixedMinGasPrice`. Do NOT
@@ -103,7 +106,13 @@ symbols are data, not shell code.
 Passing no flags is a usage error.
 
 If the update fails, stop and report its diagnostic; do not claim success or
-write a success journal entry. A legacy credential migration can require an
+write a success journal entry. Token resolution requires the selected
+network's `chains/<network>.json` file even when status lists cached tokens.
+If that file is missing, use `/manifest-agent:refresh-registry` to fetch it and
+verify the selected network was saved; `--refresh-chains` alone does not
+download metadata. After recovery, read status again and recheck the token
+and its minimum price before retrying the requested flags, retaining any
+requested multiplier. A legacy credential migration can require an
 unlocked credential store before the change succeeds. Parse successful JSON
 output to confirm the update.
 

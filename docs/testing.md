@@ -206,6 +206,21 @@ The test driver supplies choices, recovery decisions and sketch values; it does
 not establish a model's prompt handling, outcome classification or final prose.
 Those still require fresh behavioral host acceptance before release.
 
+## Config-update recovery regressions (ENG-1011)
+
+`tests/update-config.test.cjs` reproduces refresh without an active chain and
+gas-token selection with metadata only in config. Both current and legacy
+configs retain their exact bytes and release the lock on refusal. Fixtures
+execute the suggested chain choices and fetch/retry commands for each network,
+using the real fetcher with only HTTPS replaced. A partial fetch of the other
+network must leave gas-token selection blocked; successful recovery preserves
+the wallet and applies the requested gas flags. Disk metadata remains the
+source for gas-token prices even when config has an older value.
+
+```bash
+node --test tests/update-config.test.cjs tests/write-config.test.cjs tests/_gas-price.test.cjs
+```
+
 ## Registry metadata regressions (ENG-1008)
 
 `tests/_chain-registry.test.cjs` runs the full malformed-metadata matrix in

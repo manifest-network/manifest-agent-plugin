@@ -103,7 +103,11 @@ and config writes retry immediately; file storage and local validation failures
 do not create the marker. A new credential uses a
 unique ID and must round-trip before config references it. Migration atomically
 removes the plaintext field and records `credentialMigration`; failed storage
-preserves the previous config. `update-config --status` remains read-only.
+preserves the previous config. Config updates stage and validate requested
+changes under the lock before migration, so validation refusals also preserve
+legacy config bytes. `update-config --status` remains read-only. Missing-chain
+recovery requires explicit selection; missing gas-token registry files require
+a fetch before retrying with refresh. See [config-update recovery](docs/scripts.md#config-update-recovery-eng-1011).
 All launchers migrate/resolve, including Codex without a lifecycle hook.
 
 Claude SessionStart runs migration and `session-identity.cjs` after setup on

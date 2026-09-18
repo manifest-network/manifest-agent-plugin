@@ -74,7 +74,13 @@ use by `{{invoke:init-agent}}`.
 
 If it succeeds, capture `chains` from the output as `AFTER`.
 Other failures require reporting and repair; do not claim the config was
-updated. Refresh replaces chain entries from the files currently present,
+updated. If no valid active chain is selected, direct the user to
+`{{invoke:switch-chain}}` to explicitly choose testnet or mainnet; repeating
+`--refresh-chains` alone cannot select a chain. For a missing network's
+metadata, follow the fetch diagnostic and verify that network was saved
+before retrying with its explicit `--chain` and `--refresh-chains` flags.
+Refresh only merges existing files; it never downloads missing metadata.
+It replaces chain entries from the files currently present,
 so after a partial fetch it can retain an older entry for the failed
 network. It preserves explicit `gasPrice` and `gasMultiplier` overrides;
 use `{{invoke:set-gas-price}}` to change those separately.

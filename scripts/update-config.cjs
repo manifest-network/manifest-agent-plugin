@@ -23,7 +23,9 @@
  *   node update-config.cjs --chain mainnet --refresh-chains  # Combine flags
  *
  * --gas-price and --gas-token are mutually exclusive. --gas-token uses the
- * post-update activeChain (i.e. respects --chain in the same invocation).
+ * post-update activeChain (i.e. respects --chain in the same invocation) and
+ * requires its chains/<network>.json file; config.chains is not a fallback.
+ * --refresh-chains merges existing files, never downloads them.
  *
  * Outputs JSON to stdout (safe to show): { "activeChain": "...", "gasPrice": "...", "address": "...", "chains": {...} }
  * The key password is NEVER output.
@@ -113,31 +115,33 @@ function readChainFile(chainsDir, network) {
 
   withConfigLock(AGENT_DIR, () => {
     // Reread while locked so a concurrent migration or writer cannot be undone.
-    // An explicit config edit retries immediately after credential repair;
-    // automatic hook/launcher migrations retain the shared failure cooldown.
-    config = migrateConfig(AGENT_DIR, { locked: true, migrationRetryMs: 0 });
+    // Stage changes before migration so validation failures preserve even a
+    // legacy config byte-for-byte and do not create credentials.
+    config = readConfig(AGENT_DIR);
     if (!config) throw new Error('Config disappeared before the update.');
+    const updates = {};
 
     // Update active chain
     if (args.chain) {
-      config.activeChain = args.chain;
+      updates.activeChain = args.chain;
     }
+    const targetChain = args.chain || config.activeChain;
+    if ((args.chain || args.gasToken || args.refreshChains) && !['testnet', 'mainnet'].includes(targetChain)) {
+      throw new Error('No valid active chain selected. Retry the original command with --chain testnet or --chain mainnet; include --refresh-chains to merge existing chain files.');
+    }
+    const registryRecovery = `Run fetch-chain-registry.cjs, verify ${targetChain} was saved, then retry the original command with --chain ${targetChain} --refresh-chains.`;
 
     // Update gas price (either by raw string or by token symbol)
     if (args.gasPrice) {
-      config.gasPrice = args.gasPrice;
+      updates.gasPrice = args.gasPrice;
     } else if (args.gasToken) {
       // Resolve symbol against the post-update activeChain (so combining
       // --chain X --gas-token Y in one invocation does the right thing).
-      const targetChain = args.chain || config.activeChain;
-      if (!targetChain) {
-        throw new Error('--gas-token requires an active chain (pass --chain or set one previously)');
-      }
       const chainData = readChainFile(CHAINS_DIR, targetChain);
       if (!chainData) {
-        throw new Error(`Chain data not found for ${targetChain}. Run fetch-chain-registry.cjs or pass --refresh-chains first.`);
+        throw new Error(`Chain data file chains/${targetChain}.json not found. ${registryRecovery}`);
       }
-      config.gasPrice = composeGasPrice(chainData, args.gasToken);
+      updates.gasPrice = composeGasPrice(chainData, args.gasToken);
     }
 
     // Update gas multiplier
@@ -146,7 +150,7 @@ function readChainFile(chainsDir, network) {
       if (!Number.isFinite(val) || val < 1) {
         throw new Error('--gas-multiplier must be a number >= 1.');
       }
-      config.gasMultiplier = val;
+      updates.gasMultiplier = val;
     }
 
     // Refresh chain data from files
@@ -155,21 +159,26 @@ function readChainFile(chainsDir, network) {
       const testnetData = readChainFile(CHAINS_DIR, 'testnet');
 
       if (!mainnetData && !testnetData) {
-        throw new Error('No chain data files found. Run fetch-chain-registry.cjs first.');
+        throw new Error(`No chain data files found. ${registryRecovery}`);
       }
 
-      if (!config.chains) config.chains = {};
-      if (mainnetData) config.chains.mainnet = mainnetData;
-      if (testnetData) config.chains.testnet = testnetData;
+      updates.chains = { ...config.chains };
+      if (mainnetData) updates.chains.mainnet = mainnetData;
+      if (testnetData) updates.chains.testnet = testnetData;
     }
 
     // A partial registry fetch may leave only the other network available.
     // Validate after merging files so a newly fetched target is usable, while
     // an ordinary --chain cannot select metadata absent from the config.
-    if ((args.chain || args.refreshChains) && !config.chains?.[config.activeChain]) {
-      throw new Error(`Chain data not found for ${config.activeChain}. Run fetch-chain-registry.cjs, verify that network was saved, then retry with --refresh-chains.`);
+    if ((args.chain || args.refreshChains) && !(updates.chains || config.chains)?.[targetChain]) {
+      throw new Error(`Chain data not found for ${targetChain}. ${registryRecovery}`);
     }
 
+    // An explicit config edit retries immediately after credential repair;
+    // automatic hook/launcher migrations retain the shared failure cooldown.
+    config = migrateConfig(AGENT_DIR, { locked: true, migrationRetryMs: 0 });
+    if (!config) throw new Error('Config disappeared before the update.');
+    Object.assign(config, updates);
     // Write config back with the credential reference preserved.
     atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
   });
