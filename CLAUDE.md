@@ -71,6 +71,9 @@ Terminal secret-file recipes use POSIX assignments such as
 `MNEMONIC_INPUT_PATH=$(mktemp)`. Ask fish users to start `bash` in their separate
 terminal before following the recipe and remain in that shell through cleanup;
 do not offer unverified fish translations.
+In shared workflows, use literal `bash` for the shell and `{{shell_tool}}`
+for the host tool. The current Codex renderer rewrites capitalized `Bash`
+as `exec_command`, including occurrences in shell advice.
 
 **Underscore-prefix helpers** — Scripts named `_<topic>.cjs` (`_io.cjs`, `_uuid.cjs`, `_gas-price.cjs`, `_spec.cjs`, `_https-json.cjs`, `_journal.cjs`) are sibling-only modules consumed via `require('./_X.cjs')`. Skills MUST NOT shell out to them. The post-ENG-130 `humanize-denom.cjs` is a documented exception because it's conceptually a renderer composed by another renderer (`render-balance.cjs`); see the "Renderer / structural summarizers" subsection of the inventory below.
 

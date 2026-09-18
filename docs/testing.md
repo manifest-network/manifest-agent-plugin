@@ -175,6 +175,26 @@ command with a serialized record containing the same hostile SKU-name
 patterns. It verifies literal preservation, no shell execution, and no
 environment secret in the journal or command output.
 
+## Secret-input recipe regressions (ENG-1010)
+
+`tests/build-packages.test.cjs` checks that every generated secret-file recipe
+has adjacent advice to start `bash` from fish and stay in that session through
+cleanup. The recipe paragraph must not substitute a host tool for the shell,
+and mnemonic privacy instructions must allow the stdin import command.
+
+`tests/merge-env.test.cjs` executes both hosts' generated env-file creation and
+merge commands with harmless stdin fixtures. It checks mode `0600`, no values
+in output, and that the Ctrl+D instruction does not become invalid dotenv
+input if typed literally. Cleanup cases provide multiple collected paths,
+including spaces, apostrophes and shell syntax, while `ENV_INPUT_PATH` refers
+only to the last file. Every input must be removed without touching unrelated
+files or executing path contents. These fixtures supply the choices and paths;
+they do not establish interactive model behavior.
+
+```bash
+node --test tests/build-packages.test.cjs tests/merge-env.test.cjs
+```
+
 ## Wallet gas-setting regressions (ENG-1009)
 
 `tests/workflow-config.test.cjs` executes both hosts' generated wallet pipelines,

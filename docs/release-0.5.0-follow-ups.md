@@ -23,7 +23,10 @@ secret-file recipes in `workflows/init-agent.md`, `workflows/import-key.md`
 and `workflows/author-manifest.md` now tell fish users to run `bash` in their
 separate terminal before the recipe and remain in that shell through
 temporary-file cleanup. Both hosts' generated skills carry the advice beside
-the commands, preserving private-file creation, stdin pipes and cleanup.
+the commands. Review corrections clarify mnemonic privacy and Ctrl+D input,
+and clean up every collected env-file path after repeated recipes. Rendering
+and command regressions cover both hosts. The builder's broad tool-name
+rewrite is tracked separately in [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029).
 
 ## Preserve reinitialization settings and clarify import recovery
 

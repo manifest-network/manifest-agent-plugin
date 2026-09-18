@@ -181,8 +181,9 @@ printf '%s\n' "$MNEMONIC_INPUT_PATH"
 ```
 
 **Do NOT use `echo`** (shell history). **Do NOT ask the user to paste the
-mnemonic in the conversation. Do NOT `{{read_tool}}` the mnemonic file.** The
-mnemonic must never enter {{host}}'s context.
+mnemonic in the conversation. Do NOT display the mnemonic file or read its
+contents into {{host}}'s context.** Pass it only to the import pipeline below
+via stdin.
 
 Wait for the user to provide the path. Use properly shell-escaped literals
 for the supplied path and registry symbol, including any apostrophes; never
@@ -196,7 +197,7 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest < 'MNEMONI
 If the pipeline fails, stop and report the sanitized diagnostic and retained
 keyfile path before retrying. Save successful JSON output as `WRITTEN_CONFIG`
 (`address` and `activeChain`). Suggest the user delete their mnemonic file after success
-(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
+(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the same `bash` session where they
 created it).
 
 ### After either successful wallet/config pipeline — Verify saved settings

@@ -10,6 +10,38 @@ const { renderSkill, mutationPolicy, codexPolicy, writeClaudeSkills, buildCodex,
 const { sourceHashes } = require('../ci/codex-host-smoke.cjs');
 const ROOT = resolve(__dirname, '..');
 
+test('secret-input recipes keep shell guidance immediately beside the user commands on both hosts', () => {
+  for (const host of ['claude', 'codex']) {
+    const recipes = [];
+    for (const file of workflowFiles()) {
+      const name = file.slice(0, -3);
+      const rendered = renderSkill(fs.readFileSync(join(ROOT, 'workflows', file), 'utf8'), host, { name });
+      for (const block of rendered.matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)) {
+        if (!/\b\w+_INPUT_PATH=\$\(mktemp\)/.test(block[2])) continue;
+        const intro = rendered.slice(0, block.index).trimEnd().split(/\n\s*\n/).at(-1);
+        const label = `${host}/${name}`;
+        assert.match(intro, /\bfish\b/, label);
+        assert.match(intro, /run `bash`/, label);
+        assert.match(intro, /\b(?:before|first)\b/, label);
+        assert.match(intro, /\b(?:stay|remain)\b[\s\S]*\bsession\b[\s\S]*\bcleanup\b/, label);
+        assert.doesNotMatch(intro, /\bexec_command\b/, label);
+        recipes.push(name);
+      }
+    }
+    assert.deepEqual(recipes.sort(), ['author-manifest', 'import-key', 'init-agent']);
+  }
+});
+
+test('mnemonic privacy instructions do not forbid the shell tool needed for stdin import', () => {
+  for (const host of ['claude', 'codex']) {
+    for (const name of ['init-agent', 'import-key']) {
+      const rendered = renderSkill(fs.readFileSync(join(ROOT, 'workflows', `${name}.md`), 'utf8'), host, { name });
+      assert.doesNotMatch(rendered, /Do NOT `(?:exec_command|Bash)` the mnemonic file/, `${host}/${name}`);
+      assert.match(rendered, /import-key\.cjs" --prefix manifest < 'MNEMONIC_FILE' \| node/);
+    }
+  }
+});
+
 test('both host skills resolve each domain invocation and keep the journal keys stable', () => {
   const source = fs.readFileSync(join(ROOT, 'workflows/deploy-app.md'), 'utf8');
   const claude = renderSkill(source, 'claude', { name: 'deploy-app' });

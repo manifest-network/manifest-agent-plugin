@@ -2,12 +2,14 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync } = require('node:fs');
+const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync, existsSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { renderSkill } = require('../ci/build-packages.cjs');
 
-const SCRIPT = join(__dirname, '..', 'scripts', 'merge-env.cjs');
+const ROOT = join(__dirname, '..');
+const SCRIPT = join(ROOT, 'scripts', 'merge-env.cjs');
 
 function withDataDir(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'manifest-merge-env-test-'));
@@ -21,6 +23,68 @@ function runMerge(specFile, dotenv, dataDir, extraArgs = []) {
     encoding: 'utf8',
     input: dotenv,
     env: { ...process.env, MANIFEST_PLUGIN_DATA: dataDir },
+  });
+}
+
+for (const host of ['claude', 'codex']) {
+  function envCommands() {
+    const source = readFileSync(join(ROOT, 'workflows/author-manifest.md'), 'utf8');
+    const rendered = renderSkill(source, host, { name: 'author-manifest' });
+    return [...rendered.matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)].map(match => match[2].trimEnd());
+  }
+
+  test(`${host} generated env recipe creates a private input and merges its sample without EOF-marker errors`, () => {
+    withDataDir(dataDir => {
+      const commands = envCommands();
+      const recipe = commands.find(command => command.includes('ENV_INPUT_PATH=$(mktemp)'));
+      const payload = recipe.match(/^cat > "\$ENV_INPUT_PATH"\n([\s\S]*?)(?=^printf )/m)?.[1];
+      assert.ok(payload, 'locate the text the user types into cat');
+      // Supply interactive input through stdin, then let cat observe EOF.
+      // Keep the recipe's EOF instruction in that input to catch a literal ^D.
+      const capture = spawnSync('bash', ['--noprofile', '--norc', '-c', recipe.replace(payload, '')], {
+        input: payload, encoding: 'utf8', env: { PATH: process.env.PATH, TMPDIR: dataDir },
+      });
+      assert.ifError(capture.error);
+      assert.equal(capture.status, 0, capture.stderr);
+      const inputPath = capture.stdout.trim();
+      assert.equal(statSync(inputPath).mode & 0o777, 0o600);
+      assert.equal(readFileSync(inputPath, 'utf8'), payload);
+      const specPath = join(dataDir, 'manifests-drafts', 'app.json');
+      writeFileSync(specPath, JSON.stringify({ services: { app: { image: 'fixture' } } }));
+      const mergeCommand = commands.find(command => command.includes('scripts/merge-env.cjs'));
+      assert.ok(mergeCommand, 'execute the generated stdin merge command');
+      const merge = spawnSync('bash', ['--noprofile', '--norc', '-c', mergeCommand], {
+        encoding: 'utf8', env: { PATH: process.env.PATH, MANIFEST_PLUGIN_ROOT: ROOT,
+          MANIFEST_PLUGIN_DATA: dataDir, SAVED_PATH: specPath, SERVICE_NAME: 'app', ENV_FILE_PATH: inputPath },
+      });
+      assert.ifError(merge.error);
+      assert.equal(merge.status, 0, merge.stderr);
+      assert.deepEqual(JSON.parse(readFileSync(specPath)).services.app.env, { KEY1: 'value1', KEY2: 'value2' });
+      assert.equal(statSync(specPath).mode & 0o777, 0o600);
+      assert.doesNotMatch(capture.stdout + capture.stderr + merge.stdout + merge.stderr, /value1|value2/);
+    });
+  });
+
+  test(`${host} generated env cleanup removes every collected path after the input variable is reassigned`, () => {
+    withDataDir(dataDir => {
+      const cleanup = envCommands().find(command => command.startsWith('rm -- '));
+      assert.ok(cleanup, 'provide an explicit command for each collected env-file path');
+      const inputs = ["first service's $(touch unexpected).env", 'second service.env'].map(name => join(dataDir, name));
+      for (const path of inputs) writeFileSync(path, 'fixture-only', { mode: 0o600 });
+      const unrelated = join(dataDir, 'keep.env');
+      writeFileSync(unrelated, 'keep');
+      const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+      const command = inputs.map(path => cleanup.replace("'ENV_FILE_PATH'", () => quote(path))).join('\n');
+      const result = spawnSync('bash', ['--noprofile', '--norc', '-c', command], {
+        cwd: dataDir, encoding: 'utf8', env: { PATH: process.env.PATH, ENV_INPUT_PATH: inputs.at(-1) },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, result.stderr);
+      for (const path of inputs) assert.equal(existsSync(path), false, path);
+      assert.equal(readFileSync(unrelated, 'utf8'), 'keep');
+      assert.equal(existsSync(join(dataDir, 'unexpected')), false);
+      assert.equal(result.stdout + result.stderr, '');
+    });
   });
 }
 

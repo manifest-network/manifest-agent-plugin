@@ -256,7 +256,7 @@ ENV_INPUT_PATH=$(mktemp)
 cat > "$ENV_INPUT_PATH"
 KEY1=value1
 KEY2=value2
-^D
+# press Enter, then Ctrl+D
 printf '%s\n' "$ENV_INPUT_PATH"
 ```
 Tell them not to use `echo` (it lands in shell history). Wait for them to
@@ -276,7 +276,8 @@ present in both are taken from the file.
   `/manifest-agent:deploy-app` later loads the saved spec. Eliminating
   those exposures needs upstream support; do not promise context secrecy.
 
-Suggest the user delete the env file after a successful save.
+Suggest the user delete each env file after its values have been successfully
+merged into the saved spec, as described in Step 7.
 
 **labels** — same loop as `env`.
 
@@ -485,10 +486,19 @@ report the keys to the user (no values appear). If the script errors out
 verbatim and stop; the saved spec at `$SAVED_PATH` is left in a partial
 state and the user should investigate before deploying.
 
-Suggest the user delete each env file once they've confirmed the saved spec
-looks right (e.g. `rm -- "$ENV_INPUT_PATH"` in the same separate terminal
-where they created it). The values are now in the spec at `$SAVED_PATH`
-(mode 0600) and on the user's responsibility to manage.
+Once the user confirms the merged spec looks right, ask them to delete each
+env file in the same `bash` session where they created it. Give one command
+per distinct path they provided:
+
+```bash
+rm -- 'ENV_FILE_PATH'
+```
+
+Replace `'ENV_FILE_PATH'` with the actual path as a properly shell-escaped
+literal, including any apostrophes. Use the collected paths; repeating the
+recipe reassigns `ENV_INPUT_PATH`, so that variable names only the last file.
+The values are now in the spec at `$SAVED_PATH` (mode 0600) and on the user's
+responsibility to manage.
 
 After the merge phase (whether or not any env files were actually merged),
 refresh `META_HASH` from the on-disk spec — re-loading + re-validating is

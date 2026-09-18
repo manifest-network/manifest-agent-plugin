@@ -64,7 +64,8 @@ printf '%s\n' "$MNEMONIC_INPUT_PATH"
 Wait for the user to provide the file path before proceeding.
 
 **CRITICAL**: Do NOT ask the user to paste the mnemonic in the conversation.
-Do NOT read the mnemonic file. The file content must never enter Claude Code's context.
+Do NOT display the mnemonic file or read its contents into Claude Code's context.
+Pass it only to the import pipeline below via stdin.
 
 ## Step 2 — Import key and update config
 
@@ -102,7 +103,7 @@ legacy migration immediately. Explicit config writes also bypass the brief pause
 used by automatic startup attempts.
 
 Once the wallet/config pipeline succeeds, suggest the user delete their mnemonic file
-(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
+(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the same `bash` session where they
 created it), even if final status verification is still pending.
 
 ### After a successful wallet/config pipeline — Verify saved settings

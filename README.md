@@ -195,17 +195,18 @@ ENV_INPUT_PATH=$(mktemp)
 cat > "$ENV_INPUT_PATH"
 WORDPRESS_DB_HOST=mysql
 WORDPRESS_DB_PASSWORD=hunter2
-^D
+# press Enter, then Ctrl+D
 printf '%s\n' "$ENV_INPUT_PATH"
 ```
 
-Press Ctrl-D where `^D` is shown, then tell the agent the printed path. `mktemp`
+After pressing Ctrl+D, tell the agent the printed path. `mktemp`
 creates a fresh file with mode `0600`; an older file's permissions cannot carry
 over. Values flow through a script pipe into the spec file; they never enter
 the chat input box and the agent never echoes them in summaries. This uses the
 same fresh-file pattern as mnemonic import in `init-agent` / `import-key`.
 After a successful merge, remove the input file from the same Bash session with
-`rm -- "$ENV_INPUT_PATH"`.
+`rm -- "$ENV_INPUT_PATH"`. If you repeat the recipe for several services,
+remove each printed path; `ENV_INPUT_PATH` names only the most recent file.
 
 Note: env values still appear in `build_manifest_preview` and
 `deploy_app_orchestrated` MCP tool arguments during validation and deployment.

@@ -5,22 +5,39 @@ Bash guidance into the installed onboarding, key-import and env-file recipes.
 Fish users need to start Bash before the POSIX assignments and keep that
 session open through temporary-file cleanup.
 
-Status: implemented and verified on Linux with Node 24.15.0.
+Status: PR review corrections implemented and verified on Linux with Node 24.15.0.
 
 ## Plan
 
 1. Put the Bash instruction immediately before each user-typed secret-file
    recipe in `workflows/init-agent.md`, `workflows/import-key.md` and
    `workflows/author-manifest.md`. Keep the README's adjacent advice consistent.
-2. Preserve the commands, private temporary files, stdin pipes, path-only
-   collection and cleanup instructions. Do not add fish translations.
+2. Preserve private temporary files, stdin pipes and path-only collection.
+   Explain Ctrl+D explicitly and clean up every collected env-file path,
+   including when the recipe is repeated for several services.
 3. Regenerate the tracked Claude skills and build the native Codex package.
-   Inspect all six generated recipes for adjacent shell guidance and retained
-   cleanup; compare the command blocks with the original source. Use literal
+   Inspect all six generated recipes for adjacent shell guidance and complete
+   cleanup. Use literal
    `bash` for the shell name; the Codex renderer translates capitalized `Bash`
    as a host tool name.
-4. Run the existing Linux unit suite, package checks, policy completeness,
-   syntax and version checks, and validate the affected Codex skills.
+4. Cover both hosts' rendered advice, private-file creation, stdin env merge
+   and per-file cleanup with regression tests. Run the Linux unit suite,
+   package checks, policy completeness, syntax and version checks, and
+   validate the affected Codex skills.
+
+## PR review corrections
+
+The [review of 63b2640](https://github.com/manifest-network/manifest-agent-plugin/pull/24#issuecomment-5731929225)
+was checked against both hosts' rendered skills and disposable Linux fixtures.
+
+| Finding | Resolution |
+| --- | --- |
+| 1: Codex mnemonic warning forbids its shell tool | Describe the prohibited display/context exposure without a host tool name, and explicitly allow the stdin import pipeline. Both mnemonic workflows use this instruction. |
+| 2: adjacent shell advice lacks regression coverage | Check every generated secret-file recipe for adjacent fish/Bash/session/cleanup guidance and reject tool-name substitution in that paragraph. |
+| 3: repeated env recipes leave earlier input files behind | Supply one shell-quoted cleanup command per distinct collected path, independent of the last `ENV_INPUT_PATH` value. |
+| 4: literal `^D` breaks env parsing | Use a Ctrl+D comment in the workflow and README. The generated recipe/merge test verifies that even a literally typed comment is harmless. |
+| 5: cleanup wording names only the terminal | All three workflows now explicitly name the same `bash` session at cleanup. |
+| 6: broad builder rewrite can corrupt shell prose | Track the builder and related read-tool wording separately in [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029). Document the current literal-shell/token convention in `CLAUDE.md`. |
 
 ## Release boundary
 
@@ -33,18 +50,26 @@ macOS/Windows compatibility.
 
 ## Validation results
 
-- Reviewed all six generated recipe introductions: each names the `bash`
-  shell, directs fish users to start it in their separate terminal, and keeps
-  them in that session through cleanup. Each workflow's introduction is
-  identical across hosts.
-- Compared every fenced command block in the three workflow sources, both
-  hosts' generated skills and the README against the original source/render.
-  All are unchanged; all six recipes retain their input-file cleanup command.
-- Claude generation, Codex packaging, all 14 generated-skill checks, the three
-  affected Codex skills' frontmatter validation, policy completeness, CJS/Bash
-  syntax, version consistency and diff whitespace checks passed. All 13 package
-  tests also passed for the final generated skills.
-- The existing Linux suite passed 986 tests with zero failures using
-  `--test-concurrency=1`. Three PowerShell checks were skipped because `pwsh`
-  is unavailable. The suite required execution outside the workspace sandbox
-  after its subprocess checks returned `EPERM`.
+- Before the corrections, regressions detected the contradictory Codex warning,
+  missing per-file cleanup command, and both hosts' literal-`^D` parse errors.
+  All 28 package and env-merge tests now pass, including six new regressions.
+- Isolated source mutations confirmed that the recipe guidance test fails when
+  its adjacent advice is removed or a capitalized shell name becomes
+  `exec_command` in the Codex render.
+- Both hosts' generated env commands create mode `0600` files, merge sample
+  input through stdin, preserve private spec permissions, and emit no values.
+  Cleanup fixtures remove both collected paths despite a reassigned input
+  variable, including paths with spaces, apostrophes and shell syntax, while
+  preserving unrelated files and executing no path-supplied commands.
+- Removing only the broad `Bash` rewrite changes none of the current 14 Codex
+  renders, confirming the independent builder follow-up's reproduction.
+- The full Linux suite passed 992 tests with zero failures using
+  `--test-concurrency=1`; three PowerShell checks were skipped because `pwsh`
+  is unavailable. Subprocess fixtures ran outside the workspace sandbox.
+- Claude generation, Codex packaging, all 14 generated-skill checks, affected
+  Codex skill validation, policy completeness, CJS/Bash syntax, version
+  consistency and diff whitespace checks passed. Published evidence and the
+  four pending release rows remain unchanged.
+
+The fixtures supply user input and collected paths; they validate rendering
+and executable commands, not an interactive model's choices or UI behavior.
