@@ -179,20 +179,29 @@ environment secret in the journal or command output.
 
 `tests/build-packages.test.cjs` checks that every generated secret-file recipe
 has adjacent advice to start `bash` from fish and stay in that session through
-cleanup. The recipe paragraph must not substitute a host tool for the shell,
-and mnemonic privacy instructions must allow the stdin import command.
+cleanup, with Bash started before the recipe commands. Generated workflows
+must not name `exec_command` as a session, shell or terminal. Source and render
+guards reject negated read/shell tool verbs case-insensitively without relying
+on the exact mnemonic-file wording.
 
 `tests/merge-env.test.cjs` executes both hosts' generated env-file creation and
 merge commands with harmless stdin fixtures. It checks mode `0600`, no values
 in output, and that the Ctrl+D instruction does not become invalid dotenv
-input if typed literally. Cleanup cases provide multiple collected paths,
+input if typed literally. Cleanup cases provide confirmed recipe-created paths,
 including spaces, apostrophes and shell syntax, while `ENV_INPUT_PATH` refers
-only to the last file. Every input must be removed without touching unrelated
-files or executing path contents. These fixtures supply the choices and paths;
-they do not establish interactive model behavior.
+only to the last file. Those temporaries must be removed while supplied
+pre-existing and unknown-origin dotenv files remain byte-identical after
+merge and cleanup. The fixture supplies each file's origin; it does not test
+a model's provenance decision. No path contents may execute.
+
+`tests/workflow-config.test.cjs` also executes both hosts' separated mnemonic
+capture and path-display blocks. The input file must contain only the supplied
+words, at mode `0600`, with no instructional comments or mnemonic output.
+These fixtures supply the choices and paths; they do not establish interactive
+model behavior.
 
 ```bash
-node --test tests/build-packages.test.cjs tests/merge-env.test.cjs
+node --test tests/build-packages.test.cjs tests/merge-env.test.cjs tests/workflow-config.test.cjs
 ```
 
 ## Wallet gas-setting regressions (ENG-1009)

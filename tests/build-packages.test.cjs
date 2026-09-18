@@ -16,13 +16,13 @@ test('secret-input recipes keep shell guidance immediately beside the user comma
     for (const file of workflowFiles()) {
       const name = file.slice(0, -3);
       const rendered = renderSkill(fs.readFileSync(join(ROOT, 'workflows', file), 'utf8'), host, { name });
+      assert.doesNotMatch(rendered, /\bexec_command`?\s+(?:session|shell|terminal)\b/i, `${host}/${name}: shell prose`);
       for (const block of rendered.matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)) {
         if (!/\b\w+_INPUT_PATH=\$\(mktemp\)/.test(block[2])) continue;
         const intro = rendered.slice(0, block.index).trimEnd().split(/\n\s*\n/).at(-1);
         const label = `${host}/${name}`;
         assert.match(intro, /\bfish\b/, label);
-        assert.match(intro, /run `bash`/, label);
-        assert.match(intro, /\b(?:before|first)\b/, label);
+        assert.match(intro, /run `bash`[^.]*\b(?:before\s+(?:the\s+)?(?:commands|recipe)|first)\b/, label);
         assert.match(intro, /\b(?:stay|remain)\b[\s\S]*\bsession\b[\s\S]*\bcleanup\b/, label);
         assert.doesNotMatch(intro, /\bexec_command\b/, label);
         recipes.push(name);
@@ -35,8 +35,10 @@ test('secret-input recipes keep shell guidance immediately beside the user comma
 test('mnemonic privacy instructions do not forbid the shell tool needed for stdin import', () => {
   for (const host of ['claude', 'codex']) {
     for (const name of ['init-agent', 'import-key']) {
-      const rendered = renderSkill(fs.readFileSync(join(ROOT, 'workflows', `${name}.md`), 'utf8'), host, { name });
-      assert.doesNotMatch(rendered, /Do NOT `(?:exec_command|Bash)` the mnemonic file/, `${host}/${name}`);
+      const source = fs.readFileSync(join(ROOT, 'workflows', `${name}.md`), 'utf8');
+      assert.doesNotMatch(source, /\b(?:not|never)\s+`\{\{(?:read_tool|shell_tool)\}\}`/i, `${name}: negated tool verb`);
+      const rendered = renderSkill(source, host, { name });
+      assert.doesNotMatch(rendered, /\b(?:not|never)\s+`(?:exec_command|Bash)`/i, `${host}/${name}`);
       assert.match(rendered, /import-key\.cjs" --prefix manifest < 'MNEMONIC_FILE' \| node/);
     }
   }

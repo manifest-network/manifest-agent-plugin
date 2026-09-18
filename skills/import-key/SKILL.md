@@ -55,7 +55,12 @@ the commands below and stay in that shell session through temporary-file cleanup
 umask 077
 MNEMONIC_INPUT_PATH=$(mktemp)
 cat > "$MNEMONIC_INPUT_PATH"
-# paste mnemonic, press Enter, then Ctrl+D
+```
+
+In that terminal, paste **only the mnemonic words**, press Enter, then
+Ctrl+D. When the shell prompt returns, run:
+
+```bash
 printf '%s\n' "$MNEMONIC_INPUT_PATH"
 ```
 

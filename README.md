@@ -207,6 +207,8 @@ same fresh-file pattern as mnemonic import in `init-agent` / `import-key`.
 After a successful merge, remove the input file from the same Bash session with
 `rm -- "$ENV_INPUT_PATH"`. If you repeat the recipe for several services,
 remove each printed path; `ENV_INPUT_PATH` names only the most recent file.
+Cleanup applies only to files created with this recipe. Keep any pre-existing
+dotenv file you supplied instead.
 
 Note: env values still appear in `build_manifest_preview` and
 `deploy_app_orchestrated` MCP tool arguments during validation and deployment.

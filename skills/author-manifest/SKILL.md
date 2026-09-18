@@ -245,10 +245,13 @@ list of paths.
   `build_manifest_preview` is the validator.
 - **Skip** — no env vars.
 
-If the user picks **From a file**, ask them to create the file in a
-**separate terminal**. Tell them to use the `bash` shell: if their usual shell
-is fish, run `bash` in that terminal before the commands below and stay in
-that shell session through temporary-file cleanup:
+If the user picks **From a file**, accept an existing dotenv path or offer
+the recipe below. Record which files the user confirms they created with
+this recipe; a supplied path alone does not establish that.
+
+For a new input file, use a **separate terminal**. Tell them to use the `bash`
+shell: if their usual shell is fish, run `bash` in that terminal before the
+commands below and stay in that shell session through temporary-file cleanup:
 
 ```bash
 umask 077
@@ -276,8 +279,8 @@ present in both are taken from the file.
   `/manifest-agent:deploy-app` later loads the saved spec. Eliminating
   those exposures needs upstream support; do not promise context secrecy.
 
-Suggest the user delete each env file after its values have been successfully
-merged into the saved spec, as described in Step 7.
+Suggest cleanup only for confirmed recipe-created temporary files after
+their values have been merged into the saved spec, as described in Step 7.
 
 **labels** — same loop as `env`.
 
@@ -483,19 +486,22 @@ shape — this skill always emits the services-map shape, so always pass it.)
 The script outputs `{"service":"<name>","keys_merged":["KEY1",...]}` —
 report the keys to the user (no values appear). If the script errors out
 (invalid dotenv line, unknown service, unreadable file), surface the error
-verbatim and stop; the saved spec at `$SAVED_PATH` is left in a partial
-state and the user should investigate before deploying.
+and stop. These input errors leave the saved spec unchanged; earlier
+successful service merges remain. Have the user correct the reported input
+problem privately, then retry the merge for that service and continue any
+remaining service merges before deploying.
 
-Once the user confirms the merged spec looks right, ask them to delete each
-env file in the same `bash` session where they created it. Give one command
-per distinct path they provided:
+Once the user confirms the merged spec looks right, suggest they delete only
+the temporary input files they created with this recipe, in the same `bash`
+session. Preserve pre-existing files and files of unknown origin; do not
+suggest deleting them. Give one command per distinct recipe-created path:
 
 ```bash
-rm -- 'ENV_FILE_PATH'
+rm -- 'TEMP_ENV_INPUT_FILE'
 ```
 
-Replace `'ENV_FILE_PATH'` with the actual path as a properly shell-escaped
-literal, including any apostrophes. Use the collected paths; repeating the
+Replace `'TEMP_ENV_INPUT_FILE'` with the confirmed temporary file's path as
+a properly shell-escaped literal, including any apostrophes. Repeating the
 recipe reassigns `ENV_INPUT_PATH`, so that variable names only the last file.
 The values are now in the spec at `$SAVED_PATH` (mode 0600) and on the user's
 responsibility to manage.

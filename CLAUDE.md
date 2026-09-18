@@ -13,6 +13,11 @@ in `hosts/` contain only host integration differences. The builder resolves
 MCP names, skill invocations, local tools and questions before installation;
 the model never translates Claude tool names into Codex names.
 
+For workflow sources and host fragments, use literal `bash` for the shell
+and `{{shell_tool}}` for the host tool. The current Codex renderer rewrites
+capitalized `Bash` as `exec_command`, including occurrences in shell advice
+and inserted fragments such as `hosts/codex/restart-confirmation.md`.
+
 ## Architecture
 
 **Plugin root is read-only in production.** Marketplace installs copy the plugin to `~/.claude/plugins/cache/`. All mutable state lives in `${CLAUDE_PLUGIN_DATA}` — Claude Code's persistent per-plugin data directory, resolved at runtime to `~/.claude/plugins/data/<id>/` and exposed to scripts as `$MANIFEST_PLUGIN_DATA` (exported by the SessionStart hook).
@@ -71,9 +76,6 @@ Terminal secret-file recipes use POSIX assignments such as
 `MNEMONIC_INPUT_PATH=$(mktemp)`. Ask fish users to start `bash` in their separate
 terminal before following the recipe and remain in that shell through cleanup;
 do not offer unverified fish translations.
-In shared workflows, use literal `bash` for the shell and `{{shell_tool}}`
-for the host tool. The current Codex renderer rewrites capitalized `Bash`
-as `exec_command`, including occurrences in shell advice.
 
 **Underscore-prefix helpers** — Scripts named `_<topic>.cjs` (`_io.cjs`, `_uuid.cjs`, `_gas-price.cjs`, `_spec.cjs`, `_https-json.cjs`, `_journal.cjs`) are sibling-only modules consumed via `require('./_X.cjs')`. Skills MUST NOT shell out to them. The post-ENG-130 `humanize-denom.cjs` is a documented exception because it's conceptually a renderer composed by another renderer (`render-balance.cjs`); see the "Renderer / structural summarizers" subsection of the inventory below.
 

@@ -24,7 +24,9 @@ and `workflows/author-manifest.md` now tell fish users to run `bash` in their
 separate terminal before the recipe and remain in that shell through
 temporary-file cleanup. Both hosts' generated skills carry the advice beside
 the commands. Review corrections clarify mnemonic privacy and Ctrl+D input,
-and clean up every collected env-file path after repeated recipes. Rendering
+and clean up every confirmed recipe-created env file after repeated recipes,
+preserving pre-existing inputs and files of unknown origin. Mnemonic entry
+instructions are outside the input block. Rendering
 and command regressions cover both hosts. The builder's broad tool-name
 rewrite is tracked separately in [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029).
 
@@ -101,6 +103,6 @@ noncolliding control.
 
 The existing built-in collision and unresolved-fragment guards now have
 dedicated regression tests in [build-packages.test.cjs](../tests/build-packages.test.cjs).
-All 13 builder tests pass. Removing either existing guard from a scratch copy
+The builder regression tests pass. Removing either existing guard from a scratch copy
 makes its new regression fail. Those tests do not claim to fix the separate
 fragment-name collision above.

@@ -65,23 +65,39 @@ for (const host of ['claude', 'codex']) {
     });
   });
 
-  test(`${host} generated env cleanup removes every collected path after the input variable is reassigned`, () => {
+  test(`${host} generated env cleanup removes recipe temporaries and preserves supplied input files`, () => {
     withDataDir(dataDir => {
+      const rendered = renderSkill(readFileSync(join(ROOT, 'workflows/author-manifest.md'), 'utf8'), host, { name: 'author-manifest' });
+      assert.match(rendered, /delete only[^.]*recipe/i);
+      assert.match(rendered, /preserve[^.]*pre-existing[^.]*unknown/i);
       const cleanup = envCommands().find(command => command.startsWith('rm -- '));
-      assert.ok(cleanup, 'provide an explicit command for each collected env-file path');
+      assert.ok(cleanup, 'provide an explicit command for each recipe-created env-file path');
       const inputs = ["first service's $(touch unexpected).env", 'second service.env'].map(name => join(dataDir, name));
       for (const path of inputs) writeFileSync(path, 'fixture-only', { mode: 0o600 });
-      const unrelated = join(dataDir, 'keep.env');
-      writeFileSync(unrelated, 'keep');
+      const supplied = ['project.env', 'unknown-origin.env'].map(name => join(dataDir, name));
+      const specPath = join(dataDir, 'manifests-drafts', 'app.json');
+      writeFileSync(specPath, JSON.stringify({ services: { app: { image: 'fixture' } } }));
+      for (const path of supplied) {
+        writeFileSync(path, 'VALUE=fixture-only\n', { mode: 0o600 });
+        const merge = spawnSync('bash', ['--noprofile', '--norc', '-c', envCommands().find(command => command.includes('scripts/merge-env.cjs'))], {
+          encoding: 'utf8', env: { PATH: process.env.PATH, MANIFEST_PLUGIN_ROOT: ROOT,
+            MANIFEST_PLUGIN_DATA: dataDir, SAVED_PATH: specPath, SERVICE_NAME: 'app', ENV_FILE_PATH: path },
+        });
+        assert.ifError(merge.error);
+        assert.equal(merge.status, 0, merge.stderr);
+        assert.doesNotMatch(merge.stdout + merge.stderr, /fixture-only/);
+      }
       const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
-      const command = inputs.map(path => cleanup.replace("'ENV_FILE_PATH'", () => quote(path))).join('\n');
+      // The workflow driver supplies the known recipe-created paths only.
+      const command = inputs.map(path => cleanup.replace("'TEMP_ENV_INPUT_FILE'", () => quote(path))).join('\n');
       const result = spawnSync('bash', ['--noprofile', '--norc', '-c', command], {
         cwd: dataDir, encoding: 'utf8', env: { PATH: process.env.PATH, ENV_INPUT_PATH: inputs.at(-1) },
       });
       assert.ifError(result.error);
       assert.equal(result.status, 0, result.stderr);
       for (const path of inputs) assert.equal(existsSync(path), false, path);
-      assert.equal(readFileSync(unrelated, 'utf8'), 'keep');
+      for (const path of supplied) assert.equal(readFileSync(path, 'utf8'), 'VALUE=fixture-only\n');
+      assert.equal(JSON.parse(readFileSync(specPath)).services.app.env.VALUE, 'fixture-only');
       assert.equal(existsSync(join(dataDir, 'unexpected')), false);
       assert.equal(result.stdout + result.stderr, '');
     });
