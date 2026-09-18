@@ -98,13 +98,13 @@ This walks you through:
 
 Reinitializing preserves a custom gas multiplier after either generating or
 importing a wallet. `/manifest-agent:import-key` also retains the existing chain
-and gas price. Both workflows restore the previous multiplier after writing the
-new wallet config and verify the saved settings; an unset multiplier keeps the
-default `1.5`. If restoration fails, the new wallet is already configured and
-the operation is reported and journaled as partial with its actual settings.
-The previous multiplier remains in the workflow's memory for recovery, not in
-the new config. Resolve the diagnostic and retry only the multiplier update,
-without generating or importing another wallet.
+and gas price. The config writer saves the wallet and previous multiplier
+atomically, so an interruption or later rerun cannot lose the value. An unset
+multiplier keeps the default `1.5`. Both workflows verify the saved settings
+before reporting completion. If that read fails, the operation is reported and
+journaled as partial with the confirmed address and chain and unverified gas
+settings. Resolve the diagnostic and retry only the status read, without
+generating or importing another wallet.
 
 After setup, **restart Claude Code** (or run `/mcp` and reconnect) so the five MCP servers can pick up the new config.
 

@@ -45,7 +45,7 @@ test('generation fails on unknown tokens, tools and cross-skill names instead of
 test('the shared journal fragment expands host tools before insertion into every journal workflow', () => {
   const names = workflowFiles().filter((file) => fs.readFileSync(join(ROOT, 'workflows', file), 'utf8').includes('{{journal_write}}'));
   assert.equal(names.length, 10);
-  assert.deepEqual(workflowFragmentFiles(), ['journal-write.md', 'restore-gas-multiplier.md']);
+  assert.deepEqual(workflowFragmentFiles(), ['journal-write.md', 'verify-wallet-config.md']);
   for (const host of ['claude', 'codex']) {
     const fragments = names.map((file) => {
       const rendered = renderSkill(fs.readFileSync(join(ROOT, 'workflows', file), 'utf8'), host, { name: file.slice(0, -3) });

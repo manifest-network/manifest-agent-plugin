@@ -110,12 +110,6 @@ Run:
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-On a successful status read, capture `gasMultiplier` as
-`PREVIOUS_GAS_MULTIPLIER` before either wallet path writes config. Preserve the
-exact integer or fractional value. If it is absent/null, or config is absent
-for first-time setup, use null so the default remains `1.5`. Keep this value in
-workflow memory for the checked restoration after the wallet/config pipeline.
-
 If the command succeeds and the JSON output has a non-null `address` field,
 warn the user:
 
@@ -157,7 +151,8 @@ Replace `CHOSEN_CHAIN` with the user's choice from Step 2 and `GAS_TOKEN`
 with the symbol they chose in Step 3 (e.g., `MFX`), using properly shell-escaped
 literals including any apostrophes. Registry symbols are data, not shell code.
 
-Parse the JSON output from stdout to get `address` and `activeChain`.
+After the pipeline succeeds, save its safe JSON output as `WRITTEN_CONFIG`
+(`address` and `activeChain`).
 
 If the pipeline fails, stop and show the sanitized diagnostic. A credential-store
 failure can leave a new encrypted keyfile without selecting it in config; the
@@ -197,14 +192,14 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest < 'MNEMONI
 ```
 
 If the pipeline fails, stop and report the sanitized diagnostic and retained
-keyfile path before retrying. Parse successful JSON output to get `address`
-and `activeChain`. Suggest the user delete their mnemonic file after success
+keyfile path before retrying. Save successful JSON output as `WRITTEN_CONFIG`
+(`address` and `activeChain`). Suggest the user delete their mnemonic file after success
 (e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
 created it).
 
-### After either successful wallet/config pipeline — Restore gas settings
+### After either successful wallet/config pipeline — Verify saved settings
 
-{{restore_gas_multiplier}}
+{{verify_wallet_config}}
 
 ## Step 6 — Report results
 
@@ -239,6 +234,14 @@ the writer is fail-closed and will exit 1 rather than append such
 records. This is the defense in depth for this skill — mnemonics flow
 only through stdin pipes between scripts and never enter the journal.
 
+If the user declined the existing-key warning in Step 4 or cancelled at
+any choice prompt before wallet replacement, set `RUN_OUTCOME` to `"cancelled"`
+and fill `FINAL_SETTINGS` from the last successful status read. If none exists,
+use null for `address` and `activeChain`, and `"unknown"` for the gas fields.
+This also sets `signer_address` to the previous address or null; do not use
+`WRITTEN_CONFIG`, which does not exist on a cancelled path. Keep errors and
+recovery actions empty and describe cancellation in `plan_summary`.
+
 Build the redacted record as an object with this shape. Placeholders describe
 in-memory values; never substitute them into shell source or treat the sketch
 as already serialized JSON.
@@ -247,7 +250,7 @@ as already serialized JSON.
 {
   "skill": "init-agent",
   "active_chain": "<FINAL_SETTINGS.activeChain>",
-  "signer_address": "<address parsed from write-config output>",
+  "signer_address": "<FINAL_SETTINGS.address>",
   "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
   "plan_summary": "init-agent (<generate|import>) on <chosen chain>, gas_token=<GAS_TOKEN>",
   "tool_calls": [],
@@ -263,18 +266,16 @@ as already serialized JSON.
 }
 ```
 
-Use `RUN_OUTCOME` (`success` or `partial`) from the checked restoration. Fill
+Use `RUN_OUTCOME` (`success`, `partial`, or `cancelled`) determined above. Fill
 `errors` with the structured errors recorded there and `recovery_actions` with
 attempted or needed recovery; both arrays are empty when no failure occurred.
-Write the multiplier as a number, null for the observed default, or `"unknown"`
-if status failed. Never journal the previous value as though it were restored.
+Use the multiplier returned by status, null for the observed default, or
+`"unknown"` if status failed. After a successful config write, keep its confirmed
+wallet address and chain from `WRITTEN_CONFIG` when status cannot be read.
 
 {{journal_write}}
 
-If the user declined the existing-key warning in Step 4 or cancelled at
-any choice prompt, set `outcome` to `"cancelled"` and use the last observed
-settings (or unknown), since no replacement took place. Do NOT mention the
-journal write in your reply to the user.
+Do NOT mention the journal write in your reply to the user.
 
 ## Security notes
 

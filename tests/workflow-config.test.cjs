@@ -83,20 +83,22 @@ function fixture(host, t, skill, multiplier, fresh = false) {
   f.commands = blocks(source);
   const statusCommands = f.commands.filter((command) => command.includes('update-config.cjs" --status'));
   assert.equal(statusCommands.length, 2, 'capture previous settings and verify final settings separately');
+  const walletCommands = f.commands.filter((command) => command.includes('scripts/write-config.cjs'));
+  for (const command of walletCommands) {
+    assert.ok(f.commands.indexOf(command) > f.commands.indexOf(statusCommands[0]));
+    assert.ok(f.commands.indexOf(command) < f.commands.lastIndexOf(statusCommands[1]), 'final status must follow either wallet pipeline');
+  }
+  assert.equal(f.commands.some((command) => command.includes('--gas-multiplier')), false,
+    'preservation must not require a second config mutation');
   f.statusCommand = statusCommands[0];
   f.finalStatus = () => run(f, statusCommands[1]);
-  f.restoreCommand = f.commands.find((command) => command.includes('--gas-multiplier'));
   f.status = () => run(f, f.statusCommand);
-  f.restore = (value) => {
-    assert.ok(f.restoreCommand, 'wallet workflow must provide a gas restoration command');
-    return run(f, f.restoreCommand, { PREVIOUS_GAS_MULTIPLIER: value });
-  };
   f.mnemonicPath = join(data, "input with ' quote.txt");
   fs.writeFileSync(f.mnemonicPath, SECRET, { mode: 0o600 });
   return f;
 }
 
-function replaceWallet(f, mode, previous) {
+function replaceWallet(f, mode, previous, call = 1) {
   const script = mode === 'generate' ? 'gen-agent-key.cjs' : 'import-key.cjs';
   const pipeline = f.commands.find((command) => command.includes('scripts/' + script)
     && command.includes('scripts/write-config.cjs'));
@@ -104,7 +106,8 @@ function replaceWallet(f, mode, previous) {
   const result = run(f, pipeline, { CHOSEN_CHAIN: 'testnet', GAS_TOKEN: 'MFX',
     ACTIVE_CHAIN: previous?.activeChain, CURRENT_GAS_PRICE: previous?.gasPrice, MNEMONIC_FILE: f.mnemonicPath });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).address, 'manifest1replacement1');
+  f.written = JSON.parse(result.stdout);
+  assert.equal(f.written.address, 'manifest1replacement' + call);
   return fs.readFileSync(f.configPath);
 }
 
@@ -119,8 +122,7 @@ function journal(f, outcome, settings, errors = [], recovery = []) {
   record.errors = errors.map((error) => fill(record.errors[0], { '<ERROR.class>': error.class, '<ERROR.message>': error.message }));
   record.recovery_actions = recovery;
   record.intent = 'Replace the wallet and retain the gas multiplier';
-  record.plan_summary = 'Wallet replacement with checked gas restoration';
-  record.signer_address = 'manifest1replacement1';
+  record.plan_summary = outcome === 'cancelled' ? 'Cancelled before wallet replacement' : 'Wallet replacement preserving gas settings';
   const staging = fs.mkdtempSync(join(f.data, 'journal-stage-'));
   fs.writeFileSync(join(staging, 'journal.json'), JSON.stringify(record), { mode: 0o600 });
   const command = f.commands.find((value) => value.includes('scripts/journal-write.cjs'));
@@ -131,6 +133,8 @@ function journal(f, outcome, settings, errors = [], recovery = []) {
   const saved = JSON.parse(fs.readFileSync(result.stdout.trim(), 'utf8').trim().split('\n').at(-1));
   assert.equal(saved.outcome, outcome);
   assert.equal(saved.active_chain, settings.activeChain);
+  assert.ok(['testnet', 'mainnet', null].includes(saved.active_chain), 'journal chain must satisfy its documented schema');
+  assert.equal(saved.signer_address, settings.address);
   for (const [field, key] of [['address', 'address'], ['active_chain', 'activeChain'], ['gas_price', 'gasPrice'], ['gas_multiplier', 'gasMultiplier']]) {
     assert.equal(saved.final_state[field], settings[key]);
   }
@@ -141,10 +145,11 @@ function journal(f, outcome, settings, errors = [], recovery = []) {
 
 for (const host of ['claude', 'codex']) {
   for (const [skill, mode] of [['init-agent', 'generate'], ['init-agent', 'import'], ['import-key', 'import']]) {
-    test(host + ' ' + skill + '/' + mode + ' preserves gas settings and recovers without another wallet', async (t) => {
+    test(host + ' ' + skill + '/' + mode + ' atomically preserves gas settings and verifies without another wallet', async (t) => {
       const packageFixture = hostFixture(t, host);
       const cases = [
         { label: 'integer', multiplier: 2 }, { label: 'fractional', multiplier: 2.25 },
+        { label: 'numeric string', multiplier: '2' },
         { label: 'absent' }, { label: 'null', multiplier: null },
         ...(skill === 'init-agent' ? [{ label: 'fresh', fresh: true }] : []),
       ];
@@ -155,73 +160,73 @@ for (const host of ['claude', 'codex']) {
           assert.equal(before.status, item.fresh ? 1 : 0, before.stderr);
           const previous = item.fresh ? null : JSON.parse(before.stdout);
           const written = replaceWallet(f, mode, previous);
-          // Follow the workflow's optional restore command when present. Before
-          // ENG-1009 init-agent has none, exposing the lost value in final status.
-          if (previous?.gasMultiplier != null && f.restoreCommand) {
-            const restored = f.restore(previous.gasMultiplier);
-            assert.equal(restored.status, 0, restored.stderr);
-            assert.equal(JSON.parse(restored.stdout).gasMultiplier, previous.gasMultiplier);
-          }
+          assert.equal(JSON.parse(written).gasMultiplier, item.multiplier ?? undefined,
+            'the wallet write itself must retain gas settings before any follow-up command');
           const finalStatus = f.finalStatus();
           assert.equal(finalStatus.status, 0, finalStatus.stderr);
           const final = JSON.parse(finalStatus.stdout);
           assert.equal(final.gasMultiplier, item.multiplier ?? null);
           assert.equal(final.activeChain, skill === 'init-agent' ? 'testnet' : previous.activeChain);
           assert.equal(final.gasPrice, skill === 'init-agent' ? '1umfx' : previous.gasPrice);
-          const expected = JSON.parse(written);
-          if (item.multiplier != null) expected.gasMultiplier = item.multiplier;
-          assert.deepEqual(JSON.parse(fs.readFileSync(f.configPath)), expected);
+          assert.deepEqual(fs.readFileSync(f.configPath), written, 'verification must be read-only');
           assert.equal(fs.readFileSync(join(f.data, 'wallet-calls'), 'utf8'),
             (mode === 'generate' ? 'gen-agent-key.cjs' : 'import-key.cjs') + '\n');
           journal(f, 'success', final);
         });
       }
-      await t.test('failed restoration preserves the replacement wallet and retries only gas', (t) => {
+      await t.test('a new invocation after interruption still reads and preserves the saved multiplier', (t) => {
+        const f = fixture(packageFixture, t, skill, 2.25);
+        const previous = JSON.parse(f.status().stdout);
+        const written = replaceWallet(f, mode, previous);
+        assert.equal(JSON.parse(written).gasMultiplier, 2.25);
+        // Stop after the wallet write, before verification/journaling. A later
+        // invocation gets its inputs from disk instead of the first run's memory.
+        const next = JSON.parse(f.status().stdout);
+        assert.equal(next.gasMultiplier, 2.25);
+        const rerun = replaceWallet(f, mode, next, 2);
+        assert.equal(JSON.parse(rerun).gasMultiplier, 2.25);
+        assert.equal(JSON.parse(f.finalStatus().stdout).gasMultiplier, 2.25);
+      });
+      await t.test('failed final status retains the confirmed identity and recovers with only a read', (t) => {
         const f = fixture(packageFixture, t, skill, 2.25);
         const previous = JSON.parse(f.status().stdout);
         const written = replaceWallet(f, mode, previous);
         const walletCalls = fs.readFileSync(join(f.data, 'wallet-calls'));
         const keys = fs.readdirSync(join(f.data, 'keys'));
         const credentials = fs.readdirSync(join(f.data, 'credentials'));
-        // An invalid lock entry fails even as root, without altering config or
-        // its readability. The valid requested value remains available to retry.
-        const lock = join(f.data, '.config.lock');
-        fs.symlinkSync('missing-lock-target', lock);
-        const failed = f.restore(previous.gasMultiplier);
-        assert.equal(failed.status, 1);
-        assert.match(failed.stderr, /Invalid configuration lock/);
-        assert.deepEqual(fs.readFileSync(f.configPath), written);
-        const partial = JSON.parse(f.finalStatus().stdout);
-        assert.equal(partial.address, 'manifest1replacement1');
-        assert.equal(partial.gasMultiplier, null, 'actual saved value uses default 1.5');
-        assert.equal(previous.gasMultiplier, 2.25, 'requested value is retained only in workflow memory');
-        const errors = [{ class: 'gas_multiplier_restore_failed', message: failed.stderr.trim() }];
-        journal(f, 'partial', partial, errors, ['Resolve the lock error and retry only the multiplier update to 2.25']);
-        fs.unlinkSync(lock);
-        const recovered = f.restore(previous.gasMultiplier);
-        assert.equal(recovered.status, 0, recovered.stderr);
-        assert.equal(JSON.parse(recovered.stdout).gasMultiplier, 2.25);
-        assert.deepEqual(JSON.parse(fs.readFileSync(f.configPath)), { ...JSON.parse(written), gasMultiplier: 2.25 });
-        assert.deepEqual(fs.readFileSync(join(f.data, 'wallet-calls')), walletCalls);
-        assert.deepEqual(fs.readdirSync(join(f.data, 'keys')), keys);
-        assert.deepEqual(fs.readdirSync(join(f.data, 'credentials')), credentials);
-        journal(f, 'success', JSON.parse(f.finalStatus().stdout), errors, ['Retried only the multiplier update to 2.25; verified final status']);
-      });
-      await t.test('failed final status is journaled as unknown without repeating wallet replacement', (t) => {
-        const f = fixture(packageFixture, t, skill, 2);
-        const previous = JSON.parse(f.status().stdout);
-        const written = replaceWallet(f, mode, previous);
-        const walletCalls = fs.readFileSync(join(f.data, 'wallet-calls'));
         fs.renameSync(f.configPath, f.configPath + '.backup');
         fs.mkdirSync(f.configPath);
         const failed = f.finalStatus();
         assert.equal(failed.status, 1);
-        const unknown = { address: 'unknown', activeChain: 'unknown', gasPrice: 'unknown', gasMultiplier: 'unknown' };
-        journal(f, 'partial', unknown, [{ class: 'config_status_failed', message: failed.stderr.trim() }],
-          ['Repair config access, retry only the multiplier update to 2, and verify status']);
+        const partial = { ...f.written, gasPrice: 'unknown', gasMultiplier: 'unknown' };
+        const errors = [{ class: 'config_status_failed', message: failed.stderr.trim() }];
+        journal(f, 'partial', partial, errors, ['Repair config access and retry only status']);
         assert.deepEqual(fs.readFileSync(f.configPath + '.backup'), written);
+        fs.rmdirSync(f.configPath);
+        fs.renameSync(f.configPath + '.backup', f.configPath);
+        const recovered = f.finalStatus();
+        assert.equal(recovered.status, 0, recovered.stderr);
+        assert.equal(JSON.parse(recovered.stdout).gasMultiplier, 2.25);
+        assert.deepEqual(fs.readFileSync(f.configPath), written);
         assert.deepEqual(fs.readFileSync(join(f.data, 'wallet-calls')), walletCalls);
+        assert.deepEqual(fs.readdirSync(join(f.data, 'keys')), keys);
+        assert.deepEqual(fs.readdirSync(join(f.data, 'credentials')), credentials);
+        journal(f, 'success', JSON.parse(recovered.stdout), errors, ['Retried only status; verification succeeded']);
       });
+      if (skill === 'init-agent') {
+        for (const observed of [false, true]) {
+          await t.test(`cancellation ${observed ? 'after' : 'before'} status uses the previous identity or null`, (t) => {
+            const f = fixture(packageFixture, t, skill, 2.25, !observed);
+            const before = observed ? fs.readFileSync(f.configPath) : null;
+            const settings = observed ? JSON.parse(f.status().stdout)
+              : { address: null, activeChain: null, gasPrice: 'unknown', gasMultiplier: 'unknown' };
+            journal(f, 'cancelled', settings);
+            assert.equal(fs.existsSync(join(f.data, 'wallet-calls')), false);
+            if (observed) assert.deepEqual(fs.readFileSync(f.configPath), before);
+            else assert.equal(fs.existsSync(f.configPath), false);
+          });
+        }
+      }
     });
   }
 }

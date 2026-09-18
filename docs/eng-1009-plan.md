@@ -2,30 +2,46 @@
 
 [ENG-1009](https://linear.app/liftedinit/issue/ENG-1009) fixes the loss of a
 custom gas multiplier when either `init-agent` wallet path replaces config,
-and makes incomplete multiplier restoration visible in reports and journals.
+and makes incomplete final-status verification visible in reports and journals.
 
-Status: implemented and verified on Linux with Node 24.15.0. Both workflows
-render the shared restoration fragment into the Claude and Codex skills; the
-existing config-writer contract and credential handling remain unchanged.
+Status: PR review corrections implemented and verified on Linux with Node 24.15.0. The
+writer preserves the multiplier atomically with the wallet; both hosts share
+the final-status verification instructions.
 
 ## Plan
 
-1. Capture the previous multiplier through the safe status command before
-   generating or importing a wallet. Preserve explicit integer and fractional
-   values; absent/null values continue to use the runtime default of `1.5`.
-2. Share the checked restoration and final-status instructions between
-   `init-agent` and `import-key`. Restore only after the config write succeeds.
-   Recovery retries only the gas update; it never creates or imports another
-   wallet. Keep the requested value in workflow memory until recovery finishes.
-3. Report the settings actually saved, including the default after a failed
-   restoration. Use `partial` outcomes and structured errors with `class` and
-   `message`; a failed status read leaves the final settings unknown.
+1. Carry the previous non-null multiplier forward inside `write-config.cjs`'s
+   config lock and atomic write. Preserve its value and type, including numeric
+   strings in hand-edited config; absent/null keeps the runtime default `1.5`.
+2. Share a final-status read between `init-agent` and `import-key`, removing the
+   separate restoration command and reliance on model memory. An interrupted
+   run or later invocation must find the preserved multiplier on disk.
+3. Report the settings actually observed. Failed verification produces a
+   `partial` outcome and one structured `config_status_failed` error, retaining
+   the writer-confirmed address/chain and marking only gas settings unknown.
+   Recovery retries only status. Cancellation uses the previous identity or
+   null when no status was observed.
 4. Execute the generated commands for both hosts with disposable wallet
    fixtures, real config writers and journals. Cover successful preservation,
-   defaults, failed restoration, and recovery with unchanged wallet identity.
+   defaults, interruption, failed writes, status recovery and cancellation.
 5. Regenerate the Claude skills and native Codex package, update user and
    developer guidance, and run the focused regressions plus required Linux
    package, unit, policy, syntax and offline documentation/evidence checks.
+
+## PR review corrections
+
+The [review on PR #22](https://github.com/manifest-network/manifest-agent-plugin/pull/22#issuecomment-5721018953)
+identified a real interruption gap in the separate restoration design. The
+writer already reads the previous config under its lock, so preservation now
+occurs in that same atomic write instead of a second workflow mutation.
+
+| Finding | Resolution |
+| --- | --- |
+| 1–2: preservation in prose and loss on interruption/rerun | Preserve in the writer; test the saved bytes immediately after writing and a new invocation without prior-run memory. Failure at atomic rename retains the previous wallet and multiplier together. |
+| 3: unknown chain/address after failed status | Keep the successful writer's identity, mark only gas fields unknown, and check the journal's chain/signer contract. |
+| 4: contributor-only fragment header in prompts | Replace the restoration fragment with a smaller verification fragment without a developer header. |
+| Duplicate classification, repeated restoration rules, funding advice and numeric-string mismatches | Remove the restoration protocol. Preserve numeric-string types and report the safe status value without comparing it against a coerced value. Funding guidance stays in init-agent only. |
+| Cancellation signer and brittle command tests | Set the previous signer/chain or null before journaling cancellation. Execute no follow-up mutation and require final status to follow both wallet pipelines. |
 
 ## Release boundary
 
@@ -38,21 +54,18 @@ host or native macOS/Windows compatibility.
 
 ## Validation results
 
-- Before the fix, the generated `init-agent` commands lost custom values `2`
-  and `2.25`: final status returned null, and no restoration command existed.
-- The focused config/workflow/package suite passed all 80 tests. It includes
-  40 command scenarios across both hosts and all three wallet paths, covering
-  successful/default settings, partial journals, unknown final settings and
-  recovery with unchanged wallet calls, keyfiles and credential entries.
-- The full Linux suite passed 941 tests with 0 failures; 3 PowerShell syntax
+- Before the writer change, regressions for `2`, `2.25`, `"2"`, legacy
+  migration and successful retry after an injected write failure reproduced
+  the lost multiplier. Those cases now pass without a restoration command.
+- The revised focused config/workflow/package suite passed all 100 tests,
+  including 54 generated-command scenarios across six host/wallet combinations.
+- The full Linux suite passed 961 tests with 0 failures; 3 PowerShell syntax
   checks were skipped because PowerShell is unavailable locally.
 - Claude skill generation, Codex package generation, all 14 generated-skill
-  checks, the changed Codex skills' frontmatter validation, policy completeness,
+  checks, changed Codex skills' frontmatter validation, policy completeness,
   CJS/Bash syntax and `git diff --check` passed.
 - Executable documentation checks passed: 3 ran, 2 network examples skipped,
-  0 failures and 0 lint failures. The locked runtime was installed in a fresh
-  `/var/tmp` directory after `/tmp` lacked space; the incomplete install was
-  removed without changing an existing runtime.
+  0 failures and 0 lint failures, using an isolated locked runtime.
 - Historical evidence/source checks passed, including all eight archived
   terminal reports. Release eligibility remains `false` with all four host
   rows pending; no archived reports, source hashes or package versions changed.

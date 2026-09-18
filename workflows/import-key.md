@@ -38,10 +38,7 @@ before importing: the user must repair its JSON privately to preserve any legacy
 password, or move it aside as a private backup before initialization. Do not
 delete it or ask the user to paste its contents. Otherwise parse the JSON;
 `activeChain` AND `gasPrice` are required in Step 2 to preserve the existing chain
-and gas price when re-writing the config. Capture `gasMultiplier` as
-`PREVIOUS_GAS_MULTIPLIER` too. If it is non-null, restore that exact value after
-the config write in Step 2; `write-config.cjs` does not retain it itself. An
-absent/null value needs no update and continues to use the default of 1.5.
+and gas price when re-writing the config.
 
 **Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password. Always use `update-config.cjs --status` to read safe fields.
 
@@ -88,7 +85,8 @@ The mnemonic flows through the pipe (file → import-key → write-config).
 {{host}} sees only the bash invocation (the file path, but not contents)
 and `write-config.cjs`'s safe stdout JSON.
 
-Parse the JSON output to get `address` and `activeChain`.
+After the pipeline succeeds, save its safe JSON output as `WRITTEN_CONFIG`
+(`address` and `activeChain`).
 
 If the pipeline fails, stop and show the diagnostic, including the retained
 keyfile path. Resolve the credential/config problem before retrying; repeated
@@ -101,11 +99,11 @@ used by automatic startup attempts.
 
 Once the wallet/config pipeline succeeds, suggest the user delete their mnemonic file
 (e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
-created it), even if gas restoration is still pending.
+created it), even if final status verification is still pending.
 
-### After a successful wallet/config pipeline — Restore gas settings
+### After a successful wallet/config pipeline — Verify saved settings
 
-{{restore_gas_multiplier}}
+{{verify_wallet_config}}
 
 ## Step 3 — Report
 
@@ -139,7 +137,7 @@ as already serialized JSON.
 {
   "skill": "import-key",
   "active_chain": "<FINAL_SETTINGS.activeChain>",
-  "signer_address": "<address parsed from write-config output>",
+  "signer_address": "<FINAL_SETTINGS.address>",
   "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
   "plan_summary": "imported key on <activeChain>",
   "tool_calls": [],
@@ -155,11 +153,12 @@ as already serialized JSON.
 }
 ```
 
-Use `RUN_OUTCOME` (`success` or `partial`) from the checked restoration. Fill
+Use `RUN_OUTCOME` (`success` or `partial`) from the final status check. Fill
 `errors` with the structured errors recorded there and `recovery_actions` with
 attempted or needed recovery; both arrays are empty when no failure occurred.
-Write the multiplier as a number, null for the observed default, or `"unknown"`
-if status failed. Never journal the previous value as though it were restored.
+Use the multiplier returned by status, null for the observed default, or
+`"unknown"` if status failed. Keep the confirmed wallet address and chain from
+`WRITTEN_CONFIG` when status cannot be read.
 
 {{journal_write}}
 

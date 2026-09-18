@@ -178,16 +178,24 @@ environment secret in the journal or command output.
 ## Wallet gas-setting regressions (ENG-1009)
 
 `tests/workflow-config.test.cjs` executes both hosts' generated wallet pipelines,
-restoration/status commands and journal commands. Only the cryptographic key
+status commands and journal commands. Only the cryptographic key
 generation/import boundary is replaced with disposable wallet fixtures; config
 writes, file credentials and journals use the real scripts. Both `init-agent`
-paths and standalone `import-key` cover integer/fractional multipliers,
-absent/null defaults, restoration failure and recovery without another wallet.
-Initial setup is covered for both `init-agent` paths. An invalid lock entry
-forces restoration failure while final status stays readable; an unreadable
-config exercises unknown final-state reporting. Journal fixtures instantiate
-the shipped sketches for success, partial and recovered outcomes and check
-structured errors, actual settings and private staging cleanup.
+paths and standalone `import-key` cover integer/fractional/numeric-string
+multipliers, absent/null defaults, and a new invocation after an interruption
+immediately following the config write. Assertions inspect the saved multiplier
+before any follow-up command, and require final status to follow each wallet
+pipeline without a separate gas mutation. Initial setup and cancellation before
+or after status are covered for both `init-agent` paths. An unreadable config
+exercises partial reporting with the confirmed identity and unknown gas settings,
+followed by recovery using only status. Journal fixtures instantiate the shipped
+sketches for success, partial, recovered and cancelled outcomes, checking the
+chain/signer schema, structured errors and private staging cleanup.
+
+`tests/write-config.test.cjs` directly checks immediate and repeated preservation,
+legacy credential migration, and failed replacement. Injecting failure at the
+atomic rename leaves the previous wallet and multiplier together; retrying the
+writer with the same retained key succeeds without generating another wallet.
 
 ```bash
 node --test tests/workflow-config.test.cjs tests/write-config.test.cjs tests/update-config.test.cjs tests/build-packages.test.cjs

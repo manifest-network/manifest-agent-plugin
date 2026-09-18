@@ -7,6 +7,7 @@
  * Reads key JSON from stdin (piped from gen-agent-key.cjs or import-key.cjs).
  * Reads chain data from $MANIFEST_PLUGIN_DATA/chains/{mainnet,testnet}.json.
  * Stores the password in the credential store and writes only its reference.
+ * Preserves an existing gasMultiplier in the same locked, atomic config write.
  *
  * Usage:
  *   node gen-agent-key.cjs | node write-config.cjs --chain testnet --gas-price 1umfx
@@ -143,6 +144,9 @@ let suppliedKeyfilePath;
     // only automatic hook/launcher retries honour the short failure cooldown.
     const previous = migrateConfig(AGENT_DIR, { locked: true, migrationRetryMs: 0 });
     if (previous?.credentialMigration) config.credentialMigration = previous.credentialMigration;
+    // Keep wallet replacement and gas preservation indivisible, including when
+    // the workflow stops immediately after this write or is run again later.
+    if (previous?.gasMultiplier != null) config.gasMultiplier = previous.gasMultiplier;
     config.agent.keyPasswordRef = storePassword(AGENT_DIR, keyfile, password);
     atomicWrite(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
   });

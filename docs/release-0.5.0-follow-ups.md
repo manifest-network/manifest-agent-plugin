@@ -27,23 +27,24 @@ include the advice alongside the commands the user is asked to type.
 
 ## Preserve reinitialization settings and clarify import recovery
 
-Status: implemented in [ENG-1009](eng-1009-plan.md). Release acceptance for
-the changed source is still pending; published v0.5.0 evidence stays unchanged.
+Status: implemented in [ENG-1009](eng-1009-plan.md), including the PR review's
+atomic-preservation and journal corrections. Release acceptance for the changed
+source is still pending; published v0.5.0 evidence stays unchanged.
 
 The v0.5.0 [init-agent](../workflows/init-agent.md) workflow replaced config
 through [write-config.cjs](../scripts/write-config.cjs) without restoring a
 custom `gasMultiplier`, so reinitialization reverted to the runtime default
-`1.5`. Both wallet paths now capture the previous safe value and use the same
-checked restoration and final-status instructions as
-[import-key](../workflows/import-key.md).
+`1.5`. The writer now preserves the previous non-null multiplier under its lock
+in the same atomic config write. Both wallet paths use the same final-status
+instructions as [import-key](../workflows/import-key.md).
 
 Both journal sketches distinguish successful and partial outcomes with
-structured `class`/`message` errors. Failed restoration retains the previous
-value only in workflow memory; reports and journals describe the actual saved
-settings, or unknown settings when status cannot be read. Recovery updates only
-gas settings and never creates or imports a second wallet. Generated-command
-regressions cover integers, fractions, absent/null values and failure/recovery
-on both hosts; they do not establish interactive model behavior.
+structured `class`/`message` errors. A failed status read retains the confirmed
+address and chain and marks only the gas fields unknown. Recovery retries only
+status and never creates or imports a second wallet. Generated-command and
+writer regressions cover integers, fractions, numeric strings, absent/null
+values, interruptions, write failure, verification recovery and cancellation.
+They do not establish interactive model behavior.
 
 ## Reject unusable registry chain metadata before saving it
 

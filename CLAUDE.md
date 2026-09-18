@@ -78,17 +78,15 @@ do not offer unverified fish translations.
 
 **Configuration precedence** — Config owns chain, gas-price/multiplier and wallet variables. The launcher removes inherited values before applying the selected config, including stale optional endpoints and mnemonic fallback. `agent.keyFile` must exist and `agent.keyPasswordRef` must resolve through `_credentials.cjs`; legacy `agent.keyPassword` is migrated before launching; an explicit empty password is preserved, although upstream 0.22.0 rejects empty-password encrypted wallets. The child runs from an owned empty temporary directory so dotenv cannot load a workspace `.env`, and `DOTENV_CONFIG_QUIET=true` keeps stdout protocol-only. The temporary directory is removed on exit; generic transport settings such as proxies remain inherited. `COSMOS_MAX_GAS` remains an explicit operator override of the upstream gas ceiling; it is not a config-owned field. Invalid values are rejected upstream.
 
-**Gas settings during wallet replacement** — `write-config.cjs` rebuilds config
-without retaining `gasMultiplier`. Both wallet paths in `init-agent` and the
-standalone `import-key` workflow capture the safe status first, then restore a
-non-null multiplier in a separate checked `update-config.cjs` call. The shared
-`workflows/fragments/restore-gas-multiplier.md` instructions require a fresh
-status read before reporting the actual settings. Absent/null keeps the runtime
-default `1.5`. If restoration fails, the new wallet is already configured and
-the previous multiplier survives only in workflow memory: report and journal a
-partial outcome with structured errors, then retry only the multiplier update
-after resolving the error. If status fails, final settings are unknown. Never
-generate or import another wallet to restore gas settings.
+**Gas settings during wallet replacement** — `write-config.cjs` carries forward
+the previous non-null `gasMultiplier` under the config lock, in the same atomic
+write as the new wallet. Absent/null keeps the runtime default `1.5`; numeric
+strings in hand-edited config retain their type. Both `init-agent` wallet paths
+and standalone `import-key` use `workflows/fragments/verify-wallet-config.md`
+to read final status before reporting. A failed read is partial: retain the
+address and chain confirmed by the writer, mark only gas settings unknown, and
+record one structured `config_status_failed` error. Recovery retries only the
+status read; never generate or import another wallet to verify settings.
 
 ## Credential storage and startup identity (ENG-85)
 
