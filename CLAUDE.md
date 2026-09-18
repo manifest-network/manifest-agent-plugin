@@ -13,10 +13,14 @@ in `hosts/` contain only host integration differences. The builder resolves
 MCP names, skill invocations, local tools and questions before installation;
 the model never translates Claude tool names into Codex names.
 
-For workflow sources and host fragments, use literal `bash` for the shell
-and `{{shell_tool}}` for the host tool. The current Codex renderer rewrites
-capitalized `Bash` as `exec_command`, including occurrences in shell advice
-and inserted fragments such as `hosts/codex/restart-confirmation.md`.
+Use literal `bash` for the shell in workflow sources and fragments. In
+`workflows/*.md` and `workflows/fragments/*.md`, use `{{shell_tool}}` for the
+host tool. Host fragments such as `hosts/<host>/restart-confirmation.md`
+are inserted raw without token expansion; use the literal host tool name
+there (`Bash` for Claude, `exec_command` for Codex). The current Codex
+renderer rewrites capitalized `Bash` throughout the inserted text, including
+shell advice; [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029) tracks
+replacing that rewrite with an explicit token contract.
 
 ## Architecture
 

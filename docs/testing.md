@@ -180,14 +180,22 @@ environment secret in the journal or command output.
 `tests/build-packages.test.cjs` checks that every generated secret-file recipe
 has adjacent advice to start `bash` from fish and stay in that session through
 cleanup, with Bash started before the recipe commands. Generated workflows
-must not name `exec_command` as a session, shell or terminal. Source and render
-guards reject negated read/shell tool verbs case-insensitively without relying
-on the exact mnemonic-file wording.
+must not name `exec_command` as a session, shell or terminal. That three-noun
+check does not cover every possible shell reference; the broader renderer
+fix is tracked in [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029).
+For `init-agent` and `import-key`, source and render guards reject negated
+read/shell tool instructions, including an intervening verb or line break,
+while allowing advice about the lowercase `bash` shell.
 
-`tests/merge-env.test.cjs` executes both hosts' generated env-file creation and
-merge commands with harmless stdin fixtures. It checks mode `0600`, no values
-in output, and that the Ctrl+D instruction does not become invalid dotenv
-input if typed literally. Cleanup cases provide confirmed recipe-created paths,
+`tests/merge-env.test.cjs` checks both hosts' generated env recipes and the
+README: the capture block ends at `cat`, data-entry and Enter/Ctrl+D guidance
+sits between blocks, and path display follows the returning shell prompt.
+It executes the commands with harmless stdin fixtures, checking mode `0600`,
+exact input contents, and no values in output. Generated merge commands must
+preserve values and private spec permissions. Empty and comment-only inputs
+exercise the helper's `keys_merged: []` response and the workflow's stop/retry
+instruction; these assertions do not execute a model's recovery decision.
+Cleanup cases provide confirmed recipe-created paths,
 including spaces, apostrophes and shell syntax, while `ENV_INPUT_PATH` refers
 only to the last file. Those temporaries must be removed while supplied
 pre-existing and unknown-origin dotenv files remain byte-identical after
@@ -195,8 +203,10 @@ merge and cleanup. The fixture supplies each file's origin; it does not test
 a model's provenance decision. No path contents may execute.
 
 `tests/workflow-config.test.cjs` also executes both hosts' separated mnemonic
-capture and path-display blocks. The input file must contain only the supplied
-words, at mode `0600`, with no instructional comments or mnemonic output.
+capture and path-display blocks and requires the words-only, waiting-terminal,
+Enter/Ctrl+D and returning-prompt instructions between them. The input file
+must contain only the supplied words, at mode `0600`, with no instructional
+comments or mnemonic output.
 These fixtures supply the choices and paths; they do not establish interactive
 model behavior.
 

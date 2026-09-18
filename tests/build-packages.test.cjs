@@ -22,7 +22,7 @@ test('secret-input recipes keep shell guidance immediately beside the user comma
         const intro = rendered.slice(0, block.index).trimEnd().split(/\n\s*\n/).at(-1);
         const label = `${host}/${name}`;
         assert.match(intro, /\bfish\b/, label);
-        assert.match(intro, /run `bash`[^.]*\b(?:before\s+(?:the\s+)?(?:commands|recipe)|first)\b/, label);
+        assert.match(intro, /\brun `bash`[\s\S]*?\bbefore\s+(?:(?:the|these)\s+)?(?:commands|recipe)\b/, label);
         assert.match(intro, /\b(?:stay|remain)\b[\s\S]*\bsession\b[\s\S]*\bcleanup\b/, label);
         assert.doesNotMatch(intro, /\bexec_command\b/, label);
         recipes.push(name);
@@ -36,9 +36,9 @@ test('mnemonic privacy instructions do not forbid the shell tool needed for stdi
   for (const host of ['claude', 'codex']) {
     for (const name of ['init-agent', 'import-key']) {
       const source = fs.readFileSync(join(ROOT, 'workflows', `${name}.md`), 'utf8');
-      assert.doesNotMatch(source, /\b(?:not|never)\s+`\{\{(?:read_tool|shell_tool)\}\}`/i, `${name}: negated tool verb`);
+      assert.doesNotMatch(source, /\b(?:not|NOT|Not|never|NEVER|Never)\b[^.]{0,20}?`\{\{(?:read_tool|shell_tool)\}\}`/, `${name}: negated tool verb`);
       const rendered = renderSkill(source, host, { name });
-      assert.doesNotMatch(rendered, /\b(?:not|never)\s+`(?:exec_command|Bash)`/i, `${host}/${name}`);
+      assert.doesNotMatch(rendered, /\b(?:not|NOT|Not|never|NEVER|Never)\b[^.]{0,20}?`(?:exec_command|Bash)`/, `${host}/${name}`);
       assert.match(rendered, /import-key\.cjs" --prefix manifest < 'MNEMONIC_FILE' \| node/);
     }
   }

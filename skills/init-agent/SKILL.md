@@ -180,8 +180,9 @@ MNEMONIC_INPUT_PATH=$(mktemp)
 cat > "$MNEMONIC_INPUT_PATH"
 ```
 
-In that terminal, paste **only the mnemonic words**, press Enter, then
-Ctrl+D. When the shell prompt returns, run:
+The terminal shows no prompt while `cat` waits for input. Paste **only the
+mnemonic words** there, press Enter, then Ctrl+D. When the shell prompt
+returns, run:
 
 ```bash
 printf '%s\n' "$MNEMONIC_INPUT_PATH"

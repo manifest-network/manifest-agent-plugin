@@ -193,13 +193,17 @@ below and stay in that Bash session through temporary-file cleanup:
 umask 077
 ENV_INPUT_PATH=$(mktemp)
 cat > "$ENV_INPUT_PATH"
-WORDPRESS_DB_HOST=mysql
-WORDPRESS_DB_PASSWORD=hunter2
-# press Enter, then Ctrl+D
+```
+
+The terminal shows no prompt while `cat` waits for input. Type or paste your
+`KEY=VALUE` lines there, press Enter, then Ctrl+D. When the shell prompt
+returns, run:
+
+```bash
 printf '%s\n' "$ENV_INPUT_PATH"
 ```
 
-After pressing Ctrl+D, tell the agent the printed path. `mktemp`
+Tell the agent the printed path. `mktemp`
 creates a fresh file with mode `0600`; an older file's permissions cannot carry
 over. Values flow through a script pipe into the spec file; they never enter
 the chat input box and the agent never echoes them in summaries. This uses the

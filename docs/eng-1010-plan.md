@@ -36,7 +36,7 @@ was checked against both hosts' rendered skills and disposable Linux fixtures.
 | 1: Codex mnemonic warning forbids its shell tool | Describe the prohibited display/context exposure without a host tool name, and explicitly allow the stdin import pipeline. Both mnemonic workflows use this instruction. |
 | 2: adjacent shell advice lacks regression coverage | Check every generated secret-file recipe for adjacent fish/Bash/session/cleanup guidance and reject tool-name substitution in that paragraph. |
 | 3: repeated env recipes leave earlier input files behind | Supply one shell-quoted cleanup command per distinct recipe-created temporary path, independent of the last `ENV_INPUT_PATH` value. |
-| 4: literal `^D` breaks env parsing | Use a Ctrl+D comment in the workflow and README. The generated recipe/merge test verifies that even a literally typed comment is harmless. |
+| 4: literal `^D` breaks env parsing | Separate shell commands, private data entry and path display in the workflow and README. The initial comment-only correction was superseded by the third review's paste/history fix below. |
 | 5: cleanup wording names only the terminal | All three workflows now explicitly name the same `bash` session at cleanup. |
 | 6: broad builder rewrite can corrupt shell prose | Track the builder and related read-tool wording separately in [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029). Document the current literal-shell/token convention in `CLAUDE.md`. |
 
@@ -47,10 +47,23 @@ identified additional cleanup and regression boundaries.
 | --- | --- |
 | 1: per-path cleanup can include a user's project env file | Record which inputs the user confirms were created with the recipe. Suggest deletion only for those temporary files; preserve pre-existing inputs and inputs of unknown origin. |
 | 2: cleanup shell wording is outside the intro check | Reject `exec_command` used as a session, shell or terminal name throughout every generated workflow. |
-| 3: the negated-tool guard only matches one exact sentence | Check direct negations of read/shell tool tokens in source, case-insensitively, and rendered tool verbs without anchoring to an object noun. |
+| 3: the negated-tool guard only matches one exact sentence | Check negations of read/shell tool tokens in source and rendered tool verbs without anchoring to an object noun. The third review further distinguishes tool names from lowercase shell names and covers intervening verbs. |
 | 4: mnemonic recipe comments can become invalid input | End the first command block at `cat`, put Enter/Ctrl+D guidance in prose, and print the path in a separate block after the shell returns. Mnemonic parsing remains phrase-only. |
-| Merge recovery and documentation nits | Explain that listed input errors leave the spec unchanged and earlier service merges remain; retry the failed service. Remove the stale builder-test count and move the naming convention to the shared workflow guidance, explicitly including host fragments. |
+| Merge recovery and documentation nits | Explain that listed input errors leave the spec unchanged and earlier service merges remain; retry the failed service. Remove the stale builder-test count and move the naming convention to the shared workflow guidance. The third review corrects the distinction between token-expanded workflow fragments and raw host fragments. |
 | Placeholder and ordering nits | Use `TEMP_ENV_INPUT_FILE` for the user cleanup placeholder and require the Bash-start instruction to precede the recipe commands. |
+
+The [third review of cdfc626](https://github.com/manifest-network/manifest-agent-plugin/pull/24#issuecomment-5734090896)
+found an env-paste hazard and remaining instruction/test gaps.
+
+| Finding | Resolution |
+| --- | --- |
+| Medium: pasting the combined env block puts values in shell history or invalid input in the file | End capture at `cat`, enter KEY=VALUE data separately, and print the path only after Ctrl+D returns the prompt. Apply the same structure to the README. Stop authoring on `keys_merged: []`, retain the input and draft, and retry after private correction. |
+| 1: negation guard rejects lowercase shell advice and misses "NOT use" | Keep tool names case-sensitive while accepting common negation casing, intervening verbs and hard line wraps. |
+| 2: ordering guard rejects valid wording but accepts unrelated "first" | Require "before" the commands or recipe, allowing "these commands" and parenthetical examples. |
+| 3: cleanup provenance lacks a concrete question and record | Ask whether the file came from the recipe, store `(service-name, env-file-path, recipe-created)` through merging, and preserve unknown or conflicting origins. Report retained input paths. |
+| 4: mnemonic tests allow the sole data-entry paragraph to disappear | Require words-only input, no-prompt waiting, Enter/Ctrl+D, and returning-prompt instructions between the two command blocks on both hosts. |
+| 5: contributor token advice incorrectly includes raw host fragments | Document token expansion for workflow sources/fragments and literal host tool names for raw `hosts/` fragments. |
+| Nits | Clarify that labels are collected as non-sensitive chat pairs; describe waiting `cat` in both mnemonic recipes; document the limited shell-noun guard and the mnemonic-only privacy guard. The general renderer correction remains in ENG-1029. |
 
 ## Release boundary
 
@@ -66,12 +79,17 @@ macOS/Windows compatibility.
 - Before the corrections, regressions detected the contradictory Codex warning,
   missing per-file cleanup command, and both hosts' literal-`^D` parse errors.
   Further guards reproduced the unscoped cleanup advice and combined mnemonic
-  input/instruction blocks. All 94 package, env and wallet workflow tests pass.
+  input/instruction blocks. All 97 package, env and wallet workflow tests pass.
 - Isolated source mutations confirmed that the recipe guidance test fails when
   its adjacent advice is removed or a capitalized shell name becomes
   `exec_command` in the Codex render.
   Seven further mutations were rejected: capitalized cleanup shell names in
   each workflow, three negated-tool wording variants, and inverted Bash timing.
+- Third-review mutation checks reject combined env blocks, missing data-entry
+  instructions, missing empty-input recovery, negations with intervening verbs,
+  and after-the-commands timing with an unrelated "first". Positive controls
+  accept lowercase shell negation, "before these commands", and an `e.g.`
+  parenthetical example.
 - Both hosts' generated env commands create mode `0600` files, merge sample
   input through stdin, preserve private spec permissions, and emit no values.
   Cleanup fixtures remove both recipe-created paths despite a reassigned input
@@ -81,10 +99,17 @@ macOS/Windows compatibility.
   file origins; it does not establish a model's provenance decisions.
 - Both hosts' mnemonic fixtures execute the separated capture/path-display
   commands, preserving exactly the supplied words in mode `0600` files without
-  instructional text or mnemonic output.
+  instructional text or mnemonic output. Tests also require the data-entry
+  paragraph between blocks; the env and README recipes use the same checks.
+- Disposable Linux Bash 5.3.15 pseudoterminals reproduced the old env recipe's
+  history leak with bracketed paste enabled, and swallowed `printf` input with
+  it disabled. All 14 corrected cases (README and six generated recipes, each
+  with bracketed paste enabled/disabled) preserved exact input at mode `0600`,
+  printed the path, and left fixture values out of shell history. These were
+  review-time checks, not native macOS or Windows acceptance.
 - Removing only the broad `Bash` rewrite changes none of the current 14 Codex
   renders, confirming the independent builder follow-up's reproduction.
-- The full Linux suite passed 994 tests with zero failures using
+- The full Linux suite passed 997 tests with zero failures using
   `--test-concurrency=1`; three PowerShell checks were skipped because `pwsh`
   is unavailable. Subprocess fixtures ran outside the workspace sandbox.
 - Claude generation, Codex packaging, all 14 generated-skill checks, affected

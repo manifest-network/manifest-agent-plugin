@@ -45,8 +45,14 @@ for (const host of ['claude', 'codex']) {
     const f = hostFixture(t, host);
     for (const name of ['init-agent', 'import-key']) {
       const text = fs.readFileSync(join(f.root, 'skills', name, 'SKILL.md'), 'utf8');
-      const commands = blocks(text).filter(command => command.includes('MNEMONIC_INPUT_PATH'));
-      assert.equal(commands.length, 2, `${name}: capture and path display are separate blocks`);
+      const recipe = [...text.matchAll(/```bash\n([\s\S]*?)\n```/g)]
+        .filter(match => match[1].includes('MNEMONIC_INPUT_PATH'));
+      assert.equal(recipe.length, 2, `${name}: capture and path display are separate blocks`);
+      const between = text.slice(recipe[0].index + recipe[0][0].length, recipe[1].index);
+      assert.match(between, /only the\s+mnemonic words/);
+      assert.match(between, /no prompt/);
+      assert.match(between, /Enter[\s\S]*Ctrl\+D[\s\S]*prompt\s+returns/);
+      const commands = recipe.map(match => match[1]);
       assert.equal(commands[0].trimEnd().split('\n').at(-1), 'cat > "$MNEMONIC_INPUT_PATH"');
       const input = 'abandon '.repeat(11) + 'about\n';
       const result = spawnSync('bash', ['--noprofile', '--norc', '-c', commands.join('\n')], {

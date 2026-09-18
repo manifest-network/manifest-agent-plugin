@@ -244,8 +244,8 @@ list of paths.
 - **Skip** — no env vars.
 
 If the user picks **From a file**, accept an existing dotenv path or offer
-the recipe below. Record which files the user confirms they created with
-this recipe; a supplied path alone does not establish that.
+the recipe below. A supplied path alone does not establish whether it came
+from this recipe.
 
 For a new input file, use a **separate terminal**. Tell them to use the `bash`
 shell: if their usual shell is fish, run `bash` in that terminal before the
@@ -255,14 +255,25 @@ commands below and stay in that shell session through temporary-file cleanup:
 umask 077
 ENV_INPUT_PATH=$(mktemp)
 cat > "$ENV_INPUT_PATH"
-KEY1=value1
-KEY2=value2
-# press Enter, then Ctrl+D
+```
+
+The terminal shows no prompt while `cat` waits for input. Type or paste your
+`KEY=VALUE` lines there, press Enter, then Ctrl+D. When the shell prompt
+returns, run:
+
+```bash
 printf '%s\n' "$ENV_INPUT_PATH"
 ```
 Tell them not to use `echo` (it lands in shell history). Wait for them to
-type the path back in chat. Store the path; the values are merged into the
-spec file in Step 7 — they do not flow through this conversation at collection time.
+type the path back in chat. For a path returned from the recipe, use
+`{{ask}}`: "Did you create `<path>` with this temporary-file recipe?"
+Offer **Yes, created with this recipe**, **No, existing file**, and **Not
+sure**. Skip this question if they already explicitly confirmed its origin.
+Set `recipe-created` to true only for an explicit Yes; use false for an
+existing file, No, Not sure, or missing/unclear confirmation. Store
+`(service-name, env-file-path, recipe-created)` for each input through Step 7.
+The values are merged into the spec file there — they do not flow through
+this conversation at collection time.
 
 You may combine **Type in chat** and **From a file** (collect non-sensitive
 in chat, then offer the file option for the rest). The file overlays — keys
@@ -280,7 +291,8 @@ present in both are taken from the file.
 Suggest cleanup only for confirmed recipe-created temporary files after
 their values have been merged into the saved spec, as described in Step 7.
 
-**labels** — same loop as `env`.
+**labels** — collect non-sensitive KEY=VALUE pairs in chat: ask for KEY,
+then VALUE, offering **Add another** / **Done**, or **Skip** for no labels.
 
 **init** — ask "Run an init process inside the container? (Yes / Skip,
 default Skip)".
@@ -468,7 +480,7 @@ or permission problem. Never overwrite an existing draft to force a save.
 
 **If the user picked "From a file" for env in Step 4** (single-service or
 per-service in stacks), merge the file values into the saved spec now. For
-each (service-name, env-file-path) pair the user provided, bind
+each `(service-name, env-file-path, recipe-created)` record from Step 4, bind
 `SAVED_PATH`, `SERVICE_NAME` and `ENV_FILE_PATH` as shell-quoted literals in
 the same call. Do not display the env file or interpolate its values:
 
@@ -482,7 +494,13 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" \
 shape — this skill always emits the services-map shape, so always pass it.)
 
 The script outputs `{"service":"<name>","keys_merged":["KEY1",...]}` —
-report the keys to the user (no values appear). If the script errors out
+report the keys to the user (no values appear). If `keys_merged` is empty
+(`[]`), stop: no env values were captured. Keep the input file and draft;
+have the user enter their KEY=VALUE lines privately, then retry that
+service's merge before continuing. Do not suggest cleanup or report the
+spec as ready while an input remains empty.
+
+If the script errors out
 (invalid dotenv line, unknown service, unreadable file), surface the error
 and stop. These input errors leave the saved spec unchanged; earlier
 successful service merges remain. Have the user correct the reported input
@@ -492,7 +510,10 @@ remaining service merges before deploying.
 Once the user confirms the merged spec looks right, suggest they delete only
 the temporary input files they created with this recipe, in the same `bash`
 session. Preserve pre-existing files and files of unknown origin; do not
-suggest deleting them. Give one command per distinct recipe-created path:
+suggest deleting them. Use only records with `recipe-created: true`, and
+wait until every service using that file has merged successfully. Preserve
+the file if its origin confirmations conflict. Give one command per distinct
+recipe-created path:
 
 ```bash
 rm -- 'TEMP_ENV_INPUT_FILE'
@@ -501,6 +522,8 @@ rm -- 'TEMP_ENV_INPUT_FILE'
 Replace `'TEMP_ENV_INPUT_FILE'` with the confirmed temporary file's path as
 a properly shell-escaped literal, including any apostrophes. Repeating the
 recipe reassigns `ENV_INPUT_PATH`, so that variable names only the last file.
+List the paths of pre-existing or unconfirmed input files left in place,
+without their contents.
 The values are now in the spec at `$SAVED_PATH` (mode 0600) and on the user's
 responsibility to manage.
 

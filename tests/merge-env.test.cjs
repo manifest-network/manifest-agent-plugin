@@ -26,29 +26,48 @@ function runMerge(specFile, dotenv, dataDir, extraArgs = []) {
   });
 }
 
+function captureEnvRecipe(text, dataDir) {
+  const blocks = [...text.matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)];
+  const recipe = blocks.filter(match => match[2].includes('ENV_INPUT_PATH'));
+  assert.equal(recipe.length, 2, 'capture and path display are separate blocks');
+  assert.equal(recipe[0][2].trimEnd().split('\n').at(-1), 'cat > "$ENV_INPUT_PATH"');
+  const between = text.slice(recipe[0].index + recipe[0][0].length, recipe[1].index);
+  assert.match(between, /KEY=VALUE/);
+  assert.match(between, /no prompt/);
+  assert.match(between, /Enter[\s\S]*Ctrl\+D[\s\S]*prompt\s+returns/);
+  const payload = 'KEY1=value1\nKEY2=value2\n';
+  // The user sends values to the waiting cat, then runs the path-display block.
+  // Neither values nor instructions may be part of the shell command blocks.
+  const capture = spawnSync('bash', ['--noprofile', '--norc', '-c', recipe.map(match => match[2]).join('\n')], {
+    input: payload, encoding: 'utf8', env: { PATH: process.env.PATH, TMPDIR: dataDir },
+  });
+  assert.ifError(capture.error);
+  assert.equal(capture.status, 0, capture.stderr);
+  const inputPath = capture.stdout.trim();
+  assert.equal(statSync(inputPath).mode & 0o777, 0o600);
+  assert.equal(readFileSync(inputPath, 'utf8'), payload);
+  assert.doesNotMatch(capture.stdout + capture.stderr, /value1|value2/);
+  return inputPath;
+}
+
+test('README env recipe separates shell commands from private stdin entry', () => {
+  withDataDir(dataDir => captureEnvRecipe(readFileSync(join(ROOT, 'README.md'), 'utf8'), dataDir));
+});
+
 for (const host of ['claude', 'codex']) {
-  function envCommands() {
+  function envInstructions() {
     const source = readFileSync(join(ROOT, 'workflows/author-manifest.md'), 'utf8');
-    const rendered = renderSkill(source, host, { name: 'author-manifest' });
-    return [...rendered.matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)].map(match => match[2].trimEnd());
+    return renderSkill(source, host, { name: 'author-manifest' });
   }
 
-  test(`${host} generated env recipe creates a private input and merges its sample without EOF-marker errors`, () => {
+  function envCommands() {
+    return [...envInstructions().matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)].map(match => match[2].trimEnd());
+  }
+
+  test(`${host} generated env recipe separates shell commands from private stdin entry and merges the values`, () => {
     withDataDir(dataDir => {
       const commands = envCommands();
-      const recipe = commands.find(command => command.includes('ENV_INPUT_PATH=$(mktemp)'));
-      const payload = recipe.match(/^cat > "\$ENV_INPUT_PATH"\n([\s\S]*?)(?=^printf )/m)?.[1];
-      assert.ok(payload, 'locate the text the user types into cat');
-      // Supply interactive input through stdin, then let cat observe EOF.
-      // Keep the recipe's EOF instruction in that input to catch a literal ^D.
-      const capture = spawnSync('bash', ['--noprofile', '--norc', '-c', recipe.replace(payload, '')], {
-        input: payload, encoding: 'utf8', env: { PATH: process.env.PATH, TMPDIR: dataDir },
-      });
-      assert.ifError(capture.error);
-      assert.equal(capture.status, 0, capture.stderr);
-      const inputPath = capture.stdout.trim();
-      assert.equal(statSync(inputPath).mode & 0o777, 0o600);
-      assert.equal(readFileSync(inputPath, 'utf8'), payload);
+      const inputPath = captureEnvRecipe(envInstructions(), dataDir);
       const specPath = join(dataDir, 'manifests-drafts', 'app.json');
       writeFileSync(specPath, JSON.stringify({ services: { app: { image: 'fixture' } } }));
       const mergeCommand = commands.find(command => command.includes('scripts/merge-env.cjs'));
@@ -61,7 +80,36 @@ for (const host of ['claude', 'codex']) {
       assert.equal(merge.status, 0, merge.stderr);
       assert.deepEqual(JSON.parse(readFileSync(specPath)).services.app.env, { KEY1: 'value1', KEY2: 'value2' });
       assert.equal(statSync(specPath).mode & 0o777, 0o600);
-      assert.doesNotMatch(capture.stdout + capture.stderr + merge.stdout + merge.stderr, /value1|value2/);
+      assert.deepEqual(JSON.parse(merge.stdout).keys_merged, ['KEY1', 'KEY2']);
+      assert.doesNotMatch(merge.stdout + merge.stderr, /value1|value2/);
+    });
+  });
+
+  test(`${host} env instructions stop authoring when the helper reports no captured keys`, () => {
+    withDataDir(dataDir => {
+      const rendered = envInstructions();
+      const recovery = rendered.match(/If `keys_merged` is empty[\s\S]*?(?=\n\s*\n)/)?.[0];
+      assert.ok(recovery, 'handle the empty keys_merged response');
+      assert.match(recovery, /\bstop\b/);
+      assert.match(recovery, /Keep the input file and draft/);
+      assert.match(recovery, /retry[\s\S]*before continuing/);
+      const specPath = join(dataDir, 'manifests-drafts', 'app.json');
+      const inputPath = join(dataDir, 'empty.env');
+      const spec = { services: { app: { image: 'fixture', env: { EXISTING: 'fixture-only' } } } };
+      writeFileSync(specPath, JSON.stringify(spec));
+      for (const input of ['', '# comment only\n\n']) {
+        writeFileSync(inputPath, input, { mode: 0o600 });
+        const result = spawnSync('bash', ['--noprofile', '--norc', '-c', envCommands().find(command => command.includes('scripts/merge-env.cjs'))], {
+          encoding: 'utf8', env: { PATH: process.env.PATH, MANIFEST_PLUGIN_ROOT: ROOT,
+            MANIFEST_PLUGIN_DATA: dataDir, SAVED_PATH: specPath, SERVICE_NAME: 'app', ENV_FILE_PATH: inputPath },
+        });
+        assert.ifError(result.error);
+        assert.equal(result.status, 0, result.stderr);
+        assert.deepEqual(JSON.parse(result.stdout), { service: 'app', keys_merged: [] });
+        assert.deepEqual(JSON.parse(readFileSync(specPath)), spec);
+        assert.equal(readFileSync(inputPath, 'utf8'), input);
+        assert.doesNotMatch(result.stdout + result.stderr, /fixture-only/);
+      }
     });
   });
 
