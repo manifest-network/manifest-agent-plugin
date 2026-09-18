@@ -124,6 +124,24 @@ test('refresh merges a newly available target before validating the chain select
   assert.equal(JSON.parse(result.stdout).activeChain, 'mainnet');
 });
 
+for (const explicitChain of [true, false]) {
+  test(`gas-token selection with ${explicitChain ? 'an explicit' : 'the active'} chain diagnoses missing config metadata and recovers offline`, t => {
+    const f = fixture(t, true);
+    if (!explicitChain) {
+      f.config.activeChain = 'mainnet';
+      fs.writeFileSync(f.configPath, JSON.stringify(f.config));
+    }
+    fs.writeFileSync(join(f.data, 'chains', 'mainnet.json'), JSON.stringify(f.chains.mainnet));
+    const args = [...(explicitChain ? ['--chain', 'mainnet'] : []), '--gas-token', 'MFX'];
+    const diagnostic = refused(f, args, /Chain data not found for mainnet/);
+    assert.doesNotMatch(diagnostic, /differs from config|fetch-chain-registry\.cjs/);
+    const retry = diagnostic.match(/retry the original command with (--refresh-chains)/i);
+    assert.ok(retry, diagnostic);
+    const config = recovered(f, [...args, retry[1]], 'mainnet', '1umfx');
+    assert.deepEqual(config.chains.mainnet, f.chains.mainnet);
+  });
+}
+
 test('a valid cached target remains selectable when only the other chain file is available', t => {
   const f = fixture(t);
   f.config.chains.mainnet = f.chains.mainnet;

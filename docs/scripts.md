@@ -63,7 +63,8 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain testnet --refresh
 
 Refresh does not select a network. When a valid local file exists but its
 entry is missing from config, adding `--refresh-chains` is sufficient; this
-recovery works offline. Missing or malformed files require fetching instead.
+recovery works offline, including during gas-token selection with an explicit
+or already active chain. Missing or malformed files require fetching instead.
 
 Gas-token resolution intentionally retains the disk-file requirement: a
 plain `--chain testnet` can use `config.chains.testnet`, but adding

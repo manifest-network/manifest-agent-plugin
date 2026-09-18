@@ -45,6 +45,13 @@ was checked against the scripts and reproduced with disposable fixtures.
 | 10: repeated network literals | Share the frozen plugin `NETWORKS` list across both config writers and session identity. |
 | 11: unused recovery strings | Render recovery text only when the relevant error is raised, after validating the selected network. |
 
+The [follow-up review of a0cb4ec](https://github.com/manifest-network/manifest-agent-plugin/pull/23#issuecomment-5731234593)
+confirmed those fixes and identified one remaining diagnostic issue. Gas-token
+selection now reports an absent config entry as missing chain data, preserving
+the stale-metadata diagnostic for existing entries. Regression fixtures execute
+the advised offline retry for both explicit and already active chains, while
+checking that refusal preserves config bytes and releases the lock.
+
 ## Release boundary
 
 Plugin and dependency versions stay unchanged. Published v0.5.0 reports and
@@ -60,8 +67,10 @@ macOS/Windows compatibility.
   price, malformed-map/file and duplicate-read problems on `72e11ea`.
   The revised config and generated-workflow cases pass, including actual
   remedy execution and refusal of a disk change after token choices are shown.
-- The full Linux suite passed 984 tests with zero failures; three PowerShell
-  checks were skipped because `pwsh` is unavailable locally.
+- The full Linux suite passed 986 tests with zero failures using
+  `--test-concurrency=1`; three PowerShell checks were skipped because `pwsh`
+  is unavailable locally. Parallel runs hit existing 20 ms lock and 200 ms
+  probe deadlines; those fixtures passed in the serial run.
 - Generated skills, Codex packaging, policy completeness, CJS/shell syntax,
   version consistency and diff whitespace checks passed. The skill-creator
   validator accepted both affected generated Codex skills; Claude frontmatter

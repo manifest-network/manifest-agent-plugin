@@ -173,7 +173,9 @@ function parseArgs(argv) {
       updates.gasPrice = composeGasPrice(chainData, args.gasToken);
       // An interactive choice comes from config's safe status fields. Refuse
       // stale metadata instead of silently writing a different minimum price.
-      if (!isDeepStrictEqual(chainData, (updates.chains || config.chains)?.[targetChain])) {
+      // Missing config entries use the shared recovery diagnostic below.
+      const configuredChainData = (updates.chains || config.chains)?.[targetChain];
+      if (configuredChainData && !isDeepStrictEqual(chainData, configuredChainData)) {
         throw new Error(`Registry metadata for ${targetChain} differs from config. Run ${mergeCommand()}, review the refreshed fee tokens, then retry the original command.`);
       }
     }
@@ -189,8 +191,8 @@ function parseArgs(argv) {
 
     // A partial registry fetch may leave only the other network available.
     // Validate after merging files so a newly fetched target is usable, while
-    // an ordinary --chain cannot select metadata absent from the config.
-    if ((args.chain || args.refreshChains) && !(updates.chains || config.chains)?.[targetChain]) {
+    // chain selection and gas-token updates require metadata in the config.
+    if ((args.chain || args.gasToken || args.refreshChains) && !(updates.chains || config.chains)?.[targetChain]) {
       const recovery = readChainFile(targetChain)
         ? 'Local metadata is available; retry the original command with --refresh-chains. No fetch is needed.'
         : registryRecovery(targetChain);
