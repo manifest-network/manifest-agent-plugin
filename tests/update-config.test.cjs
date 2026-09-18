@@ -35,12 +35,13 @@ function fixture(t, legacy = false) {
     assert.doesNotMatch(result.stdout + result.stderr, new RegExp(SECRET));
     return result;
   }
-  return { data, chains, config, configPath, run: args => runScript('update-config.cjs', args),
+  return { data, chains, config, configPath, run: (args, nodeArgs) => runScript('update-config.cjs', args, nodeArgs),
     fetch(failedNetworks = []) {
       // Run the real fetcher/extraction/writes, replacing only network I/O.
       const preload = join(data, 'registry-network.cjs');
       fs.writeFileSync(preload, `
         require.cache[require.resolve(${JSON.stringify(join(SCRIPTS, '_https-json.cjs'))})] = {
+          loaded: true,
           exports: { httpsGet: async ({ path }) => {
             const network = path.includes('/testnets/') ? 'testnet' : 'mainnet';
             if (${JSON.stringify(failedNetworks)}.includes(network)) return { status: 503, body: '' };
@@ -99,9 +100,14 @@ for (const refresh of [false, true]) {
     assert.equal(result.status, 1);
     assert.equal(result.stdout, '');
     assert.match(result.stderr, /Chain data not found for mainnet/);
-    assert.match(result.stderr, /fetch-chain-registry\.cjs/);
     assert.deepEqual(fs.readFileSync(f.configPath), before);
     assert.equal(fs.existsSync(join(f.data, '.config.lock')), false);
+    if (refresh) assert.match(result.stderr, /fetch-chain-registry\.cjs/);
+    else {
+      assert.doesNotMatch(result.stderr, /fetch-chain-registry\.cjs/);
+      assert.match(result.stderr, /retry the original command with --refresh-chains/i);
+      recovered(f, ['--chain', 'mainnet', '--refresh-chains'], 'mainnet', '9umfx');
+    }
   });
 }
 
@@ -151,8 +157,8 @@ for (const legacy of [false, true]) {
       fs.writeFileSync(f.configPath, JSON.stringify(f.config));
       fs.writeFileSync(join(f.data, 'chains', network + '.json'), JSON.stringify(f.chains[network]));
       const diagnostic = refused(f, ['--refresh-chains'], /active chain/i);
-      assert.match(diagnostic, /--chain testnet/);
-      assert.match(diagnostic, /--chain mainnet/);
+      assert.match(diagnostic, /Ask the user.*switch-chain.*mainnet confirmation/);
+      assert.doesNotMatch(diagnostic, /--chain (?:testnet|mainnet)/);
       assert.match(diagnostic, /--refresh-chains/);
       recovered(f, ['--refresh-chains', '--chain', network], network, '9umfx');
     });
@@ -170,7 +176,8 @@ for (const legacy of [false, true]) {
       const args = ['--chain', network, '--gas-token', 'MFX', '--gas-multiplier', '2.75'];
       const diagnostic = refused(f, args, /Chain data.*not found/);
       assert.match(diagnostic, /fetch-chain-registry\.cjs/);
-      const retry = diagnostic.match(/retry the original command with (--chain (?:testnet|mainnet) --refresh-chains)/i);
+      assert.match(diagnostic, /refresh-registry skill/);
+      const retry = diagnostic.match(/update-config\.cjs (--chain (?:testnet|mainnet) --refresh-chains)/);
       assert.ok(retry, diagnostic);
       // A partial fetch that omits the selected network cannot repair the file.
       const partial = f.fetch([network]);
@@ -180,7 +187,8 @@ for (const legacy of [false, true]) {
       const fetched = f.fetch();
       assert.equal(fetched.status, 0, fetched.stderr);
       assert.ok(JSON.parse(fetched.stdout)[network]);
-      const config = recovered(f, [...args, ...retry[1].split(' ')], network, '3umfx', 2.75);
+      recovered(f, retry[1].split(' '), network, '9umfx');
+      const config = recovered(f, args, network, '3umfx', 2.75);
       assert.deepEqual(config.chains[network], JSON.parse(fetched.stdout)[network]);
     });
   }
@@ -193,7 +201,7 @@ test('missing chain selection is diagnosed before missing files for refresh and 
     f.config.activeChain = activeChain;
     fs.writeFileSync(f.configPath, JSON.stringify(f.config));
     for (const args of [['--refresh-chains'], ['--gas-token', 'MFX']]) {
-      refused(f, args, /--chain testnet.*--chain mainnet/);
+      refused(f, args, /Ask the user.*switch-chain.*mainnet confirmation/);
     }
   }
   const args = ['--chain', 'testnet', '--refresh-chains'];
@@ -203,10 +211,97 @@ test('missing chain selection is diagnosed before missing files for refresh and 
   recovered(f, [...args, '--gas-token', 'MFX'], 'testnet', '3umfx');
 });
 
-test('gas-token resolution keeps using disk metadata when config contains an older price', t => {
+test('gas-token selection requires refreshing stale metadata before a new price is applied', t => {
   const f = fixture(t);
-  fs.writeFileSync(join(f.data, 'chains', 'testnet.json'), JSON.stringify({
+  const disk = {
     ...f.chains.testnet, feeTokens: [{ denom: 'umfx', symbol: 'MFX', fixedMinGasPrice: 4 }],
-  }));
-  recovered(f, ['--gas-token', 'MFX'], 'testnet', '4umfx');
+  };
+  fs.writeFileSync(join(f.data, 'chains', 'testnet.json'), JSON.stringify(disk));
+  const diagnostic = refused(f, ['--gas-token', 'MFX'], /differs from config/);
+  assert.doesNotMatch(diagnostic, /fetch-chain-registry\.cjs/);
+  const refresh = diagnostic.match(/update-config\.cjs (--chain testnet --refresh-chains)/);
+  assert.ok(refresh, diagnostic);
+  const preview = recovered(f, refresh[1].split(' '), 'testnet', '9umfx');
+  assert.deepEqual(preview.chains.testnet, disk);
+  const applied = recovered(f, ['--gas-token', 'MFX'], 'testnet', '4umfx');
+  assert.deepEqual(applied.chains.testnet, disk);
+});
+
+for (const legacy of [false, true]) {
+  test(`${legacy ? 'legacy' : 'current'} config: nonobject chain maps are refused without migration or writes`, t => {
+    const f = fixture(t, legacy);
+    for (const chains of [null, 'x', 0, false, [], ['x']]) {
+      fs.writeFileSync(f.configPath, JSON.stringify({ ...f.config, chains }));
+      for (const args of [['--refresh-chains'], ['--gas-token', 'MFX'], ['--chain', 'testnet']]) {
+        refused(f, args, /config.chains.*JSON object/);
+      }
+    }
+  });
+
+  for (const network of ['testnet', 'mainnet']) {
+    test(`${legacy ? 'legacy' : 'current'} config: malformed ${network} registry files recover through fetch and refresh`, t => {
+      const f = fixture(t, legacy);
+      for (const content of ['{"truncated":', '[]', 'null']) {
+        fs.writeFileSync(join(f.data, 'chains', network + '.json'), content);
+        const args = ['--chain', network, '--gas-token', 'MFX'];
+        const diagnostic = refused(f, args, /Could not read.*JSON object/);
+        assert.match(diagnostic, /refresh-registry skill/);
+        assert.match(diagnostic, /fetch-chain-registry\.cjs/);
+        refused(f, ['--refresh-chains'], /Could not read.*JSON object/);
+        const fetched = f.fetch();
+        assert.equal(fetched.status, 0, fetched.stderr);
+        const refresh = diagnostic.match(/update-config\.cjs (--chain (?:testnet|mainnet) --refresh-chains)/);
+        assert.ok(refresh, diagnostic);
+        recovered(f, refresh[1].split(' '), network, content === '{"truncated":' ? '9umfx' : '3umfx');
+        recovered(f, args, network, '3umfx');
+      }
+    });
+  }
+}
+
+test('a gas-token refresh uses one disk snapshot for both the price and persisted metadata', t => {
+  const f = fixture(t);
+  const registryFile = join(f.data, 'chains', 'testnet.json');
+  const reads = join(f.data, 'registry-reads');
+  const preload = join(f.data, 'changing-registry.cjs');
+  fs.writeFileSync(preload, `
+    const fs = require('node:fs');
+    const read = fs.readFileSync;
+    let count = 0;
+    fs.readFileSync = (path, ...args) => {
+      const result = read(path, ...args);
+      if (path !== ${JSON.stringify(registryFile)}) return result;
+      fs.writeFileSync(${JSON.stringify(reads)}, String(++count));
+      if (count === 1) return result;
+      const data = JSON.parse(result);
+      data.feeTokens[0].fixedMinGasPrice = 4;
+      return JSON.stringify(data);
+    };
+  `);
+  const result = f.run(['--gas-token', 'MFX', '--refresh-chains'], ['--require', preload]);
+  assert.equal(result.status, 0, result.stderr);
+  const config = JSON.parse(fs.readFileSync(f.configPath));
+  assert.equal(config.gasPrice, '1umfx');
+  assert.equal(config.chains.testnet.feeTokens[0].fixedMinGasPrice, 1);
+  assert.equal(fs.readFileSync(reads, 'utf8'), '1');
+});
+
+test('repairing a malformed file for the other network retains the selected active chain', t => {
+  const f = fixture(t);
+  fs.writeFileSync(join(f.data, 'chains', 'mainnet.json'), '{');
+  const diagnostic = refused(f, ['--refresh-chains'], /Could not read.*mainnet.json/);
+  assert.match(diagnostic, /verify mainnet was saved/);
+  const refresh = diagnostic.match(/update-config\.cjs (--chain testnet --refresh-chains)/);
+  assert.ok(refresh, diagnostic);
+  assert.doesNotMatch(diagnostic, /--chain mainnet/);
+  assert.equal(f.fetch().status, 0);
+  recovered(f, refresh[1].split(' '), 'testnet', '9umfx');
+});
+
+test('refresh can initialize an absent chain map from existing files', t => {
+  const f = fixture(t);
+  delete f.config.chains;
+  fs.writeFileSync(f.configPath, JSON.stringify(f.config));
+  const saved = recovered(f, ['--refresh-chains'], 'testnet', '9umfx');
+  assert.deepEqual(saved.chains, { testnet: f.chains.testnet });
 });

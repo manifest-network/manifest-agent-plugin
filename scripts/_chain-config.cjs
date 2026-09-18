@@ -6,6 +6,9 @@
 // shape checks and transport-safe endpoint spelling live in _chain-registry.cjs.
 const { URL } = require('node:url');
 
+// Plugin-supported registry networks (separate from the upstream predicates).
+const NETWORKS = Object.freeze(['testnet', 'mainnet']);
+
 function validateEndpointUrl(value, label) {
   let parsed;
   try { parsed = new URL(value); } catch {
@@ -33,4 +36,4 @@ function isValidGasDenom(value) {
   return typeof value === 'string' && /^[a-zA-Z]/.test(value) && isValidGasPrice(`0${value}`);
 }
 
-module.exports = { validateEndpointUrl, isValidChainId, isValidGasPrice, isValidGasDenom };
+module.exports = { NETWORKS, validateEndpointUrl, isValidChainId, isValidGasPrice, isValidGasDenom };

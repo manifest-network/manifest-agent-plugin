@@ -107,7 +107,10 @@ preserves the previous config. Config updates stage and validate requested
 changes under the lock before migration, so validation refusals also preserve
 legacy config bytes. `update-config --status` remains read-only. Missing-chain
 recovery requires explicit selection; missing gas-token registry files require
-a fetch before retrying with refresh. See [config-update recovery](docs/scripts.md#config-update-recovery-eng-1011).
+a fetch before retrying with refresh. Token selection first synchronizes local
+registry data; `--gas-token` refuses stale config metadata to keep displayed
+and written minimum prices consistent. Each file is read once per update.
+See [config-update recovery](docs/scripts.md#config-update-recovery-eng-1011).
 All launchers migrate/resolve, including Codex without a lifecycle hook.
 
 Claude SessionStart runs migration and `session-identity.cjs` after setup on

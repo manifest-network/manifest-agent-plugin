@@ -215,10 +215,16 @@ execute the suggested chain choices and fetch/retry commands for each network,
 using the real fetcher with only HTTPS replaced. A partial fetch of the other
 network must leave gas-token selection blocked; successful recovery preserves
 the wallet and applies the requested gas flags. Disk metadata remains the
-source for gas-token prices even when config has an older value.
+source for gas-token prices; stale config must first be synchronized and its
+token choices reviewed. Cases cover malformed files and config maps, offline
+recovery using existing files, preservation of the active network during repair,
+and a single file snapshot for combined gas/refresh updates.
+`tests/workflow-config.test.cjs` executes both hosts' generated gas commands:
+the displayed registry price must match the saved price, and a subsequent
+disk change must refuse the update until synchronization and a new choice.
 
 ```bash
-node --test tests/update-config.test.cjs tests/write-config.test.cjs tests/_gas-price.test.cjs
+node --test tests/update-config.test.cjs tests/write-config.test.cjs tests/_gas-price.test.cjs tests/workflow-config.test.cjs
 ```
 
 ## Registry metadata regressions (ENG-1008)

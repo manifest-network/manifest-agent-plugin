@@ -21,6 +21,7 @@ const { existsSync, mkdirSync, chmodSync } = require('node:fs');
 const { join, resolve } = require('node:path');
 const { atomicWrite, readJsonFile, getDataDir } = require('./_io.cjs');
 const { composeGasPrice } = require('./_gas-price.cjs');
+const { NETWORKS } = require('./_chain-config.cjs');
 const { storePassword, migrateConfig, withConfigLock, readConfig } = require('./_credentials.cjs');
 
 function parseArgs(argv) {
@@ -62,7 +63,7 @@ let suppliedKeyfilePath;
 
   const args = parseArgs(process.argv);
 
-  if (!args.chain || !['testnet', 'mainnet'].includes(args.chain)) {
+  if (!args.chain || !NETWORKS.includes(args.chain)) {
     console.error('Usage: ... | node write-config.cjs --chain <testnet|mainnet> --gas-price <price><denom> | --gas-token <symbol>');
     process.exit(1);
   }

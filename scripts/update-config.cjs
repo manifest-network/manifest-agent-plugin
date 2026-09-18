@@ -25,6 +25,8 @@
  * --gas-price and --gas-token are mutually exclusive. --gas-token uses the
  * post-update activeChain (i.e. respects --chain in the same invocation) and
  * requires its chains/<network>.json file; config.chains is not a fallback.
+ * That file must match config metadata, or be merged with --refresh-chains.
+ * Interactive workflows refresh before presenting fee-token choices.
  * --refresh-chains merges existing files, never downloads them.
  *
  * Outputs JSON to stdout (safe to show): { "activeChain": "...", "gasPrice": "...", "address": "...", "chains": {...} }
@@ -33,8 +35,10 @@
 
 const { existsSync } = require('node:fs');
 const { join } = require('node:path');
+const { isDeepStrictEqual } = require('node:util');
 const { atomicWrite, readJsonFile, getDataDir } = require('./_io.cjs');
 const { composeGasPrice } = require('./_gas-price.cjs');
+const { NETWORKS } = require('./_chain-config.cjs');
 const { migrateConfig, withConfigLock, readConfig } = require('./_credentials.cjs');
 
 function parseArgs(argv) {
@@ -48,12 +52,6 @@ function parseArgs(argv) {
     else if (argv[i] === '--status') args.status = true;
   }
   return args;
-}
-
-function readChainFile(chainsDir, network) {
-  const p = join(chainsDir, `${network}.json`);
-  if (!existsSync(p)) return null;
-  return readJsonFile(p);
 }
 
 (async () => {
@@ -80,7 +78,7 @@ function readChainFile(chainsDir, network) {
     process.exit(1);
   }
 
-  if (args.chain && !['testnet', 'mainnet'].includes(args.chain)) {
+  if (args.chain && !NETWORKS.includes(args.chain)) {
     console.error('--chain must be "testnet" or "mainnet".');
     process.exit(1);
   }
@@ -126,10 +124,41 @@ function readChainFile(chainsDir, network) {
       updates.activeChain = args.chain;
     }
     const targetChain = args.chain || config.activeChain;
-    if ((args.chain || args.gasToken || args.refreshChains) && !['testnet', 'mainnet'].includes(targetChain)) {
-      throw new Error('No valid active chain selected. Retry the original command with --chain testnet or --chain mainnet; include --refresh-chains to merge existing chain files.');
+    if (args.chain || args.gasToken || args.refreshChains) {
+      if (!NETWORKS.includes(targetChain)) {
+        throw new Error('No valid active chain selected. Ask the user to choose testnet or mainnet through the switch-chain skill (including its mainnet confirmation), then retry with --chain <chosen-network>; include --refresh-chains to merge existing chain files.');
+      }
+      if (config.chains !== undefined && (!config.chains || typeof config.chains !== 'object' || Array.isArray(config.chains))) {
+        throw new Error('Invalid config.chains: expected a JSON object. Repair config privately; do not paste its contents into chat.');
+      }
     }
-    const registryRecovery = `Run fetch-chain-registry.cjs, verify ${targetChain} was saved, then retry the original command with --chain ${targetChain} --refresh-chains.`;
+    const mergeCommand = () => `update-config.cjs --chain ${targetChain} --refresh-chains`;
+    const registryRecovery = network => `Use the refresh-registry skill to fetch and merge ${network} metadata. CLI equivalent: run fetch-chain-registry.cjs, verify ${network} was saved, then run ${mergeCommand()}. Review the updated settings before retrying the original command.`;
+    const chainFiles = new Map();
+    function readChainFile(network) {
+      if (!chainFiles.has(network)) {
+        const file = join(CHAINS_DIR, `${network}.json`);
+        let data = null;
+        if (existsSync(file)) {
+          try { data = readJsonFile(file); }
+          catch {
+            throw new Error(`Could not read ${file} as a JSON object. Check file permissions and contents. ${registryRecovery(network)}`);
+          }
+        }
+        chainFiles.set(network, data);
+      }
+      return chainFiles.get(network);
+    }
+
+    // Read each file at most once so gas resolution and refresh share a snapshot.
+    if (args.refreshChains) {
+      const diskChains = Object.fromEntries(NETWORKS.map(network => [network, readChainFile(network)])
+        .filter(([, data]) => data));
+      if (Object.keys(diskChains).length === 0) {
+        throw new Error(`No chain data files found. ${registryRecovery(targetChain)}`);
+      }
+      updates.chains = { ...config.chains, ...diskChains };
+    }
 
     // Update gas price (either by raw string or by token symbol)
     if (args.gasPrice) {
@@ -137,11 +166,16 @@ function readChainFile(chainsDir, network) {
     } else if (args.gasToken) {
       // Resolve symbol against the post-update activeChain (so combining
       // --chain X --gas-token Y in one invocation does the right thing).
-      const chainData = readChainFile(CHAINS_DIR, targetChain);
+      const chainData = readChainFile(targetChain);
       if (!chainData) {
-        throw new Error(`Chain data file chains/${targetChain}.json not found. ${registryRecovery}`);
+        throw new Error(`Chain data file chains/${targetChain}.json not found. ${registryRecovery(targetChain)}`);
       }
       updates.gasPrice = composeGasPrice(chainData, args.gasToken);
+      // An interactive choice comes from config's safe status fields. Refuse
+      // stale metadata instead of silently writing a different minimum price.
+      if (!isDeepStrictEqual(chainData, (updates.chains || config.chains)?.[targetChain])) {
+        throw new Error(`Registry metadata for ${targetChain} differs from config. Run ${mergeCommand()}, review the refreshed fee tokens, then retry the original command.`);
+      }
     }
 
     // Update gas multiplier
@@ -153,25 +187,14 @@ function readChainFile(chainsDir, network) {
       updates.gasMultiplier = val;
     }
 
-    // Refresh chain data from files
-    if (args.refreshChains) {
-      const mainnetData = readChainFile(CHAINS_DIR, 'mainnet');
-      const testnetData = readChainFile(CHAINS_DIR, 'testnet');
-
-      if (!mainnetData && !testnetData) {
-        throw new Error(`No chain data files found. ${registryRecovery}`);
-      }
-
-      updates.chains = { ...config.chains };
-      if (mainnetData) updates.chains.mainnet = mainnetData;
-      if (testnetData) updates.chains.testnet = testnetData;
-    }
-
     // A partial registry fetch may leave only the other network available.
     // Validate after merging files so a newly fetched target is usable, while
     // an ordinary --chain cannot select metadata absent from the config.
     if ((args.chain || args.refreshChains) && !(updates.chains || config.chains)?.[targetChain]) {
-      throw new Error(`Chain data not found for ${targetChain}. ${registryRecovery}`);
+      const recovery = readChainFile(targetChain)
+        ? 'Local metadata is available; retry the original command with --refresh-chains. No fetch is needed.'
+        : registryRecovery(targetChain);
+      throw new Error(`Chain data not found for ${targetChain}. ${recovery}`);
     }
 
     // An explicit config edit retries immediately after credential repair;

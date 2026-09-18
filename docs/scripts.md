@@ -51,24 +51,34 @@ Windows APIs; dispatch tests also verify ACL operations skip native compilation.
 
 ## Config-update recovery (ENG-1011)
 
-A missing or invalid `activeChain` requires an explicit choice. Retry the
-original command with `--chain testnet` or `--chain mainnet`; include
-`--refresh-chains` when the chosen metadata must be merged from disk. For
-example, after choosing testnet:
+A missing or invalid `activeChain` requires an explicit user choice through
+`switch-chain`, including its confirmation before mainnet. A diagnostic is
+not authorization to choose a network. For direct CLI use, pass the selected
+network with `--chain`; include `--refresh-chains` when its metadata must be
+merged from disk. For example, after the user chooses testnet:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain testnet --refresh-chains
 ```
 
-For mainnet, explicitly choose `--chain mainnet` instead. Refresh does not
-select a network. If the selected network's metadata is missing, fetch it
-first as described below.
+Refresh does not select a network. When a valid local file exists but its
+entry is missing from config, adding `--refresh-chains` is sufficient; this
+recovery works offline. Missing or malformed files require fetching instead.
 
 Gas-token resolution intentionally retains the disk-file requirement: a
 plain `--chain testnet` can use `config.chains.testnet`, but adding
 `--gas-token MFX` also needs `chains/testnet.json`. There is no fallback to
 potentially older config metadata when resolving a symbol or minimum price.
-If that file is missing, run:
+The disk metadata must match config, or be merged with `--refresh-chains` in
+the same CLI invocation. If it differs, a token-only update refuses to write
+a price that differs from the displayed registry snapshot. The `set-gas-price`
+workflow first merges local metadata and presents tokens from that output.
+If disk metadata changes afterwards, repeat synchronization and the token
+choice; appending refresh to the failed gas command would bypass that review.
+
+For missing or malformed files, use `refresh-registry`, which records the
+fetch/config results and reports changes. The diagnostic also includes the
+equivalent standalone CLI steps, starting with:
 
 ```bash
 node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
@@ -76,19 +86,18 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/fetch-chain-registry.cjs"
 
 Verify that stdout includes the selected network; exit 0 can mean only the
 other network was saved. If it is absent, resolve the fetch diagnostic before
-retrying. Once it is present, retry the original update with
-`--chain <chosen-network> --refresh-chains`, retaining the requested gas flags.
-For example:
+retrying. Once it is present, merge metadata for the already selected network:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain testnet --gas-token MFX --refresh-chains
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --chain testnet --refresh-chains
 ```
 
-The fetch writes registry files; the retry merges them into config and resolves
-the token from disk. Other requested flags, such as `--gas-multiplier`, must
-also be retained on the retry. `--status` verifies the saved settings without
-exposing credentials. The shared `switch-chain`, `refresh-registry` and
-`set-gas-price` workflows guide these operations in either host.
+Review the refreshed token and minimum price, then retry the original gas
+options, retaining any requested multiplier. The fetch writes registry files;
+the merge preserves existing gas settings. An error in another network's file
+does not change which active chain was selected. `--status` verifies saved
+settings without exposing credentials. Standalone script calls do not write
+workflow journal records; use the skills for the complete host workflow.
 
 ## Renderers not invoked by skills (documented exceptions to the underscore-prefix rule)
 
@@ -105,7 +114,7 @@ A non-underscore renderer composed by another renderer rather than directly by s
 
 - **`_runtime.cjs`** — Shared stable-Node version guard, package/lock fingerprint, installed-runtime completion validation, process-owner checks and bounded startup wait, used by setup and the launcher. Not a CLI.
 
-- **`_chain-config.cjs`** — Dependency-free predicates matching `manifest-mcp-core` v0.22.0: HTTPS endpoints anywhere, HTTP only for localhost/127.0.0.1/::1, chain IDs starting with a letter/digit and containing letters/digits/underscores/hyphens, and decimal gas-price strings with valid 3–128-character raw denominations. `ci/chain-config-parity.cjs --data-dir <runtime-dir>` compares shared vectors and persisted registry/config controls with the installed MCP core after CI runtime setup.
+- **`_chain-config.cjs`** — Shared plugin `NETWORKS` list for config writers and session identity, plus dependency-free predicates matching `manifest-mcp-core` v0.22.0: HTTPS endpoints anywhere, HTTP only for localhost/127.0.0.1/::1, chain IDs starting with a letter/digit and containing letters/digits/underscores/hyphens, and decimal gas-price strings with valid 3–128-character raw denominations. `ci/chain-config-parity.cjs --data-dir <runtime-dir>` compares shared vectors and persisted registry/config controls with the installed MCP core after CI runtime setup.
 - **`_chain-registry.cjs`** — Pure `extractChainData` validation/extraction for the fetcher. Requires a JSON object and valid `chain_id` and first RPC address. REST is optional (absent or an empty list), but a supplied first entry must be usable. Rejects endpoint spellings needing URL parser repairs; normalizes only the scheme to lowercase for CosmJS HTTP transport. Optional fees can be absent; listed fee tokens require valid denominations and finite nonnegative numeric `fixed_min_gas_price`. Optional low/average/high prices are omitted when absent and validated when supplied. Invalid fields reject the network instead of manufacturing gas-price defaults. Asset symbols are optional and fall back to raw denoms.
 - **`_gas-price.cjs`** — Composes a Cosmos gas-price string (`<amount><denom>`) by symbol lookup. Rejects missing, null, nonnumeric, negative or nonfinite cached minimum prices and invalid denominations before either config writer saves them. Expands numeric exponent notation to decimal without changing the raw denom. Exports `composeGasPrice`; used by `update-config.cjs` and `write-config.cjs`.
 - **`_https-json.cjs`** — Shared HTTPS GET helper with SSRF guard (via `request-filtering-agent`), 15 s timeout, 5 MB body cap. Exports `httpsGet`. Used by `fetch-chain-registry.cjs`.

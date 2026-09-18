@@ -8,6 +8,7 @@
 const { readFileSync } = require('node:fs');
 const { join, win32 } = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const { NETWORKS } = require('./_chain-config.cjs');
 
 const DEFAULT_TIMEOUT_MS = 5000;
 const MAX_RESPONSE_BYTES = 65536;
@@ -56,7 +57,7 @@ function readIdentity(dataDir) {
   const address = config?.agent?.address;
   // Only these validated public fields can be printed. Never serialize the
   // config, credential references, RPC URLs, or a caught error/stack.
-  if (!['mainnet', 'testnet'].includes(activeChain)
+  if (!NETWORKS.includes(activeChain)
     || typeof chainId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(chainId)
     || typeof address !== 'string' || !/^manifest1[a-z0-9]{6,83}$/.test(address)) {
     throw new Error('Invalid identity');

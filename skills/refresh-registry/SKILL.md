@@ -78,9 +78,11 @@ If it succeeds, capture `chains` from the output as `AFTER`.
 Other failures require reporting and repair; do not claim the config was
 updated. If no valid active chain is selected, direct the user to
 `/manifest-agent:switch-chain` to explicitly choose testnet or mainnet; repeating
-`--refresh-chains` alone cannot select a chain. For a missing network's
-metadata, follow the fetch diagnostic and verify that network was saved
-before retrying with its explicit `--chain` and `--refresh-chains` flags.
+`--refresh-chains` alone cannot select a chain, and mainnet still requires
+that workflow's confirmation. For missing or malformed network metadata,
+resolve the fetch diagnostic and verify the affected network was saved
+before retrying the config merge. A malformed file for the other network
+does not authorize switching the active chain.
 Refresh only merges existing files; it never downloads missing metadata.
 It replaces chain entries from the files currently present,
 so after a partial fetch it can retain an older entry for the failed
