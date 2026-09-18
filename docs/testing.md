@@ -175,6 +175,37 @@ command with a serialized record containing the same hostile SKU-name
 patterns. It verifies literal preservation, no shell execution, and no
 environment secret in the journal or command output.
 
+## Wallet gas-setting regressions (ENG-1009)
+
+`tests/workflow-config.test.cjs` executes both hosts' generated wallet pipelines,
+status commands and journal commands. Only the cryptographic key
+generation/import boundary is replaced with disposable wallet fixtures; config
+writes, file credentials and journals use the real scripts. Both `init-agent`
+paths and standalone `import-key` cover integer/fractional/numeric-string
+multipliers, absent/null defaults, and a new invocation after an interruption
+immediately following the config write. Assertions inspect the saved multiplier
+before any follow-up command, and require final status to follow each wallet
+pipeline without a separate gas mutation. Initial setup and cancellation before
+or after status are covered for both `init-agent` paths. An unreadable config
+exercises partial reporting with the confirmed identity and unknown gas settings,
+followed by recovery using only status. Journal fixtures instantiate the shipped
+sketches for success, partial, recovered and cancelled outcomes, checking the
+chain/signer schema, structured errors and private staging cleanup.
+
+`tests/write-config.test.cjs` directly checks immediate and repeated preservation,
+legacy credential migration, and failed replacement. Injecting failure at the
+atomic rename leaves the previous wallet and multiplier together; retrying the
+writer with the same retained key succeeds without generating another wallet.
+
+```bash
+node --test tests/workflow-config.test.cjs tests/write-config.test.cjs tests/update-config.test.cjs tests/build-packages.test.cjs
+```
+
+These offline Linux regressions verify the commands and journal data contract.
+The test driver supplies choices, recovery decisions and sketch values; it does
+not establish a model's prompt handling, outcome classification or final prose.
+Those still require fresh behavioral host acceptance before release.
+
 ## Registry metadata regressions (ENG-1008)
 
 `tests/_chain-registry.test.cjs` runs the full malformed-metadata matrix in

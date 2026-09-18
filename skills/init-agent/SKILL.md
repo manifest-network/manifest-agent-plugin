@@ -153,7 +153,8 @@ Replace `CHOSEN_CHAIN` with the user's choice from Step 2 and `GAS_TOKEN`
 with the symbol they chose in Step 3 (e.g., `MFX`), using properly shell-escaped
 literals including any apostrophes. Registry symbols are data, not shell code.
 
-Parse the JSON output from stdout to get `address` and `activeChain`.
+After the pipeline succeeds, save its safe JSON output as `WRITTEN_CONFIG`
+(`address` and `activeChain`).
 
 If the pipeline fails, stop and show the sanitized diagnostic. A credential-store
 failure can leave a new encrypted keyfile without selecting it in config; the
@@ -193,18 +194,48 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/import-key.cjs" --prefix manifest < 'MNEMONI
 ```
 
 If the pipeline fails, stop and report the sanitized diagnostic and retained
-keyfile path before retrying. Parse successful JSON output to get `address`
-and `activeChain`. Suggest the user delete their mnemonic file after success
+keyfile path before retrying. Save successful JSON output as `WRITTEN_CONFIG`
+(`address` and `activeChain`). Suggest the user delete their mnemonic file after success
 (e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
 created it).
 
+### After either successful wallet/config pipeline — Verify saved settings
+
+`write-config.cjs` has already preserved any configured gas multiplier in the
+same atomic write as the wallet. No separate gas update is needed.
+
+Read the saved settings before reporting completion:
+
+```bash
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
+```
+
+On success, store the parsed safe output as `FINAL_SETTINGS` and set
+`RUN_OUTCOME` to `"success"`. Report the returned gas price and multiplier;
+a null multiplier means the effective default is `1.5`. Keep the returned
+value's type, including a numeric string from a hand-edited config.
+
+If status fails, set `RUN_OUTCOME` to `"partial"`. Set `FINAL_SETTINGS.address`
+and `FINAL_SETTINGS.activeChain` from the successful `WRITTEN_CONFIG` output,
+and set only `gasPrice` and `gasMultiplier` to `"unknown"`. Record one
+`config_status_failed` error with the sanitized diagnostic in `message`.
+Explain that the wallet was written but the final gas settings could not be
+read; do not claim the multiplier reverted to the default or was lost.
+
+Resolve the read failure and retry only `--status`. **Do not generate or import
+another wallet** to verify settings. If verification cannot finish in this run,
+report and journal the partial result and needed recovery action, then stop.
+Use empty errors and recovery actions when no failure occurred; otherwise
+retain the diagnostic and describe whether the status retry succeeded.
+
 ## Step 6 — Report results
 
-Tell the user:
+Report `RUN_OUTCOME` and any recovery diagnostic. Tell the user:
 1. Their agent address
 2. The keyfile location
 3. Which chain is active
-4. The gas fee token in use
+4. The gas fee token and actual saved gas price and multiplier from
+   `FINAL_SETTINGS` (null means the default `1.5`; unknown means status failed)
 5. That MCP servers need to be restarted to use the new config — they can do
    this through their host's MCP controls or by restarting Claude Code
 6. Generated wallets do not display a mnemonic. Back up the config, encrypted
@@ -213,8 +244,9 @@ Tell the user:
 
 ## Step 7 — Offer testnet funding
 
-If the user chose testnet, suggest requesting faucet funds to the new address
-using the `mcp__plugin_manifest-agent_manifest-chain__request_faucet` tool if it is available.
+Only after a successful result, if the user chose testnet, suggest requesting
+faucet funds to the new address using the `mcp__plugin_manifest-agent_manifest-chain__request_faucet` tool
+if it is available.
 
 ## Step 8 — Record this run in the journal
 
@@ -229,6 +261,14 @@ the writer is fail-closed and will exit 1 rather than append such
 records. This is the defense in depth for this skill — mnemonics flow
 only through stdin pipes between scripts and never enter the journal.
 
+If the user declined the existing-key warning in Step 4 or cancelled at
+any choice prompt before wallet replacement, set `RUN_OUTCOME` to `"cancelled"`
+and fill `FINAL_SETTINGS` from the last successful status read. If none exists,
+use null for `address` and `activeChain`, and `"unknown"` for the gas fields.
+This also sets `signer_address` to the previous address or null; do not use
+`WRITTEN_CONFIG`, which does not exist on a cancelled path. Keep errors and
+recovery actions empty and describe cancellation in `plan_summary`.
+
 Build the redacted record as an object with this shape. Placeholders describe
 in-memory values; never substitute them into shell source or treat the sketch
 as already serialized JSON.
@@ -236,21 +276,29 @@ as already serialized JSON.
 ```text
 {
   "skill": "init-agent",
-  "active_chain": "<chosen chain — testnet or mainnet>",
-  "signer_address": "<address parsed from write-config output>",
+  "active_chain": "<FINAL_SETTINGS.activeChain>",
+  "signer_address": "<FINAL_SETTINGS.address>",
   "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
   "plan_summary": "init-agent (<generate|import>) on <chosen chain>, gas_token=<GAS_TOKEN>",
   "tool_calls": [],
-  "outcome": "success",
+  "outcome": "<RUN_OUTCOME>",
   "final_state": {
-    "address": "<address>",
-    "active_chain": "<chosen chain>",
-    "gas_token": "<GAS_TOKEN>"
+    "address": "<FINAL_SETTINGS.address>",
+    "active_chain": "<FINAL_SETTINGS.activeChain>",
+    "gas_price": "<FINAL_SETTINGS.gasPrice>",
+    "gas_multiplier": "<FINAL_SETTINGS.gasMultiplier>"
   },
-  "errors": [],
-  "recovery_actions": []
+  "errors": [{ "class": "<ERROR.class>", "message": "<ERROR.message>" }],
+  "recovery_actions": ["<recovery actions attempted or still needed>"]
 }
 ```
+
+Use `RUN_OUTCOME` (`success`, `partial`, or `cancelled`) determined above. Fill
+`errors` with the structured errors recorded there and `recovery_actions` with
+attempted or needed recovery; both arrays are empty when no failure occurred.
+Use the multiplier returned by status, null for the observed default, or
+`"unknown"` if status failed. After a successful config write, keep its confirmed
+wallet address and chain from `WRITTEN_CONFIG` when status cannot be read.
 
 Create a private temporary directory with `mktemp -d` and capture its returned
 path as `JOURNAL_DIR`. Use the **Write tool** to create a **new** file
@@ -280,9 +328,7 @@ Write failure. If appending fails, report the journal diagnostic
 without repeating the underlying operation; a journal failure does not undo
 completed work.
 
-If the user declined the existing-key warning in Step 4 or cancelled at
-any choice prompt, set `outcome` to `"cancelled"`. Do NOT mention the
-journal write in your reply to the user.
+Do NOT mention the journal write in your reply to the user.
 
 ## Security notes
 

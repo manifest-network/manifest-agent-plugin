@@ -96,12 +96,15 @@ This walks you through:
 4. Generating a new keypair, or importing an existing mnemonic
 5. Writing the agent configuration
 
-Reinitializing an existing agent currently resets a custom gas multiplier to
-the default `1.5`. To swap wallets while retaining gas settings, use
-`/manifest-agent:import-key`; it restores the previous multiplier after writing
-the new wallet config. If restoration fails, the new wallet is already
-configured and the operation remains partial: resolve the diagnostic and retry
-only the multiplier update, without importing the wallet again.
+Reinitializing preserves a custom gas multiplier after either generating or
+importing a wallet. `/manifest-agent:import-key` also retains the existing chain
+and gas price. The config writer saves the wallet and previous multiplier
+atomically, so an interruption or later rerun cannot lose the value. An unset
+multiplier keeps the default `1.5`. Both workflows verify the saved settings
+before reporting completion. If that read fails, the operation is reported and
+journaled as partial with the confirmed address and chain and unverified gas
+settings. Resolve the diagnostic and retry only the status read, without
+generating or importing another wallet.
 
 After setup, **restart Claude Code** (or run `/mcp` and reconnect) so the five MCP servers can pick up the new config.
 

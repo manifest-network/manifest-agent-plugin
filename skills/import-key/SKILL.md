@@ -40,10 +40,7 @@ before importing: the user must repair its JSON privately to preserve any legacy
 password, or move it aside as a private backup before initialization. Do not
 delete it or ask the user to paste its contents. Otherwise parse the JSON;
 `activeChain` AND `gasPrice` are required in Step 2 to preserve the existing chain
-and gas price when re-writing the config. Capture `gasMultiplier` as
-`PREVIOUS_GAS_MULTIPLIER` too. If it is non-null, restore that exact value after
-the config write in Step 2; `write-config.cjs` does not retain it itself. An
-absent/null value needs no update and continues to use the default of 1.5.
+and gas price when re-writing the config.
 
 **Never** read `$MANIFEST_PLUGIN_DATA/config.json` directly — legacy copies may contain the key password. Always use `update-config.cjs --status` to read safe fields.
 
@@ -90,7 +87,8 @@ The mnemonic flows through the pipe (file → import-key → write-config).
 Claude Code sees only the bash invocation (the file path, but not contents)
 and `write-config.cjs`'s safe stdout JSON.
 
-Parse the JSON output to get `address` and `activeChain`.
+After the pipeline succeeds, save its safe JSON output as `WRITTEN_CONFIG`
+(`address` and `activeChain`).
 
 If the pipeline fails, stop and show the diagnostic, including the retained
 keyfile path. Resolve the credential/config problem before retrying; repeated
@@ -101,35 +99,48 @@ After the user restores store access, the manual
 legacy migration immediately. Explicit config writes also bypass the brief pause
 used by automatic startup attempts.
 
-After the pipeline succeeds, if `PREVIOUS_GAS_MULTIPLIER` from Step 0 is
-non-null, restore it before reporting completion. Substitute that value as a
-properly shell-escaped literal:
+Once the wallet/config pipeline succeeds, suggest the user delete their mnemonic file
+(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
+created it), even if final status verification is still pending.
+
+### After a successful wallet/config pipeline — Verify saved settings
+
+`write-config.cjs` has already preserved any configured gas multiplier in the
+same atomic write as the wallet. No separate gas update is needed.
+
+Read the saved settings before reporting completion:
 
 ```bash
-node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --gas-multiplier 'PREVIOUS_GAS_MULTIPLIER'
+node "$MANIFEST_PLUGIN_ROOT/scripts/update-config.cjs" --status
 ```
 
-Check the update's exit status and returned `gasMultiplier`. If restoration
-fails, the imported wallet is already configured: report the partial result
-and diagnostic, retain the previous multiplier, and retry only this
-`update-config.cjs` call after resolving the error. **Do not rerun the import**
-to restore gas settings. Do not claim success or write a success journal
-record until restoration succeeds. If it cannot be restored in this run,
-record a `partial` outcome in Step 4 with the restoration diagnostic and
-actual final settings, then stop.
+On success, store the parsed safe output as `FINAL_SETTINGS` and set
+`RUN_OUTCOME` to `"success"`. Report the returned gas price and multiplier;
+a null multiplier means the effective default is `1.5`. Keep the returned
+value's type, including a numeric string from a hand-edited config.
 
-Suggest the user delete their mnemonic file after a successful import
-(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
-created it).
+If status fails, set `RUN_OUTCOME` to `"partial"`. Set `FINAL_SETTINGS.address`
+and `FINAL_SETTINGS.activeChain` from the successful `WRITTEN_CONFIG` output,
+and set only `gasPrice` and `gasMultiplier` to `"unknown"`. Record one
+`config_status_failed` error with the sanitized diagnostic in `message`.
+Explain that the wallet was written but the final gas settings could not be
+read; do not claim the multiplier reverted to the default or was lost.
+
+Resolve the read failure and retry only `--status`. **Do not generate or import
+another wallet** to verify settings. If verification cannot finish in this run,
+report and journal the partial result and needed recovery action, then stop.
+Use empty errors and recovery actions when no failure occurred; otherwise
+retain the diagnostic and describe whether the status retry succeeded.
 
 ## Step 3 — Report
 
-Tell the user:
+Report `RUN_OUTCOME` and any recovery diagnostic. Tell the user:
 1. Their imported agent address
 2. The keyfile location
 3. That MCP servers need to be restarted to pick up the new key
-4. The selected chain, gas price and any explicitly configured gas multiplier
-   were retained
+4. The actual saved chain, gas price and multiplier from `FINAL_SETTINGS`;
+   confirm retention only after verification. A null multiplier uses the
+   default `1.5`; unknown means status failed, not that settings were retained
 5. Backups require the config, encrypted keyfile and referenced credential;
    the original mnemonic is the independent recovery option
 
@@ -152,21 +163,29 @@ as already serialized JSON.
 ```text
 {
   "skill": "import-key",
-  "active_chain": "<activeChain from Step 0>",
-  "signer_address": "<address parsed from write-config output>",
+  "active_chain": "<FINAL_SETTINGS.activeChain>",
+  "signer_address": "<FINAL_SETTINGS.address>",
   "intent": "<a brief paraphrase of the user's request — what they want to accomplish, not their verbatim message; max ~240 chars; do NOT echo any secrets the user may have typed (passwords, API keys, mnemonics) — the value field is not redacted>",
   "plan_summary": "imported key on <activeChain>",
   "tool_calls": [],
-  "outcome": "success",
+  "outcome": "<RUN_OUTCOME>",
   "final_state": {
-    "address": "<address>",
-    "active_chain": "<activeChain>",
-    "gas_multiplier": "<restored previous multiplier, or null when the default applies>"
+    "address": "<FINAL_SETTINGS.address>",
+    "active_chain": "<FINAL_SETTINGS.activeChain>",
+    "gas_price": "<FINAL_SETTINGS.gasPrice>",
+    "gas_multiplier": "<FINAL_SETTINGS.gasMultiplier>"
   },
-  "errors": [],
-  "recovery_actions": []
+  "errors": [{ "class": "<ERROR.class>", "message": "<ERROR.message>" }],
+  "recovery_actions": ["<recovery actions attempted or still needed>"]
 }
 ```
+
+Use `RUN_OUTCOME` (`success` or `partial`) from the final status check. Fill
+`errors` with the structured errors recorded there and `recovery_actions` with
+attempted or needed recovery; both arrays are empty when no failure occurred.
+Use the multiplier returned by status, null for the observed default, or
+`"unknown"` if status failed. Keep the confirmed wallet address and chain from
+`WRITTEN_CONFIG` when status cannot be read.
 
 Create a private temporary directory with `mktemp -d` and capture its returned
 path as `JOURNAL_DIR`. Use the **Write tool** to create a **new** file

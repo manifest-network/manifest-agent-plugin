@@ -27,24 +27,24 @@ include the advice alongside the commands the user is asked to type.
 
 ## Preserve reinitialization settings and clarify import recovery
 
-[init-agent](../workflows/init-agent.md) replaces configuration through
-[write-config.cjs](../scripts/write-config.cjs), which omits `gasMultiplier`.
-Reinitializing an existing configuration therefore resets a custom multiplier to
-the runtime default of 1.5. The README and developer guide now disclose this;
-record the previous value before reinitializing and set it again afterward.
+Status: implemented in [ENG-1009](eng-1009-plan.md), including the PR review's
+atomic-preservation and journal corrections. Release acceptance for the changed
+source is still pending; published v0.5.0 evidence stays unchanged.
 
-The follow-up should capture the previous multiplier and restore it after a
-successful reinitialization, with the same checked partial-result handling
-used by [import-key](../workflows/import-key.md). Test custom integer and
-fractional values, no explicit value, and restoration failure without a
-second wallet import or creation.
+The v0.5.0 [init-agent](../workflows/init-agent.md) workflow replaced config
+through [write-config.cjs](../scripts/write-config.cjs) without restoring a
+custom `gasMultiplier`, so reinitialization reverted to the runtime default
+`1.5`. The writer now preserves the previous non-null multiplier under its lock
+in the same atomic config write. Both wallet paths use the same final-status
+instructions as [import-key](../workflows/import-key.md).
 
-The import workflow already checks restoration, but its journal sketch
-still shows an unconditional `success` and empty `errors`. Update that
-sketch to represent both successful and partial outcomes, using structured
-errors with `class` and `message`. Clarify that a failed restoration retains
-the old value in memory for recovery, not in the newly written config; the
-completion report must describe the actual final settings.
+Both journal sketches distinguish successful and partial outcomes with
+structured `class`/`message` errors. A failed status read retains the confirmed
+address and chain and marks only the gas fields unknown. Recovery retries only
+status and never creates or imports a second wallet. Generated-command and
+writer regressions cover integers, fractions, numeric strings, absent/null
+values, interruptions, write failure, verification recovery and cancellation.
+They do not establish interactive model behavior.
 
 ## Reject unusable registry chain metadata before saving it
 

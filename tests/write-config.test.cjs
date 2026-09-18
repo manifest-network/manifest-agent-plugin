@@ -78,24 +78,81 @@ test('wallet replacement retains the previous credential and migrates legacy con
   const f = fixture(t);
   const oldAgent = { keyFile: 'keys/old.json', keyPassword: 'OLD_PASSWORD_SECRET', address: 'manifest1old' };
   fs.writeFileSync(join(f.data, oldAgent.keyFile), 'old-wallet');
-  fs.writeFileSync(f.path, JSON.stringify({ activeChain: 'mainnet', gasPrice: '1umfx', chains: f.chains, agent: oldAgent }));
+  fs.writeFileSync(f.path, JSON.stringify({ activeChain: 'mainnet', gasPrice: '1umfx', gasMultiplier: 2.25, chains: f.chains, agent: oldAgent }));
   const result = run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key));
   assert.equal(result.status, 0, result.stderr);
   const initial = f.config();
   assert.equal(initial.credentialMigration.version, 1);
+  assert.equal(initial.gasMultiplier, 2.25);
   assert.equal(resolvePassword(initial, f.data), f.key.password);
   const replacement = { ...f.key, keyfile: join(f.data, 'keys', 'agent-second.json'), password: 'second-fixture' };
   fs.writeFileSync(replacement.keyfile, 'second-wallet');
   assert.equal(run(f, 'write-config.cjs', writeArgs, JSON.stringify(replacement)).status, 0);
   assert.notDeepEqual(initial.agent.keyPasswordRef, f.config().agent.keyPasswordRef);
+  assert.equal(f.config().gasMultiplier, 2.25);
   assert.equal(resolvePassword(initial, f.data), f.key.password);
   assert.equal(resolvePassword(f.config(), f.data), replacement.password);
   assert.equal(fs.readFileSync(join(f.data, oldAgent.keyFile), 'utf8'), 'old-wallet');
 });
 
+for (const multiplier of [2, 2.25, '2', undefined, null]) {
+  test(`wallet replacement atomically preserves ${JSON.stringify(multiplier)} across repeated writes`, (t) => {
+    const f = fixture(t);
+    assert.equal(run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key)).status, 0);
+    const previous = f.config();
+    if (multiplier !== undefined) previous.gasMultiplier = multiplier;
+    fs.writeFileSync(f.path, JSON.stringify(previous));
+    for (const name of ['replacement', 'rerun']) {
+      const key = { ...f.key, address: `manifest1${name}`, keyfile: join(f.data, 'keys', `${name}.json`) };
+      fs.writeFileSync(key.keyfile, 'encrypted-wallet-fixture');
+      const result = run(f, 'write-config.cjs', writeArgs, JSON.stringify(key));
+      assert.equal(result.status, 0, result.stderr);
+      // No status or restoration command runs between the write and this read.
+      assert.equal(f.config().gasMultiplier, multiplier ?? undefined);
+      assert.equal(Object.hasOwn(f.config(), 'gasMultiplier'), multiplier != null);
+      assert.equal(f.config().agent.address, key.address);
+      assert.equal(resolvePassword(f.config(), f.data), key.password);
+    }
+  });
+}
+
+test('failed atomic replacement keeps the previous wallet and multiplier together', (t) => {
+  const f = fixture(t);
+  assert.equal(run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key)).status, 0);
+  fs.writeFileSync(f.path, JSON.stringify({ ...f.config(), gasMultiplier: 2.25 }));
+  const before = fs.readFileSync(f.path);
+  const replacement = { ...f.key, address: 'manifest1replacement', keyfile: join(f.data, 'keys', 'replacement.json') };
+  fs.writeFileSync(replacement.keyfile, 'replacement-wallet');
+  const preload = join(f.data, 'fail-config-rename.cjs');
+  fs.writeFileSync(preload, `
+const fs = require('node:fs');
+const { join } = require('node:path');
+const rename = fs.renameSync;
+fs.renameSync = (from, to) => {
+  if (to === join(process.env.MANIFEST_PLUGIN_DATA, 'config.json')) {
+    throw Object.assign(new Error('fixture config rename failed'), { code: 'EACCES' });
+  }
+  return rename(from, to);
+};
+`);
+  const failed = run(f, 'write-config.cjs', writeArgs, JSON.stringify(replacement), { NODE_OPTIONS: `--require=${preload}` });
+  assert.equal(failed.status, 1);
+  assert.equal(failed.stdout, '');
+  assert.match(failed.stderr, /fixture config rename failed/);
+  assert.deepEqual(fs.readFileSync(f.path), before);
+  assert.equal(resolvePassword(f.config(), f.data), f.key.password);
+  assert.equal(fs.existsSync(join(f.data, '.config.lock')), false);
+  assert.equal(fs.readFileSync(replacement.keyfile, 'utf8'), 'replacement-wallet');
+  const retried = run(f, 'write-config.cjs', writeArgs, JSON.stringify(replacement));
+  assert.equal(retried.status, 0, retried.stderr);
+  assert.equal(f.config().gasMultiplier, 2.25);
+  assert.equal(f.config().agent.address, replacement.address);
+});
+
 test('unavailable store leaves an existing config and wallet unchanged', (t) => {
   const f = fixture(t);
   assert.equal(run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key)).status, 0);
+  fs.writeFileSync(f.path, JSON.stringify({ ...f.config(), gasMultiplier: 2.25 }));
   const before = fs.readFileSync(f.path);
   const result = run(f, 'write-config.cjs', writeArgs, JSON.stringify(f.key), {
     MANIFEST_CREDENTIAL_STORE: 'unsupported',

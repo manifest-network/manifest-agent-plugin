@@ -78,13 +78,15 @@ do not offer unverified fish translations.
 
 **Configuration precedence** — Config owns chain, gas-price/multiplier and wallet variables. The launcher removes inherited values before applying the selected config, including stale optional endpoints and mnemonic fallback. `agent.keyFile` must exist and `agent.keyPasswordRef` must resolve through `_credentials.cjs`; legacy `agent.keyPassword` is migrated before launching; an explicit empty password is preserved, although upstream 0.22.0 rejects empty-password encrypted wallets. The child runs from an owned empty temporary directory so dotenv cannot load a workspace `.env`, and `DOTENV_CONFIG_QUIET=true` keeps stdout protocol-only. The temporary directory is removed on exit; generic transport settings such as proxies remain inherited. `COSMOS_MAX_GAS` remains an explicit operator override of the upstream gas ceiling; it is not a config-owned field. Invalid values are rejected upstream.
 
-**Reinitialization limit** — `write-config.cjs` rebuilds config without retaining
-`gasMultiplier`. Re-running `init-agent` therefore resets a custom multiplier
-to the runtime default `1.5`. The standalone `import-key` workflow captures the
-safe status first and restores a non-null multiplier in a separate checked
-`update-config.cjs` call. If restoration fails, the new wallet is already
-configured: report a partial outcome and retry only the multiplier update
-after resolving the error. Do not rerun the import or claim completion.
+**Gas settings during wallet replacement** — `write-config.cjs` carries forward
+the previous non-null `gasMultiplier` under the config lock, in the same atomic
+write as the new wallet. Absent/null keeps the runtime default `1.5`; numeric
+strings in hand-edited config retain their type. Both `init-agent` wallet paths
+and standalone `import-key` use `workflows/fragments/verify-wallet-config.md`
+to read final status before reporting. A failed read is partial: retain the
+address and chain confirmed by the writer, mark only gas settings unknown, and
+record one structured `config_status_failed` error. Recovery retries only the
+status read; never generate or import another wallet to verify settings.
 
 ## Credential storage and startup identity (ENG-85)
 
