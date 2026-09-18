@@ -184,7 +184,10 @@ The orchestrated tool handles plan rendering, fee itemization, dual-tx broadcast
 
 ### Sensitive env values (file-pipe pattern)
 
-For secrets like database passwords, the env prompt in `/manifest-agent:author-manifest` offers a "From a file" option. Create a dotenv file in a separate Bash terminal first (run `bash` first if your usual shell is fish):
+For secrets like database passwords, the env prompt in `/manifest-agent:author-manifest`
+offers a "From a file" option. Create a dotenv file in a separate Bash terminal.
+If your usual shell is fish, run `bash` in that terminal before the commands
+below and stay in that Bash session through temporary-file cleanup:
 
 ```bash
 umask 077
@@ -201,7 +204,7 @@ creates a fresh file with mode `0600`; an older file's permissions cannot carry
 over. Values flow through a script pipe into the spec file; they never enter
 the chat input box and the agent never echoes them in summaries. This uses the
 same fresh-file pattern as mnemonic import in `init-agent` / `import-key`.
-After a successful merge, remove the input file from the same terminal with
+After a successful merge, remove the input file from the same Bash session with
 `rm -- "$ENV_INPUT_PATH"`.
 
 Note: env values still appear in `build_manifest_preview` and

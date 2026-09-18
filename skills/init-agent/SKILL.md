@@ -170,7 +170,9 @@ keys). For first-time setup we run the pipe inline because config.json
 doesn't exist yet.
 
 Ask the user to provide the **path to a file** containing their mnemonic.
-They create the file themselves in a separate terminal:
+They create the file themselves in a separate terminal. Tell them to use the
+`bash` shell: if their usual shell is fish, run `bash` in that terminal before
+the commands below and stay in that shell session through temporary-file cleanup:
 
 ```bash
 umask 077

@@ -244,7 +244,10 @@ list of paths.
 - **Skip** — no env vars.
 
 If the user picks **From a file**, ask them to create the file in a
-**separate terminal**, e.g.:
+**separate terminal**. Tell them to use the `bash` shell: if their usual shell
+is fish, run `bash` in that terminal before the commands below and stay in
+that shell session through temporary-file cleanup:
+
 ```bash
 umask 077
 ENV_INPUT_PATH=$(mktemp)

@@ -47,7 +47,9 @@ and gas price when re-writing the config.
 ## Step 1 — Get mnemonic file path
 
 Ask the user to provide the **path to a file** containing their mnemonic. They
-should create this file themselves in a separate terminal, e.g.:
+should create this file themselves in a separate terminal. Tell them to use the
+`bash` shell: if their usual shell is fish, run `bash` in that terminal before
+the commands below and stay in that shell session through temporary-file cleanup:
 
 ```bash
 umask 077

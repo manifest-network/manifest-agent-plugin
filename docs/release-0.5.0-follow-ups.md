@@ -14,16 +14,16 @@ in [host acceptance](host-acceptance.md#release-evidence).
 
 ## Include shell guidance in shipped secret-input recipes
 
-Carry the README's Bash-first advice into the user-typed secret-file recipes
-in `workflows/init-agent.md`, `workflows/import-key.md`, and
-`workflows/author-manifest.md`. The repository's `CLAUDE.md` is contributor
-guidance; plugin users need the caveat in the generated skills, which
-currently present POSIX assignments without it.
+Status: implemented in [ENG-1010](eng-1010-plan.md). Release acceptance for the
+changed source is still pending; published v0.5.0 evidence stays unchanged.
 
-Tell fish users to run `bash` in their separate terminal before the recipe
-and remain in that shell through temporary-file cleanup. When updating these
-workflows, regenerate both hosts' skills and verify that all three recipes
-include the advice alongside the commands the user is asked to type.
+The v0.5.0 generated skills presented POSIX assignments without the Bash
+guidance in the README and contributor-only `CLAUDE.md`. The user-typed
+secret-file recipes in `workflows/init-agent.md`, `workflows/import-key.md`
+and `workflows/author-manifest.md` now tell fish users to run `bash` in their
+separate terminal before the recipe and remain in that shell through
+temporary-file cleanup. Both hosts' generated skills carry the advice beside
+the commands, preserving private-file creation, stdin pipes and cleanup.
 
 ## Preserve reinitialization settings and clarify import recovery
 
