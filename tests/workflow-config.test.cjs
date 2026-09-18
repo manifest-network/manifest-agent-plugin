@@ -51,7 +51,7 @@ for (const host of ['claude', 'codex']) {
       const between = text.slice(recipe[0].index + recipe[0][0].length, recipe[1].index);
       assert.match(between, /only the\s+mnemonic words/);
       assert.match(between, /no prompt/);
-      assert.match(between, /Enter[\s\S]*Ctrl\+D[\s\S]*prompt\s+returns/);
+      assert.match(between, /\b[Pp]ress\s+Enter\b[^.!?]*Ctrl\+D\b[\s\S]*prompt\s+returns/);
       const commands = recipe.map(match => match[1]);
       assert.equal(commands[0].trimEnd().split('\n').at(-1), 'cat > "$MNEMONIC_INPUT_PATH"');
       const input = 'abandon '.repeat(11) + 'about\n';

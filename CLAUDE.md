@@ -18,9 +18,10 @@ Use literal `bash` for the shell in workflow sources and fragments. In
 host tool. Host fragments such as `hosts/<host>/restart-confirmation.md`
 are inserted raw without token expansion; use the literal host tool name
 there (`Bash` for Claude, `exec_command` for Codex). The current Codex
-renderer rewrites capitalized `Bash` throughout the inserted text, including
-shell advice; [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029) tracks
-replacing that rewrite with an explicit token contract.
+renderer rewrites capitalized `Bash` throughout workflows and inserted
+fragments, including shell advice.
+[ENG-1029](https://linear.app/liftedinit/issue/ENG-1029) tracks replacing that
+rewrite with an explicit token contract.
 
 ## Architecture
 

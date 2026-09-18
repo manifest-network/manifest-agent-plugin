@@ -179,7 +179,8 @@ environment secret in the journal or command output.
 
 `tests/build-packages.test.cjs` checks that every generated secret-file recipe
 has adjacent advice to start `bash` from fish and stay in that session through
-cleanup, with Bash started before the recipe commands. Generated workflows
+cleanup, with Bash started before the recipe commands. The ordering check
+stays within one sentence while allowing `e.g.`/`i.e.` examples. Generated workflows
 must not name `exec_command` as a session, shell or terminal. That three-noun
 check does not cover every possible shell reference; the broader renderer
 fix is tracked in [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029).
@@ -190,12 +191,24 @@ while allowing advice about the lowercase `bash` shell.
 `tests/merge-env.test.cjs` checks both hosts' generated env recipes and the
 README: the capture block ends at `cat`, data-entry and Enter/Ctrl+D guidance
 sits between blocks, and path display follows the returning shell prompt.
+The entry checks require an instruction to press Enter before Ctrl+D;
+the verb "enter" alone does not satisfy them.
 It executes the commands with harmless stdin fixtures, checking mode `0600`,
 exact input contents, and no values in output. Generated merge commands must
 preserve values and private spec permissions. Empty and comment-only inputs
-exercise the helper's `keys_merged: []` response and the workflow's stop/retry
-instruction; these assertions do not execute a model's recovery decision.
-Cleanup cases provide confirmed recipe-created paths,
+exercise the helper's `keys_merged: []` response both with and without an
+existing env map: the helper rewrites the spec and adds `env: {}` when absent.
+A two-service fixture refills the first service's recorded file while
+`ENV_INPUT_PATH` still names the last file, then checks that each service
+merges only its own values. The retry path includes spaces, an apostrophe
+and shell syntax, which must remain literal.
+
+Prose guards require retry/skip/cancel choices, retained skipped inputs, the
+origin question and its three options, the origin flag carried through the
+merge loop, the confirmed-only cleanup filter, completion of every associated
+merge, preservation of conflicting origins, and the retained-file recap.
+These assertions do not execute a model's recovery or provenance decisions.
+Cleanup command cases provide confirmed recipe-created paths,
 including spaces, apostrophes and shell syntax, while `ENV_INPUT_PATH` refers
 only to the last file. Those temporaries must be removed while supplied
 pre-existing and unknown-origin dotenv files remain byte-identical after

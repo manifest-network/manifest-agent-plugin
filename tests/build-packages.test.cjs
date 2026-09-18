@@ -22,7 +22,8 @@ test('secret-input recipes keep shell guidance immediately beside the user comma
         const intro = rendered.slice(0, block.index).trimEnd().split(/\n\s*\n/).at(-1);
         const label = `${host}/${name}`;
         assert.match(intro, /\bfish\b/, label);
-        assert.match(intro, /\brun `bash`[\s\S]*?\bbefore\s+(?:(?:the|these)\s+)?(?:commands|recipe)\b/, label);
+        // Stay in the instruction's sentence while allowing e.g./i.e. examples.
+        assert.match(intro, /\brun `bash`(?:e\.g\.|i\.e\.|[^.!?])*?\bbefore\s+(?:(?:the|these)\s+)?(?:commands|recipe)\b/, label);
         assert.match(intro, /\b(?:stay|remain)\b[\s\S]*\bsession\b[\s\S]*\bcleanup\b/, label);
         assert.doesNotMatch(intro, /\bexec_command\b/, label);
         recipes.push(name);

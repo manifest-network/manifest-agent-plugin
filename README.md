@@ -208,11 +208,13 @@ creates a fresh file with mode `0600`; an older file's permissions cannot carry
 over. Values flow through a script pipe into the spec file; they never enter
 the chat input box and the agent never echoes them in summaries. This uses the
 same fresh-file pattern as mnemonic import in `init-agent` / `import-key`.
-After a successful merge, remove the input file from the same Bash session with
-`rm -- "$ENV_INPUT_PATH"`. If you repeat the recipe for several services,
-remove each printed path; `ENV_INPUT_PATH` names only the most recent file.
-Cleanup applies only to files created with this recipe. Keep any pre-existing
-dotenv file you supplied instead.
+After every service using an input file has merged successfully and you have
+confirmed the saved spec, remove that temporary input from the same Bash
+session with `rm -- "$ENV_INPUT_PATH"`. For several input files, use the
+agent's confirmed temporary-path list; `ENV_INPUT_PATH` names only the most
+recent file. Cleanup applies only to files created with this recipe. Keep
+supplied pre-existing files, inputs whose origin is uncertain, and files you
+chose to skip.
 
 Note: env values still appear in `build_manifest_preview` and
 `deploy_app_orchestrated` MCP tool arguments during validation and deployment.

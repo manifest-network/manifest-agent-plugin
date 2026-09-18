@@ -41,6 +41,9 @@ Do not maintain a second copy of domain rules in `hosts/`. Codex form gating
 uses the same reviewed mutation inventory as Claude's hooks. See
 [`docs/host-acceptance.md`](docs/host-acceptance.md) for both-host checks and
 the evidence required before a compatibility release.
+Use lowercase `bash` for shell guidance and follow the
+[shell/tool naming convention](CLAUDE.md#what-this-is) for `{{shell_tool}}`
+in workflow sources and literal tool names in raw host fragments.
 
 ## Branch names
 
@@ -77,6 +80,7 @@ Issue references go in the subject (`(ENG-NN)`) when the change traces back to a
 - [ ] Branch builds in CI (syntax + tests + version check).
 - [ ] If you added a script, you also added a test file (see [`docs/testing.md`](docs/testing.md) for the branch-coverage checklist).
 - [ ] If you changed any user-visible flow, the corresponding `skills/<name>/SKILL.md` is updated.
+- [ ] Shell guidance uses `bash`; host tool references follow the [workflow/host-fragment naming convention](CLAUDE.md#what-this-is).
 - [ ] If you added or renamed a script, the **Scripts inventory** section in `CLAUDE.md` is updated.
 - [ ] If you changed the MCP tool surface, the installed-inventory check and policy-completeness check pass; `hooks/hooks.json`, runtime policy, and the `CLAUDE.md` gated-tool list agree.
 - [ ] If you bumped `@manifest-network/manifest-mcp-node`, the env-var mapping in `CLAUDE.md` is still accurate (re-read `start-server.cjs`).

@@ -28,8 +28,9 @@ and clean up every confirmed recipe-created env file after repeated recipes,
 preserving pre-existing inputs and files of unknown origin. Both mnemonic
 and env entry end the shell block at `cat`, keep private data entry and
 Ctrl+D instructions in prose, and print the path after the shell prompt
-returns. Authoring records explicit file-origin confirmation and stops on an
-empty env merge. Rendering
+returns. Authoring records explicit file-origin confirmation and pauses on an
+empty env merge to offer retry at the recorded path, continuation without
+file values, or cancellation. Skipped inputs are retained and listed. Rendering
 and command regressions cover both hosts. The builder's broad tool-name
 rewrite is tracked separately in [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029).
 

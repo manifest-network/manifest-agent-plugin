@@ -267,7 +267,8 @@ returns, run:
 printf '%s\n' "$ENV_INPUT_PATH"
 ```
 Tell them not to use `echo` (it lands in shell history). Wait for them to
-type the path back in chat. For a path returned from the recipe, use
+type the path back in chat. For each path they type back after you offered
+the recipe, use
 `AskUserQuestion`: "Did you create `<path>` with this temporary-file recipe?"
 Offer **Yes, created with this recipe**, **No, existing file**, and **Not
 sure**. Skip this question if they already explicitly confirmed its origin.
@@ -497,15 +498,41 @@ shape — this skill always emits the services-map shape, so always pass it.)
 
 The script outputs `{"service":"<name>","keys_merged":["KEY1",...]}` —
 report the keys to the user (no values appear). If `keys_merged` is empty
-(`[]`), stop: no env values were captured. Keep the input file and draft;
-have the user enter their KEY=VALUE lines privately, then retry that
-service's merge before continuing. Do not suggest cleanup or report the
-spec as ready while an input remains empty.
+(`[]`), stop the merge loop: no env values were captured. Keep the input
+file and draft. Use `AskUserQuestion` for that service and its recorded input path:
 
-If the script errors out
-(invalid dotenv line, unknown service, unreadable file), surface the error
-and stop. These input errors leave the saved spec unchanged; earlier
-successful service merges remain. Have the user correct the reported input
+- **Re-enter file values** — have the user refill that recorded file using
+  the command below, then retry that service's merge before continuing.
+- **Continue without file values** — remove only that service's input record
+  from the merge loop, preserving any env values already in its saved spec.
+  Keep the input file and remember its path for the retained-file recap;
+  exclude that path from cleanup even if another service uses it. Continue
+  with the remaining service merges. This also handles a service that needs
+  no env values.
+- **Cancel** — stop authoring and report the retained draft and input paths.
+
+For **Re-enter file values**, give the user this command in their separate
+`bash` terminal:
+
+```bash
+cat > 'ENV_RETRY_FILE'
+```
+
+Replace `'ENV_RETRY_FILE'` with that service's recorded `env-file-path` as a
+properly shell-escaped literal, including any apostrophes. Do not use
+`ENV_INPUT_PATH`: repeated recipes leave it pointing at the last file,
+which may belong to another service. Keep the existing input record and
+its `recipe-created` flag; this command reuses the same file.
+
+The terminal shows no prompt while `cat` waits for input. Type or paste the
+KEY=VALUE lines there, press Enter, then Ctrl+D. When the shell prompt
+returns, retry the merge with that same recorded path. Another empty result
+returns to the choices above. Do not report the spec as ready while a file
+input is awaiting the user's retry, skip or cancel choice.
+
+If the script errors out (invalid dotenv line, unknown service, unreadable
+file), surface the error and stop. These input errors leave the saved spec
+unchanged; earlier successful service merges remain. Have the user correct the reported input
 problem privately, then retry the merge for that service and continue any
 remaining service merges before deploying.
 
@@ -524,8 +551,9 @@ rm -- 'TEMP_ENV_INPUT_FILE'
 Replace `'TEMP_ENV_INPUT_FILE'` with the confirmed temporary file's path as
 a properly shell-escaped literal, including any apostrophes. Repeating the
 recipe reassigns `ENV_INPUT_PATH`, so that variable names only the last file.
-List the paths of pre-existing or unconfirmed input files left in place,
-without their contents.
+List the paths of pre-existing or unconfirmed input files, files with
+conflicting origin confirmations, and files retained by **Continue without
+file values**, without their contents.
 The values are now in the spec at `$SAVED_PATH` (mode 0600) and on the user's
 responsibility to manage.
 

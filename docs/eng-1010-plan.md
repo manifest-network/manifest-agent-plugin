@@ -13,9 +13,10 @@ Status: review corrections implemented and verified on Linux with Node 24.15.0.
    recipe in `workflows/init-agent.md`, `workflows/import-key.md` and
    `workflows/author-manifest.md`. Keep the README's adjacent advice consistent.
 2. Preserve private temporary files, stdin pipes and path-only collection.
-   Explain Ctrl+D explicitly and clean up every confirmed recipe-created
-   temporary file. Preserve supplied pre-existing files and files of unknown
-   origin, including when the recipe is repeated for several services.
+   Explain Ctrl+D explicitly and offer cleanup for confirmed recipe-created
+   temporary files after all their merges succeed. Preserve skipped inputs,
+   supplied pre-existing files and files of unknown or conflicting origin,
+   including when the recipe is repeated for several services.
 3. Regenerate the tracked Claude skills and build the native Codex package.
    Inspect all six generated recipes for adjacent shell guidance and complete
    cleanup. Use literal
@@ -65,6 +66,17 @@ found an env-paste hazard and remaining instruction/test gaps.
 | 5: contributor token advice incorrectly includes raw host fragments | Document token expansion for workflow sources/fragments and literal host tool names for raw `hosts/` fragments. |
 | Nits | Clarify that labels are collected as non-sensitive chat pairs; describe waiting `cat` in both mnemonic recipes; document the limited shell-noun guard and the mnemonic-only privacy guard. The general renderer correction remains in ENG-1029. |
 
+The [fourth review of fe284b2](https://github.com/manifest-network/manifest-agent-plugin/pull/24#issuecomment-5734768653)
+confirmed the paste/history fix and identified recovery and coverage gaps.
+
+| Finding | Resolution |
+| --- | --- |
+| 1: an empty env retry can target the last collected file or loop indefinitely | Supply a `cat` re-entry command with the affected service's recorded path as a shell-escaped literal, retaining its input record and origin flag. Offer continuation without file values or cancellation; retain and list skipped files, including shared paths. |
+| 2: the origin question and cleanup rules can disappear without a test failure | Check both renders for the host question tool, all three origin choices, conservative flag defaults, the record carried into merging, the confirmed-only cleanup filter, completion of all associated merges, conflicting origins and retained-file reporting. |
+| 3: contributor entry points omit the shell/tool naming rule | Link the convention from the workflow-editing paragraph and add a PR checklist item in `CONTRIBUTING.md`. |
+| Origin and empty-input nits | Trigger the origin question after offering the recipe, without assuming how a supplied path was created. Exercise empty merges with and without an existing env map, documenting the helper's rewrite and `env: {}` insertion. |
+| Other checked nits | Keep the Bash-order check in one sentence while accepting abbreviation examples; require "press Enter" before Ctrl+D; describe the renderer's full workflow scope; align README cleanup with completion of every service using the file. |
+
 ## Release boundary
 
 Published v0.5.0 evidence and source hashes remain unchanged. All four host
@@ -79,7 +91,7 @@ macOS/Windows compatibility.
 - Before the corrections, regressions detected the contradictory Codex warning,
   missing per-file cleanup command, and both hosts' literal-`^D` parse errors.
   Further guards reproduced the unscoped cleanup advice and combined mnemonic
-  input/instruction blocks. All 97 package, env and wallet workflow tests pass.
+  input/instruction blocks. All 101 package, env and wallet workflow tests pass.
 - Isolated source mutations confirmed that the recipe guidance test fails when
   its adjacent advice is removed or a capitalized shell name becomes
   `exec_command` in the Codex render.
@@ -90,6 +102,15 @@ macOS/Windows compatibility.
   and after-the-commands timing with an unrelated "first". Positive controls
   accept lowercase shell negation, "before these commands", and an `e.g.`
   parenthetical example.
+- Fourth-review fixtures execute recorded-path retries for two services on
+  both hosts, preserving the other input and merging each service's own keys.
+  Empty and comment-only inputs cover existing and absent env maps; the helper
+  preserves existing values but rewrites the draft and adds `env: {}` if absent.
+  Render guards cover the origin question, record handling, cleanup eligibility,
+  retained inputs and retry/skip/cancel choices.
+  Eighteen isolated regressions were rejected, including retrying through the
+  last-file variable, omitted origin/cleanup rules, cross-sentence ordering
+  and reversed Enter/Ctrl+D instructions. Both valid ordering controls passed.
 - Both hosts' generated env commands create mode `0600` files, merge sample
   input through stdin, preserve private spec permissions, and emit no values.
   Cleanup fixtures remove both recipe-created paths despite a reassigned input
@@ -109,7 +130,7 @@ macOS/Windows compatibility.
   review-time checks, not native macOS or Windows acceptance.
 - Removing only the broad `Bash` rewrite changes none of the current 14 Codex
   renders, confirming the independent builder follow-up's reproduction.
-- The full Linux suite passed 997 tests with zero failures using
+- The full Linux suite passed 1,001 tests with zero failures using
   `--test-concurrency=1`; three PowerShell checks were skipped because `pwsh`
   is unavailable. Subprocess fixtures ran outside the workspace sandbox.
 - Claude generation, Codex packaging, all 14 generated-skill checks, affected
