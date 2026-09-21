@@ -33,7 +33,7 @@ function assertEnvInputOriginGates(rendered) {
   // guard for the workflow's placeholder/variable conventions, not a shell
   // parser. Draft and journal staging have separate ownership contracts.
   const envText = rendered.slice(rendered.indexOf('**env** —'), rendered.indexOf('**labels**'))
-    + rendered.slice(rendered.indexOf('**If the user picked "From a file"'), rendered.indexOf('## Step 8'));
+    + rendered.slice(rendered.indexOf('**If the user picked "From a file"'), rendered.indexOf('## Step 9'));
   const commands = [...envText.matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)];
   let creations = 0, gated = 0;
   for (const block of commands) {
@@ -213,8 +213,8 @@ for (const host of ['claude', 'codex']) {
 
   test(`${host} origin gate selects input path targets across command verbs and argument positions`, () => {
     const rendered = envInstructions();
-    const insert = (command, intro) => rendered.replace('**labels**',
-      () => `${intro}\n\n\`\`\`bash\n${command}\n\`\`\`\n\n**labels**`);
+    const insert = (command, intro, before = '**labels**') => rendered.replace(before,
+      () => `${intro}\n\n\`\`\`bash\n${command}\n\`\`\`\n\n${before}`);
     const ungated = 'Use the following command:';
     const gated = 'Only for eligible inputs with `recipe-created: true`, use:';
     for (const command of [
@@ -239,6 +239,10 @@ for (const host of ['claude', 'codex']) {
       const command = `node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" --spec-file "$SAVED_PATH" < ${path}`;
       assert.doesNotThrow(() => assertEnvInputOriginGates(insert(command, ungated)), command);
     }
+    // Step 8 dispatches cleanup too; inlining a command there must retain its gate.
+    const cleanup = "rm -- 'TEMP_ENV_INPUT_FILE'";
+    assert.throws(() => assertEnvInputOriginGates(insert(cleanup, ungated, '## Step 9')), /origin gate required/);
+    assert.doesNotThrow(() => assertEnvInputOriginGates(insert(cleanup, gated, '## Step 9')));
   });
 
   test(`${host} env retry refills the recorded service input without overwriting the last collected file`, () => {

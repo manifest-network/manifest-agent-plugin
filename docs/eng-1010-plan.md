@@ -101,6 +101,13 @@ identified narrower-than-documented guards and two recovery-choice gaps.
 | Nits | Move Revalidate before cleanup, dispatch successful cleanup explicitly from Step 8 after its checks, and route malformed saved digests through the same stop section. Rename the new-input command fixture to state its actual reach. Pin the PR body's plan link to a commit. |
 | Follow-up | Track a tested CJS ledger for origins, contributions, retention and cleanup eligibility in [ENG-1045](https://linear.app/liftedinit/issue/ENG-1045); keep that architectural change separate from this PR. |
 
+The [seventh review of 3bc6c07](https://github.com/manifest-network/manifest-agent-plugin/pull/24#issuecomment-5761947854)
+found one prospective coverage gap: the origin guard stopped before Step 8,
+which now calls cleanup. The scan now covers the Step 8 report, ending
+before Step 9's journal staging. An ungated cleanup block inserted into Step 8
+must fail on both hosts; the same block with its origin gate must pass. The
+existing image checker remains unaffected. No workflow commands change.
+
 ## Release boundary
 
 Published v0.5.0 evidence and source hashes remain unchanged. All four host
@@ -154,6 +161,9 @@ macOS/Windows compatibility.
   cleanup and missing success dispatches. Valid Enter parenthetical and origin
   hard-wrap controls pass. These source mutations run only the relevant env
   tests, so a stale generated-file check cannot mask a missing guard.
+- Seventh-review controls reproduce the missing Step 8 cleanup gate with two
+  expected failures before widening the scan. After the fix, both hosts reject
+  that ungated cleanup and accept its gated counterpart.
 - Both hosts' generated env commands create mode `0600` files, merge sample
   input through stdin, preserve private spec permissions, and emit no values.
   Cleanup fixtures remove both recipe-created paths despite a reassigned input

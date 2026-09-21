@@ -207,14 +207,16 @@ remain literal. Both refill and merge subprocesses run in the fixture
 directory so its sentinel catches accidental path execution.
 
 Command guards should select by the referenced paths, not the command verbs.
-The env guard scans Bash blocks in the env collection/recovery sections for
+The env guard scans Bash blocks in env collection and from the Step 7 merge
+instructions through the Step 8 report, including its cleanup call site, for
 single-quoted uppercase placeholders and references to `ENV_INPUT_PATH` or
 `ENV_FILE_PATH` (including braced variables). Those uses require an adjacent
 `recipe-created: true` gate, except the exact fresh-file capture, the exact
 path-display command, and paths used only as plain `<` stdin sources.
 It rejects ungated `cp`, `mv`, `truncate`, `unlink`, `tee`, `dd` and `rm`
-examples and accepts their gated equivalents. A second use of a stdin path,
-or a command appended to path display, still requires the gate. This guard
+examples and accepts their gated equivalents. The Step 8 cleanup control also
+rejects an ungated removal and accepts its gated counterpart. A second use of
+a stdin path, or a command appended to path display, still requires the gate. This guard
 checks the documented placeholder/variable conventions; it is not a shell
 parser or proof about arbitrary literals, aliases or model-generated commands.
 Draft and journal staging are outside its env-section scope.
