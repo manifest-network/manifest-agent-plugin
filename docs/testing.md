@@ -192,22 +192,36 @@ while allowing advice about the lowercase `bash` shell.
 README: the capture block ends at `cat`, data-entry and Enter/Ctrl+D guidance
 sits between blocks, and path display follows the returning shell prompt.
 The entry checks require an instruction to press Enter before Ctrl+D;
-the verb "enter" alone does not satisfy them.
+the verb "enter" alone does not satisfy them. Parenthetical `e.g.`/`i.e.`
+examples are accepted.
 It executes the commands with harmless stdin fixtures, checking mode `0600`,
 exact input contents, and no values in output. Generated merge commands must
 preserve values and private spec permissions. Empty and comment-only inputs
 exercise the helper's `keys_merged: []` response both with and without an
 existing env map: the helper rewrites the spec and adds `env: {}` when absent.
-A two-service fixture refills the first service's recorded file while
+A two-service fixture repairs empty and invalid confirmed temporary inputs while
 `ENV_INPUT_PATH` still names the last file, then checks that each service
-merges only its own values. The retry path includes spaces, an apostrophe
-and shell syntax, which must remain literal.
+merges only its own values and an earlier successful merge survives an error.
+The retry path includes spaces, an apostrophe and shell syntax, which must
+remain literal. Both refill and merge subprocesses run in the fixture
+directory so its sentinel catches accidental path execution.
 
-Prose guards require retry/skip/cancel choices, retained skipped inputs, the
-origin question and its three options, the origin flag carried through the
-merge loop, the confirmed-only cleanup filter, completion of every associated
-merge, preservation of conflicting origins, and the retained-file recap.
-These assertions do not execute a model's recovery or provenance decisions.
+Each env overwrite/removal example requires an adjacent `recipe-created: true`
+gate; the initial capture must create a fresh private file. This guard is
+scoped to env instructions, excluding draft and journal staging. Per-option
+assertions bind each recovery choice to its own rules, including origin
+restrictions, collection/confirmation of replacement paths, retention of old
+inputs, and skip/cancel semantics. Error handling must use the same recovery
+rules. Readiness and last-file-variable prohibitions are checked explicitly.
+
+Replacement fixtures preserve supplied and unknown-origin comment-only files
+at mode `0644`, creating separate mode `0600` inputs for the new values.
+Cancellation fixtures retain a partial draft and failed input while executing
+cleanup only for a completed temporary input. Prose guards require contributing
+services, the saved-values caveat, and eligible cleanup on every early stop.
+Contribution and retention recaps may share a path used by different services.
+The origin question, conservative defaults and cleanup eligibility rules remain
+guarded. These assertions do not execute a model's recovery or provenance decisions.
 Cleanup command cases provide confirmed recipe-created paths,
 including spaces, apostrophes and shell syntax, while `ENV_INPUT_PATH` refers
 only to the last file. Those temporaries must be removed while supplied

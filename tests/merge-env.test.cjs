@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync, existsSync } = require('node:fs');
+const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, chmodSync, rmSync, existsSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -11,6 +11,22 @@ const { renderSkill } = require('../ci/build-packages.cjs');
 const ROOT = join(__dirname, '..');
 const SCRIPT = join(ROOT, 'scripts', 'merge-env.cjs');
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+const ENTRY_ORDER = /\b[Pp]ress\s+Enter\b(?:e\.g\.|i\.e\.|[^.!?])*?Ctrl\+D\b[\s\S]*prompt\s+returns/;
+
+function section(text, heading) {
+  const content = text.split(`### ${heading}\n`)[1]?.split(/\n#{2,3} /)[0];
+  assert.ok(content, `missing section: ${heading}`);
+  return content;
+}
+
+function recoveryChoices(text) {
+  const matches = [...section(text, 'Env input recovery').matchAll(/^- \*\*([^*\n]+)\*\* — ([^\n]*(?:\n[ \t]+[^\n]+)*)/gm)];
+  assert.equal(matches.length, 5, 'document the five choices across both origin cases');
+  const choices = new Map(matches.map(match => [match[1], match[2]]));
+  assert.deepEqual([...choices.keys()], ['Re-enter file values', 'Create a new temporary file',
+    'I edited my file — retry', 'Continue without file values', 'Cancel']);
+  return choices;
+}
 
 function withDataDir(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'manifest-merge-env-test-'));
@@ -35,7 +51,7 @@ function captureEnvRecipe(text, dataDir) {
   const between = text.slice(recipe[0].index + recipe[0][0].length, recipe[1].index);
   assert.match(between, /KEY=VALUE/);
   assert.match(between, /no prompt/);
-  assert.match(between, /\b[Pp]ress\s+Enter\b[^.!?]*Ctrl\+D\b[\s\S]*prompt\s+returns/);
+  assert.match(between, ENTRY_ORDER);
   const payload = 'KEY1=value1\nKEY2=value2\n';
   // The user sends values to the waiting cat, then runs the path-display block.
   // Neither values nor instructions may be part of the shell command blocks.
@@ -89,22 +105,11 @@ for (const host of ['claude', 'codex']) {
   test(`${host} empty env input offers recorded-path retry or skip and preserves existing values`, () => {
     withDataDir(dataDir => {
       const rendered = envInstructions();
-      const recovery = rendered.match(/If `keys_merged` is empty[\s\S]*?(?=\nIf the script errors out)/)?.[0];
+      const recovery = rendered.match(/If `keys_merged` is empty[\s\S]*?(?=\n\n)/)?.[0];
       assert.ok(recovery, 'handle the empty keys_merged response');
       assert.match(recovery, /\bstop\b/);
-      assert.match(recovery, /Keep the input\s+file and draft/);
-      assert.ok(recovery.includes(host === 'claude' ? '`AskUserQuestion`' : '`request_user_input`'));
-      for (const choice of ['Re-enter file values', 'Continue without file values', 'Cancel']) {
-        assert.ok(recovery.includes(`**${choice}**`), choice);
-      }
-      assert.match(recovery, /cat > 'ENV_RETRY_FILE'/);
-      assert.match(recovery, /recorded `env-file-path`[\s\S]*shell-escaped literal/);
-      assert.match(recovery, /retry[\s\S]*before continuing/);
-      assert.match(recovery, /Keep the existing input record[\s\S]*`recipe-created` flag/);
-      assert.match(recovery, /no prompt[\s\S]*press Enter[^.!?]*Ctrl\+D[\s\S]*prompt\s+returns/);
-      assert.match(recovery, /remove only that service's input record[\s\S]*preserving any env values/);
-      assert.match(recovery, /Keep the input file[\s\S]*retained-file recap/);
-      assert.match(recovery, /exclude that path from cleanup even if another service uses it/);
+      assert.match(recovery, /Keep the input file and draft/);
+      assert.match(recovery, /Env input recovery[\s\S]*recorded path and origin flag/);
       const specPath = join(dataDir, 'manifests-drafts', 'app.json');
       const inputPath = join(dataDir, 'empty.env');
       for (const initialEnv of [undefined, { EXISTING: 'fixture-only' }]) for (const input of ['', '# comment only\n\n']) {
@@ -129,8 +134,72 @@ for (const host of ['claude', 'codex']) {
     });
   });
 
+  test(`${host} env recovery keeps origin restrictions and each option's semantics together`, () => {
+    const rendered = envInstructions();
+    const recovery = section(rendered, 'Env input recovery');
+    assert.ok(recovery.includes(host === 'claude' ? '`AskUserQuestion`' : '`request_user_input`'));
+    const eligibility = recovery.split('\n- **')[0];
+    assert.match(eligibility, /readable,[\s\S]*confirmed temporary input eligible under the mutation rule/);
+    assert.match(eligibility, /Otherwise offer[\s\S]*Create a new[\s\S]*temporary file[\s\S]*I edited my file — retry/);
+    assert.match(eligibility, /Pre-existing, unknown-origin, conflicting, retained or unreadable inputs\s+must not be offered the Re-enter command/);
+    const choices = recoveryChoices(rendered);
+    const reenter = choices.get('Re-enter file values');
+    assert.match(reenter, /only for an eligible `recipe-created: true`/);
+    assert.match(reenter, /recorded file[\s\S]*gated command[\s\S]*retry[\s\S]*before continuing/);
+    const create = choices.get('Create a new temporary file');
+    assert.match(create, /rerun Step 4's creation recipe/);
+    assert.match(create, /Collect\s+the new path and ask its origin question again/);
+    assert.match(create, /Keep the old path in\s+`RETAINED_ENV_INPUT_PATHS` and exclude it from cleanup/);
+    assert.match(create, /Replace only the affected service's input record[\s\S]*new path[\s\S]*new `recipe-created` flag/);
+    assert.match(create, /Preserve earlier `MERGED_ENV_INPUTS` entries/);
+    const edited = choices.get('I edited my file — retry');
+    assert.match(edited, /user confirms their private edit[\s\S]*retry the merge at the same recorded path/);
+    assert.match(edited, /Preserve its\s+origin flag and do not supply a command that writes/);
+    const skip = choices.get('Continue without file values');
+    assert.match(skip, /remove only that service's input record[\s\S]*preserving any env values/);
+    assert.match(skip, /Keep the input file[\s\S]*retained-file recap/);
+    assert.match(skip, /exclude that path from cleanup even if another service uses it/);
+    const cancel = choices.get('Cancel');
+    assert.match(cancel, /Stopping after the draft was saved/);
+    assert.match(cancel, /report contributing services and retained paths[\s\S]*warn about saved env\s+values[\s\S]*offer eligible temporary-file cleanup/);
+    assert.match(recovery, /recorded `env-file-path`[\s\S]*shell-escaped literal/);
+    assert.match(recovery, /Do not use\s+`ENV_INPUT_PATH`/);
+    assert.match(recovery, /Keep the existing input record[\s\S]*confirmed `recipe-created: true` flag/);
+    assert.match(recovery, ENTRY_ORDER);
+    assert.match(recovery, /Do not report the spec as ready while a file\s+input is awaiting/);
+    const errors = rendered.match(/If the script errors out[\s\S]*?(?=\n###)/)?.[0];
+    assert.match(errors, /Invalid dotenv input and unreadable files use \*\*Env input recovery\*\*[\s\S]*recorded path and origin flag/);
+    assert.match(errors, /unknown service[\s\S]*service-name binding[\s\S]*same recorded input path; do not rewrite/);
+    assert.match(errors, /recovery is abandoned[\s\S]*Stopping after\s+the draft was saved/);
+  });
+
+  test(`${host} every env overwrite or removal example has an adjacent origin gate`, () => {
+    const rendered = envInstructions();
+    assert.match(rendered, /commands that overwrite or remove an existing\s+env input require `recipe-created: true`/);
+    assert.match(rendered, /Apply this rule to every retry,\s+error-recovery and cleanup command/);
+    // Scope this rule to env collection/recovery, excluding unrelated draft
+    // and journal staging files, which have their own ownership contracts.
+    const envText = rendered.slice(rendered.indexOf('**env** —'), rendered.indexOf('**labels**'))
+      + rendered.slice(rendered.indexOf('**If the user picked "From a file"'), rendered.indexOf('## Step 8'));
+    const commands = [...envText.matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)];
+    let creations = 0, gated = 0;
+    for (const block of commands) {
+      if (!/\brm\s|>/.test(block[2])) continue;
+      if (block[2].includes('ENV_INPUT_PATH=$(mktemp)')) {
+        assert.match(block[2], /^umask 077\nENV_INPUT_PATH=\$\(mktemp\)\ncat > "\$ENV_INPUT_PATH"\s*$/);
+        creations++;
+        continue;
+      }
+      const intro = envText.slice(0, block.index).trimEnd().split(/\n\s*\n/).at(-1);
+      assert.match(intro, /^Only for[\s\S]*`recipe-created: true`/, block[2]);
+      gated++;
+    }
+    assert.equal(creations, 1, 'only the initial capture creates a fresh input');
+    assert.equal(gated, 2, 'retry and cleanup both require an origin gate');
+  });
+
   test(`${host} env retry refills the recorded service input without overwriting the last collected file`, () => {
-    withDataDir(dataDir => {
+    for (const initialInput of ['', 'INVALID_LINE\n']) withDataDir(dataDir => {
       const commands = envCommands();
       const retry = commands.find(command => command.includes("'ENV_RETRY_FILE'"));
       assert.ok(retry, 'provide a re-entry command with a recorded-path placeholder');
@@ -139,7 +208,8 @@ for (const host of ['claude', 'codex']) {
       const last = join(dataDir, 'last service.env');
       const firstInput = 'FIRST=first-fixture-value\n';
       const lastInput = 'LAST=last-fixture-value\n';
-      writeFileSync(first, '', { mode: 0o600 });
+      // This branch's origin is explicitly confirmed as recipe-created.
+      writeFileSync(first, initialInput, { mode: 0o600 });
       writeFileSync(last, lastInput, { mode: 0o600 });
       const specPath = join(dataDir, 'manifests-drafts', 'stack.json');
       writeFileSync(specPath, JSON.stringify({ services: {
@@ -147,16 +217,25 @@ for (const host of ['claude', 'codex']) {
       } }));
       const env = { PATH: process.env.PATH, MANIFEST_PLUGIN_ROOT: ROOT,
         MANIFEST_PLUGIN_DATA: dataDir, SAVED_PATH: specPath, ENV_INPUT_PATH: last };
-      const mergeService = (name, path) => {
+      const mergeService = (name, path, expectedStatus = 0) => {
         const result = spawnSync('bash', ['--noprofile', '--norc', '-c', merge], {
-          encoding: 'utf8', env: { ...env, SERVICE_NAME: name, ENV_FILE_PATH: path },
+          cwd: dataDir, encoding: 'utf8', env: { ...env, SERVICE_NAME: name, ENV_FILE_PATH: path },
         });
         assert.ifError(result.error);
-        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.status, expectedStatus, result.stderr);
         assert.doesNotMatch(result.stdout + result.stderr, /first-fixture-value|last-fixture-value|keep-fixture/);
+        if (expectedStatus) {
+          assert.match(result.stderr, /missing '='/);
+          return;
+        }
         return JSON.parse(result.stdout);
       };
-      assert.deepEqual(mergeService('first', first).keys_merged, []);
+      assert.deepEqual(mergeService('last', last).keys_merged, ['LAST']);
+      if (initialInput) {
+        const before = readFileSync(specPath);
+        mergeService('first', first, 1);
+        assert.deepEqual(readFileSync(specPath), before, 'failed input preserves the earlier service merge');
+      } else assert.deepEqual(mergeService('first', first).keys_merged, []);
       const refill = spawnSync('bash', ['--noprofile', '--norc', '-c',
         retry.replace("'ENV_RETRY_FILE'", () => quote(first))], {
         cwd: dataDir, input: firstInput, encoding: 'utf8', env,
@@ -169,10 +248,98 @@ for (const host of ['claude', 'codex']) {
       assert.equal(statSync(first).mode & 0o777, 0o600);
       assert.equal(existsSync(join(dataDir, 'unexpected')), false);
       assert.deepEqual(mergeService('first', first).keys_merged, ['FIRST']);
-      assert.deepEqual(mergeService('last', last).keys_merged, ['LAST']);
       const saved = JSON.parse(readFileSync(specPath));
       assert.deepEqual(saved.services.first.env, { EXISTING: 'keep-fixture', FIRST: 'first-fixture-value' });
       assert.deepEqual(saved.services.last.env, { LAST: 'last-fixture-value' });
+      assert.equal(existsSync(join(dataDir, 'unexpected')), false);
+    });
+  });
+
+  test(`${host} replacing pre-existing or unknown-origin input preserves its bytes and mode`, () => {
+    for (const origin of ['pre-existing', 'unknown']) withDataDir(dataDir => {
+      const rendered = envInstructions();
+      const choices = recoveryChoices(rendered);
+      assert.match(choices.get('Create a new temporary file'), /new path and ask its origin question again/);
+      const supplied = join(dataDir, `${origin}.env.example`);
+      const original = '# project template\n# preserve these comments\n';
+      writeFileSync(supplied, original);
+      chmodSync(supplied, 0o644);
+      const specPath = join(dataDir, 'manifests-drafts', 'app.json');
+      writeFileSync(specPath, JSON.stringify({ services: { app: { image: 'fixture' } } }));
+      const mergeCommand = envCommands().find(command => command.includes('scripts/merge-env.cjs'));
+      const merge = path => {
+        const result = spawnSync('bash', ['--noprofile', '--norc', '-c', mergeCommand], {
+          cwd: dataDir, encoding: 'utf8', env: { PATH: process.env.PATH, MANIFEST_PLUGIN_ROOT: ROOT,
+            MANIFEST_PLUGIN_DATA: dataDir, SAVED_PATH: specPath, SERVICE_NAME: 'app', ENV_FILE_PATH: path },
+        });
+        assert.ifError(result.error);
+        assert.equal(result.status, 0, result.stderr);
+        assert.doesNotMatch(result.stdout + result.stderr, /value1|value2/);
+        return JSON.parse(result.stdout);
+      };
+      assert.deepEqual(merge(supplied).keys_merged, []);
+      // The driver chooses Create for a false/unknown origin, collects the
+      // fresh path and supplies the user's new origin confirmation.
+      const replacement = captureEnvRecipe(rendered, dataDir);
+      assert.notEqual(replacement, supplied);
+      assert.deepEqual(merge(replacement).keys_merged, ['KEY1', 'KEY2']);
+      assert.deepEqual(JSON.parse(readFileSync(specPath)).services.app.env, { KEY1: 'value1', KEY2: 'value2' });
+      assert.equal(statSync(replacement).mode & 0o777, 0o600);
+      assert.equal(readFileSync(supplied, 'utf8'), original);
+      assert.equal(statSync(supplied).mode & 0o777, 0o644);
+    });
+  });
+
+  test(`${host} cancellation after a partial merge keeps the draft and failed input while allowing completed-input cleanup`, () => {
+    const rendered = envInstructions();
+    const stopping = section(rendered, 'Stopping after the draft was saved');
+    assert.match(stopping, /On cancellation or any other early stop, keep the draft/);
+    assert.match(stopping, /contributing services and input paths from `MERGED_ENV_INPUTS` \(keys\s+only\)/);
+    assert.match(stopping, /If env values were saved[\s\S]*do not commit or share this draft[\s\S]*redacting secrets/);
+    assert.match(stopping, /Apply \*\*Env input cleanup\*\*[\s\S]*eligible merged temporary inputs/);
+    assert.match(stopping, /has not confirmed a completed spec/);
+    assert.match(stopping, /Keep pending, failed and retained inputs/);
+    assert.match(stopping, /Do not report the draft as ready or give a deployment command/);
+    assert.match(section(rendered, 'Env input cleanup'), /On cancellation or another stop[\s\S]*without requiring confirmation of a completed spec/);
+    assert.match(section(rendered, 'Revalidate the saved spec'), /If validation fails[\s\S]*Stopping after the draft was saved/);
+    withDataDir(dataDir => {
+      const completed = join(dataDir, 'completed.env');
+      const failed = join(dataDir, 'failed.env');
+      writeFileSync(completed, 'SAVED=fixture-saved-value\n', { mode: 0o600 });
+      writeFileSync(failed, 'INVALID_LINE\n', { mode: 0o600 });
+      const specPath = join(dataDir, 'manifests-drafts', 'partial.json');
+      writeFileSync(specPath, JSON.stringify({ services: {
+        completed: { image: 'fixture' }, failed: { image: 'fixture' },
+      } }));
+      const commands = envCommands();
+      const mergeCommand = commands.find(command => command.includes('scripts/merge-env.cjs'));
+      const env = { PATH: process.env.PATH, MANIFEST_PLUGIN_ROOT: ROOT,
+        MANIFEST_PLUGIN_DATA: dataDir, SAVED_PATH: specPath };
+      const contributions = [];
+      for (const [service, path, status] of [['completed', completed, 0], ['failed', failed, 1]]) {
+        const result = spawnSync('bash', ['--noprofile', '--norc', '-c', mergeCommand], {
+          cwd: dataDir, encoding: 'utf8', env: { ...env, SERVICE_NAME: service, ENV_FILE_PATH: path },
+        });
+        assert.ifError(result.error);
+        assert.equal(result.status, status, result.stderr);
+        assert.doesNotMatch(result.stdout + result.stderr, /fixture-saved-value/);
+        if (!status) contributions.push(JSON.parse(result.stdout));
+      }
+      assert.deepEqual(contributions, [{ service: 'completed', keys_merged: ['SAVED'] }]);
+      const beforeCleanup = readFileSync(specPath);
+      const cleanup = commands.find(command => command.startsWith('rm -- '));
+      // The user accepts cleanup for the completed recipe-created input only.
+      const result = spawnSync('bash', ['--noprofile', '--norc', '-c',
+        cleanup.replace("'TEMP_ENV_INPUT_FILE'", () => quote(completed))], {
+        cwd: dataDir, encoding: 'utf8', env: { PATH: process.env.PATH },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(existsSync(completed), false);
+      assert.equal(readFileSync(failed, 'utf8'), 'INVALID_LINE\n');
+      assert.deepEqual(readFileSync(specPath), beforeCleanup);
+      assert.equal(JSON.parse(beforeCleanup).services.completed.env.SAVED, 'fixture-saved-value');
+      assert.equal(statSync(specPath).mode & 0o777, 0o600);
     });
   });
 
@@ -191,12 +358,16 @@ for (const host of ['claude', 'codex']) {
     assert.ok(origin.includes(record));
     const step7 = rendered.split('## Step 7')[1].split('## Step 8')[0];
     assert.ok(step7.includes(record));
+    assert.match(step7, /Keep the associated service names with each\s+retained path, even after removing or replacing its input record/);
     assert.match(step7, /Use only records with `recipe-created: true`/);
     assert.match(step7, /wait until every service using that file has merged successfully/);
     assert.match(step7, /Preserve\s+the file if its origin confirmations conflict/);
     assert.match(step7, /List the paths of pre-existing or unconfirmed input files/);
     assert.match(step7, /List the paths[\s\S]*conflicting origin confirmations/);
-    assert.match(step7, /List the paths[\s\S]*files retained by \*\*Continue without\s+file values\*\*/);
+    assert.match(step7, /List the paths[\s\S]*files retained\s+by \*\*Continue without file values\*\*/);
+    assert.match(step7, /path shared by\s+a merged service and a skipped service appears in both recaps/);
+    const report = rendered.split('## Step 8')[1].split('## Step 9')[0];
+    assert.match(report, /Independently list retained input paths;\s+a shared path may appear in both recaps/);
   });
 
   test(`${host} generated env cleanup removes recipe temporaries and preserves supplied input files`, () => {

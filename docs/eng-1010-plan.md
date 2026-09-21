@@ -58,7 +58,7 @@ found an env-paste hazard and remaining instruction/test gaps.
 
 | Finding | Resolution |
 | --- | --- |
-| Medium: pasting the combined env block puts values in shell history or invalid input in the file | End capture at `cat`, enter KEY=VALUE data separately, and print the path only after Ctrl+D returns the prompt. Apply the same structure to the README. Stop authoring on `keys_merged: []`, retain the input and draft, and retry after private correction. |
+| Medium: pasting the combined env block puts values in shell history or invalid input in the file | End capture at `cat`, enter KEY=VALUE data separately, and print the path only after Ctrl+D returns the prompt. Apply the same structure to the README. The initial stop-and-retry response to `keys_merged: []` is superseded by the origin-aware recovery choices described under the fifth review below. |
 | 1: negation guard rejects lowercase shell advice and misses "NOT use" | Keep tool names case-sensitive while accepting common negation casing, intervening verbs and hard line wraps. |
 | 2: ordering guard rejects valid wording but accepts unrelated "first" | Require "before" the commands or recipe, allowing "these commands" and parenthetical examples. |
 | 3: cleanup provenance lacks a concrete question and record | Ask whether the file came from the recipe, store `(service-name, env-file-path, recipe-created)` through merging, and preserve unknown or conflicting origins. Report retained input paths. |
@@ -71,11 +71,22 @@ confirmed the paste/history fix and identified recovery and coverage gaps.
 
 | Finding | Resolution |
 | --- | --- |
-| 1: an empty env retry can target the last collected file or loop indefinitely | Supply a `cat` re-entry command with the affected service's recorded path as a shell-escaped literal, retaining its input record and origin flag. Offer continuation without file values or cancellation; retain and list skipped files, including shared paths. Base the final values recap on nonempty merges, not on the input mode originally selected. |
+| 1: an empty env retry can target the last collected file or loop indefinitely | Supply a `cat` re-entry command with the affected service's recorded path as a shell-escaped literal. The fifth review restricts this command to confirmed temporary inputs and adds alternatives for other origins. Offer continuation without file values or cancellation; retain and list skipped files, including shared paths. Base the final values recap on nonempty merges, not on the input mode originally selected. |
 | 2: the origin question and cleanup rules can disappear without a test failure | Check both renders for the host question tool, all three origin choices, conservative flag defaults, the record carried into merging, the confirmed-only cleanup filter, completion of all associated merges, conflicting origins and retained-file reporting. |
 | 3: contributor entry points omit the shell/tool naming rule | Link the convention from the workflow-editing paragraph and add a PR checklist item in `CONTRIBUTING.md`. |
 | Origin and empty-input nits | Trigger the origin question after offering the recipe, without assuming how a supplied path was created. Exercise empty merges with and without an existing env map, documenting the helper's rewrite and `env: {}` insertion. |
 | Other checked nits | Keep the Bash-order check in one sentence while accepting abbreviation examples; require "press Enter" before Ctrl+D; describe the renderer's full workflow scope; align README cleanup with completion of every service using the file. |
+
+The [fifth review of 47e5292 and be352f8](https://github.com/manifest-network/manifest-agent-plugin/pull/24#issuecomment-5760682536)
+identified an unsafe retry for supplied files and gaps in early-stop handling.
+
+| Finding | Resolution |
+| --- | --- |
+| Medium: retry truncates supplied files at their existing permissions | Require `recipe-created: true`, consistent origin and no retention decision for commands that overwrite/remove existing env inputs. Gate both command blocks explicitly. Other origins offer a fresh Step 4 input with a new origin confirmation and record, or retry after the user's private edit; replaced paths are retained. |
+| 1: script-error recovery can improvise the wrong write target | Route invalid/unreadable input through the same origin-aware recovery. Correct unknown-service bindings against the saved spec without rewriting the input. |
+| 2: cancellation omits the saved-values caveat and cleanup offer | Track successful contributions independently of pending records. Every stop after saving reports the draft, contributing services and retained paths, warns about saved env values, and offers eligible completed-input cleanup without requiring a completed-spec confirmation. |
+| 3: recovery assertions borrow semantics from another option | Capture each option's own indented bullet and assert its rules there. Moving Skip rules into Cancel must fail. |
+| Nits | Treat contributions and retained paths as independent recaps; run merge subprocesses in the sentinel directory; accept `i.e.` in keypress guidance; pin the last-file-variable/readiness prohibitions; mark the earlier recovery resolution as superseded. |
 
 ## Release boundary
 
@@ -91,7 +102,7 @@ macOS/Windows compatibility.
 - Before the corrections, regressions detected the contradictory Codex warning,
   missing per-file cleanup command, and both hosts' literal-`^D` parse errors.
   Further guards reproduced the unscoped cleanup advice and combined mnemonic
-  input/instruction blocks. All 101 package, env and wallet workflow tests pass.
+  input/instruction blocks. All 109 package, env and wallet workflow tests pass.
 - Isolated source mutations confirmed that the recipe guidance test fails when
   its adjacent advice is removed or a capitalized shell name becomes
   `exec_command` in the Codex render.
@@ -111,6 +122,15 @@ macOS/Windows compatibility.
   Eighteen isolated regressions were rejected, including retrying through the
   last-file variable, omitted origin/cleanup rules, cross-sentence ordering
   and reversed Enter/Ctrl+D instructions. Both valid ordering controls passed.
+- Fifth-review fixtures reproduce the old supplied-file truncation at mode
+  `0644` even with `umask 077`. Replacement inputs are mode `0600` while the
+  supplied templates retain their bytes and permissions. Empty and invalid
+  confirmed temporary inputs recover without changing another service's file
+  or losing earlier merged values. Cancellation preserves the partial draft
+  and failed input while allowing completed temporary-file cleanup.
+  Fourteen isolated regressions were rejected, including removed origin gates,
+  missing early-stop handling and Skip rules moved into Cancel. The `press
+  Enter (i.e. Return)` control passed.
 - Both hosts' generated env commands create mode `0600` files, merge sample
   input through stdin, preserve private spec permissions, and emit no values.
   Cleanup fixtures remove both recipe-created paths despite a reassigned input
@@ -130,7 +150,7 @@ macOS/Windows compatibility.
   review-time checks, not native macOS or Windows acceptance.
 - Removing only the broad `Bash` rewrite changes none of the current 14 Codex
   renders, confirming the independent builder follow-up's reproduction.
-- The full Linux suite passed 1,001 tests with zero failures using
+- The full Linux suite passed 1,009 tests with zero failures using
   `--test-concurrency=1`; three PowerShell checks were skipped because `pwsh`
   is unavailable. Subprocess fixtures ran outside the workspace sandbox.
 - Claude generation, Codex packaging, all 14 generated-skill checks, affected

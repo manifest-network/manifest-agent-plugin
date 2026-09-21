@@ -216,6 +216,12 @@ recent file. Cleanup applies only to files created with this recipe. Keep
 supplied pre-existing files, inputs whose origin is uncertain, and files you
 chose to skip.
 
+Recovery overwrites only confirmed recipe-created inputs. For a supplied
+or uncertain file, create a new temporary input with the recipe above, or
+retry after editing your file privately. If you cancel after some merges,
+the draft keeps those values; the agent reports the contributing services,
+retained inputs and any completed temporary inputs eligible for cleanup.
+
 Note: env values still appear in `build_manifest_preview` and
 `deploy_app_orchestrated` MCP tool arguments during validation and deployment.
 Eliminating that exposure entirely needs upstream MCP changes.
