@@ -47,13 +47,21 @@ and gas price when re-writing the config.
 ## Step 1 — Get mnemonic file path
 
 Ask the user to provide the **path to a file** containing their mnemonic. They
-should create this file themselves in a separate terminal, e.g.:
+should create this file themselves in a separate terminal. Tell them to use the
+`bash` shell: if their usual shell is fish, run `bash` in that terminal before
+the commands below and stay in that shell session through temporary-file cleanup:
 
 ```bash
 umask 077
 MNEMONIC_INPUT_PATH=$(mktemp)
 cat > "$MNEMONIC_INPUT_PATH"
-# paste mnemonic, press Enter, then Ctrl+D
+```
+
+The terminal shows no prompt while `cat` waits for input. Paste **only the
+mnemonic words** there, press Enter, then Ctrl+D. When the shell prompt
+returns, run:
+
+```bash
 printf '%s\n' "$MNEMONIC_INPUT_PATH"
 ```
 
@@ -62,7 +70,8 @@ printf '%s\n' "$MNEMONIC_INPUT_PATH"
 Wait for the user to provide the file path before proceeding.
 
 **CRITICAL**: Do NOT ask the user to paste the mnemonic in the conversation.
-Do NOT read the mnemonic file. The file content must never enter Claude Code's context.
+Do NOT display the mnemonic file or read its contents into Claude Code's context.
+Pass it only to the import pipeline below via stdin.
 
 ## Step 2 — Import key and update config
 
@@ -100,7 +109,7 @@ legacy migration immediately. Explicit config writes also bypass the brief pause
 used by automatic startup attempts.
 
 Once the wallet/config pipeline succeeds, suggest the user delete their mnemonic file
-(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the separate terminal where they
+(e.g. `rm -- "$MNEMONIC_INPUT_PATH"` in the same `bash` session where they
 created it), even if final status verification is still pending.
 
 ### After a successful wallet/config pipeline — Verify saved settings

@@ -13,6 +13,16 @@ in `hosts/` contain only host integration differences. The builder resolves
 MCP names, skill invocations, local tools and questions before installation;
 the model never translates Claude tool names into Codex names.
 
+Use literal `bash` for the shell in workflow sources and fragments. In
+`workflows/*.md` and `workflows/fragments/*.md`, use `{{shell_tool}}` for the
+host tool. Host fragments such as `hosts/<host>/restart-confirmation.md`
+are inserted raw without token expansion; use the literal host tool name
+there (`Bash` for Claude, `exec_command` for Codex). The current Codex
+renderer rewrites capitalized `Bash` throughout workflows and inserted
+fragments, including shell advice.
+[ENG-1029](https://linear.app/liftedinit/issue/ENG-1029) tracks replacing that
+rewrite with an explicit token contract.
+
 ## Architecture
 
 **Plugin root is read-only in production.** Marketplace installs copy the plugin to `~/.claude/plugins/cache/`. All mutable state lives in `${CLAUDE_PLUGIN_DATA}` — Claude Code's persistent per-plugin data directory, resolved at runtime to `~/.claude/plugins/data/<id>/` and exposed to scripts as `$MANIFEST_PLUGIN_DATA` (exported by the SessionStart hook).

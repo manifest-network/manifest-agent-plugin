@@ -175,6 +175,92 @@ command with a serialized record containing the same hostile SKU-name
 patterns. It verifies literal preservation, no shell execution, and no
 environment secret in the journal or command output.
 
+## Secret-input recipe regressions (ENG-1010)
+
+`tests/build-packages.test.cjs` checks that every generated secret-file recipe
+has adjacent advice to start `bash` from fish and stay in that session through
+cleanup, with Bash started before the recipe commands. The ordering check
+stays within one sentence while allowing `e.g.`/`i.e.` examples. Generated workflows
+must not name `exec_command` as a session, shell or terminal. That three-noun
+check does not cover every possible shell reference; the broader renderer
+fix is tracked in [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029).
+For `init-agent` and `import-key`, source and render guards reject negated
+read/shell tool instructions, including an intervening verb or line break,
+while allowing advice about the lowercase `bash` shell.
+
+`tests/merge-env.test.cjs` checks both hosts' generated env recipes and the
+README: the capture block ends at `cat`, data-entry and Enter/Ctrl+D guidance
+sits between blocks, and path display follows the returning shell prompt.
+The entry checks require an instruction to press Enter before Ctrl+D;
+the verb "enter" alone does not satisfy them. Parenthetical `e.g.`/`i.e.`
+examples are accepted.
+It executes the commands with harmless stdin fixtures, checking mode `0600`,
+exact input contents, and no values in output. Generated merge commands must
+preserve values and private spec permissions. Empty and comment-only inputs
+exercise the helper's `keys_merged: []` response both with and without an
+existing env map: the helper rewrites the spec and adds `env: {}` when absent.
+A two-service fixture repairs empty and invalid confirmed temporary inputs while
+`ENV_INPUT_PATH` still names the last file, then checks that each service
+merges only its own values and an earlier successful merge survives an error.
+The retry path includes spaces, an apostrophe and shell syntax, which must
+remain literal. Both refill and merge subprocesses run in the fixture
+directory so its sentinel catches accidental path execution.
+
+Command guards should select by the referenced paths, not the command verbs.
+The env guard scans Bash blocks in env collection and from the Step 7 merge
+instructions through the Step 8 report, including its cleanup call site, for
+single-quoted uppercase placeholders and references to `ENV_INPUT_PATH` or
+`ENV_FILE_PATH` (including braced variables). Those uses require an adjacent
+`recipe-created: true` gate, except the exact fresh-file capture, the exact
+path-display command, and paths used only as plain `<` stdin sources.
+It rejects ungated `cp`, `mv`, `truncate`, `unlink`, `tee`, `dd` and `rm`
+examples and accepts their gated equivalents. The Step 8 cleanup control also
+rejects an ungated removal and accepts its gated counterpart. A second use of
+a stdin path, or a command appended to path display, still requires the gate. This guard
+checks the documented placeholder/variable conventions; it is not a shell
+parser or proof about arbitrary literals, aliases or model-generated commands.
+Draft and journal staging are outside its env-section scope.
+
+Per-option assertions bind each recovery choice to its own rules, including origin
+restrictions, collection/confirmation of replacement paths, retention of old
+inputs, and skip/cancel semantics. Error handling must use the same recovery
+rules. The private-edit retry must be offered for both origin cases. Recovery
+must explain the waiting terminal's lack of a prompt before Enter/Ctrl+D.
+Readiness and last-file-variable prohibitions are checked explicitly.
+
+New-input command fixtures explicitly choose creation and pass the fresh path
+to the merge. They verify a distinct mode `0600` input and an untouched mode
+`0644` supplied template; they do not test the origin-based choice itself.
+Cancellation fixtures retain a partial draft and failed input while executing
+cleanup only for a completed temporary input. Prose guards cover Cancel,
+abandoned recovery, failed revalidation, failed image checks and the general
+post-save stop rule. Their shared stop section requires contributing services,
+the saved-values caveat and eligible cleanup. Successful cleanup is ordered
+after revalidation and explicitly invoked from Step 8 after its checks pass.
+Contribution and retention recaps may share a path used by different services.
+The origin question, inherited answers for shared paths, conservative defaults,
+explicit-conflict rule and cleanup eligibility are guarded. These assertions
+do not execute a model's recovery or provenance decisions; moving that state
+into a tested script is tracked in [ENG-1045](https://linear.app/liftedinit/issue/ENG-1045).
+Cleanup command cases provide confirmed recipe-created paths,
+including spaces, apostrophes and shell syntax, while `ENV_INPUT_PATH` refers
+only to the last file. Those temporaries must be removed while supplied
+pre-existing and unknown-origin dotenv files remain byte-identical after
+merge and cleanup. The fixture supplies each file's origin; it does not test
+a model's provenance decision. No path contents may execute.
+
+`tests/workflow-config.test.cjs` also executes both hosts' separated mnemonic
+capture and path-display blocks and requires the words-only, waiting-terminal,
+Enter/Ctrl+D and returning-prompt instructions between them. The input file
+must contain only the supplied words, at mode `0600`, with no instructional
+comments or mnemonic output.
+These fixtures supply the choices and paths; they do not establish interactive
+model behavior.
+
+```bash
+node --test tests/build-packages.test.cjs tests/merge-env.test.cjs tests/workflow-config.test.cjs
+```
+
 ## Wallet gas-setting regressions (ENG-1009)
 
 `tests/workflow-config.test.cjs` executes both hosts' generated wallet pipelines,

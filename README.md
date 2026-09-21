@@ -184,25 +184,44 @@ The orchestrated tool handles plan rendering, fee itemization, dual-tx broadcast
 
 ### Sensitive env values (file-pipe pattern)
 
-For secrets like database passwords, the env prompt in `/manifest-agent:author-manifest` offers a "From a file" option. Create a dotenv file in a separate Bash terminal first (run `bash` first if your usual shell is fish):
+For secrets like database passwords, the env prompt in `/manifest-agent:author-manifest`
+offers a "From a file" option. Create a dotenv file in a separate Bash terminal.
+If your usual shell is fish, run `bash` in that terminal before the commands
+below and stay in that Bash session through temporary-file cleanup:
 
 ```bash
 umask 077
 ENV_INPUT_PATH=$(mktemp)
 cat > "$ENV_INPUT_PATH"
-WORDPRESS_DB_HOST=mysql
-WORDPRESS_DB_PASSWORD=hunter2
-^D
+```
+
+The terminal shows no prompt while `cat` waits for input. Type or paste your
+`KEY=VALUE` lines there, press Enter, then Ctrl+D. When the shell prompt
+returns, run:
+
+```bash
 printf '%s\n' "$ENV_INPUT_PATH"
 ```
 
-Press Ctrl-D where `^D` is shown, then tell the agent the printed path. `mktemp`
+Tell the agent the printed path. `mktemp`
 creates a fresh file with mode `0600`; an older file's permissions cannot carry
 over. Values flow through a script pipe into the spec file; they never enter
 the chat input box and the agent never echoes them in summaries. This uses the
 same fresh-file pattern as mnemonic import in `init-agent` / `import-key`.
-After a successful merge, remove the input file from the same terminal with
-`rm -- "$ENV_INPUT_PATH"`.
+After every service using an input file has merged successfully, validation
+and image checks pass, and you have confirmed the saved spec, remove that
+temporary input from the same Bash session with `rm -- "$ENV_INPUT_PATH"`.
+For several input files, use the agent's confirmed temporary-path list;
+`ENV_INPUT_PATH` names only the most
+recent file. Cleanup applies only to files created with this recipe. Keep
+supplied pre-existing files, inputs whose origin is uncertain, and files you
+chose to skip.
+
+Recovery overwrites only confirmed recipe-created inputs. You can edit any
+input privately and retry. For a supplied or uncertain file, you can also
+create a new temporary input with the recipe above. If you cancel after some
+merges, the draft keeps those values; the agent reports the contributing services,
+retained inputs and any completed temporary inputs eligible for cleanup.
 
 Note: env values still appear in `build_manifest_preview` and
 `deploy_app_orchestrated` MCP tool arguments during validation and deployment.

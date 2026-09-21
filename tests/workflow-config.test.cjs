@@ -41,6 +41,32 @@ function hostFixture(t, host) {
 }
 
 for (const host of ['claude', 'codex']) {
+  test(`${host} mnemonic recipes separate user input from terminal instructions`, t => {
+    const f = hostFixture(t, host);
+    for (const name of ['init-agent', 'import-key']) {
+      const text = fs.readFileSync(join(f.root, 'skills', name, 'SKILL.md'), 'utf8');
+      const recipe = [...text.matchAll(/```bash\n([\s\S]*?)\n```/g)]
+        .filter(match => match[1].includes('MNEMONIC_INPUT_PATH'));
+      assert.equal(recipe.length, 2, `${name}: capture and path display are separate blocks`);
+      const between = text.slice(recipe[0].index + recipe[0][0].length, recipe[1].index);
+      assert.match(between, /only the\s+mnemonic words/);
+      assert.match(between, /no prompt/);
+      assert.match(between, /\b[Pp]ress\s+Enter\b(?:e\.g\.|i\.e\.|[^.!?])*?Ctrl\+D\b[\s\S]*prompt\s+returns/);
+      const commands = recipe.map(match => match[1]);
+      assert.equal(commands[0].trimEnd().split('\n').at(-1), 'cat > "$MNEMONIC_INPUT_PATH"');
+      const input = 'abandon '.repeat(11) + 'about\n';
+      const result = spawnSync('bash', ['--noprofile', '--norc', '-c', commands.join('\n')], {
+        input, encoding: 'utf8', env: { PATH: process.env.PATH, TMPDIR: f.base },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, result.stderr);
+      const path = result.stdout.trim();
+      assert.equal(fs.readFileSync(path, 'utf8'), input);
+      assert.equal(fs.statSync(path).mode & 0o777, 0o600);
+      assert.doesNotMatch(result.stdout + result.stderr, /abandon|about/);
+    }
+  });
+
   for (const both of [false, true]) {
     test(`${host} gas ${both ? 'token and multiplier' : 'token'} workflow synchronizes displayed prices and refuses later registry changes`, t => {
       const f = hostFixture(t, host);

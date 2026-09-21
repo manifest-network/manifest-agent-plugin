@@ -245,20 +245,52 @@ list of paths.
   `build_manifest_preview` is the validator.
 - **Skip** — no env vars.
 
-If the user picks **From a file**, ask them to create the file in a
-**separate terminal**, e.g.:
+If the user picks **From a file**, accept an existing dotenv path or offer
+the recipe below. A supplied path alone does not establish whether it came
+from this recipe.
+
+For a new input file, use a **separate terminal**. Tell them to use the `bash`
+shell: if their usual shell is fish, run `bash` in that terminal before the
+commands below and stay in that shell session through temporary-file cleanup:
+
 ```bash
 umask 077
 ENV_INPUT_PATH=$(mktemp)
 cat > "$ENV_INPUT_PATH"
-KEY1=value1
-KEY2=value2
-^D
+```
+
+The terminal shows no prompt while `cat` waits for input. Type or paste your
+`KEY=VALUE` lines there, press Enter, then Ctrl+D. When the shell prompt
+returns, run:
+
+```bash
 printf '%s\n' "$ENV_INPUT_PATH"
 ```
 Tell them not to use `echo` (it lands in shell history). Wait for them to
-type the path back in chat. Store the path; the values are merged into the
-spec file in Step 7 — they do not flow through this conversation at collection time.
+type the path back in chat. For each path they type back after you offered
+the recipe, use
+`AskUserQuestion`: "Did you create `<path>` with this temporary-file recipe?"
+Offer **Yes, created with this recipe**, **No, existing file**, and **Not
+sure**. Skip this question if they already explicitly confirmed this path's
+origin, and copy that answer into the new record. A path has one origin flag
+shared by all its service records. Set `recipe-created` to true only for an
+explicit Yes, including an inherited Yes; use false for an existing file, No
+or Not sure. Missing/unclear confirmation defaults to false only when the path
+has no earlier answer. Different explicit origin answers for the same path
+constitute a conflict: mark every record for that path as conflicting and set
+its flag to false. Inheriting an answer or receiving no new answer is not a
+conflict. Store
+`(service-name, env-file-path, recipe-created)` for each input through Step 7.
+The values are merged into the spec file there — they do not flow through
+this conversation at collection time.
+
+**Env input mutation rule:** commands that overwrite or remove an existing
+env input require `recipe-created: true`, consistent origin confirmations
+for that path, and no decision to retain it. Apply this rule to every retry,
+error-recovery and cleanup command. Never offer such commands for pre-existing
+files or files of unknown or conflicting origin. The creation recipe above
+writes only to its fresh `mktemp` file. For other inputs, let the user edit
+privately or create a new temporary file with that recipe.
 
 You may combine **Type in chat** and **From a file** (collect non-sensitive
 in chat, then offer the file option for the rest). The file overlays — keys
@@ -273,9 +305,11 @@ present in both are taken from the file.
   `/manifest-agent:deploy-app` later loads the saved spec. Eliminating
   those exposures needs upstream support; do not promise context secrecy.
 
-Suggest the user delete the env file after a successful save.
+Suggest cleanup only for confirmed recipe-created temporary files after
+their values have been merged into the saved spec, as described in Step 7.
 
-**labels** — same loop as `env`.
+**labels** — collect non-sensitive KEY=VALUE pairs in chat: ask for KEY,
+then VALUE, offering **Add another** / **Done**, or **Skip** for no labels.
 
 **init** — ask "Run an init process inside the container? (Yes / Skip,
 default Skip)".
@@ -461,9 +495,19 @@ Capture it as `SAVED_PATH`. On failure, report the actual diagnostic;
 repair malformed references through Step 3, or resolve the reported path
 or permission problem. Never overwrite an existing draft to force a save.
 
+Track each successful nonempty merge in `MERGED_ENV_INPUTS` as
+`(service-name, env-file-path, keys_merged)`, independently of the input
+records still awaiting a merge. Track skipped or replaced input paths in
+`RETAINED_ENV_INPUT_PATHS`. Keep the associated service names with each
+retained path, even after removing or replacing its input record.
+Start both collections empty; skipping or replacing
+an input record must not erase earlier contributions. For any stop after the
+draft was saved, including cancellation, an unrecovered merge error or failed
+validation, follow **Stopping after the draft was saved** below.
+
 **If the user picked "From a file" for env in Step 4** (single-service or
 per-service in stacks), merge the file values into the saved spec now. For
-each (service-name, env-file-path) pair the user provided, bind
+each `(service-name, env-file-path, recipe-created)` record from Step 4, bind
 `SAVED_PATH`, `SERVICE_NAME` and `ENV_FILE_PATH` as shell-quoted literals in
 the same call. Do not display the env file or interpolate its values:
 
@@ -477,15 +521,75 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" \
 shape — this skill always emits the services-map shape, so always pass it.)
 
 The script outputs `{"service":"<name>","keys_merged":["KEY1",...]}` —
-report the keys to the user (no values appear). If the script errors out
-(invalid dotenv line, unknown service, unreadable file), surface the error
-verbatim and stop; the saved spec at `$SAVED_PATH` is left in a partial
-state and the user should investigate before deploying.
+report the keys to the user (no values appear). Record nonempty results in
+`MERGED_ENV_INPUTS`. If `keys_merged` is empty (`[]`), stop the merge loop:
+no env values were captured. Keep the input file and draft, and use
+**Env input recovery** for that service's recorded path and origin flag.
 
-Suggest the user delete each env file once they've confirmed the saved spec
-looks right (e.g. `rm -- "$ENV_INPUT_PATH"` in the same separate terminal
-where they created it). The values are now in the spec at `$SAVED_PATH`
-(mode 0600) and on the user's responsibility to manage.
+If the script errors out, report the diagnostic and stop the merge loop.
+Invalid dotenv input and unreadable files use **Env input recovery** with
+that service's recorded path and origin flag, just like empty inputs. For
+an unknown service, repair the service-name binding against the saved spec
+and retry with the same recorded input path; do not rewrite the input file.
+These input errors leave the saved spec unchanged; earlier successful
+service merges remain. If recovery is abandoned, follow **Stopping after
+the draft was saved**.
+
+### Env input recovery
+
+Use `AskUserQuestion` for the affected service and its recorded input path. Always
+include **I edited my file — retry**, **Continue without file values**, and
+**Cancel**. For a readable, confirmed temporary input eligible under the
+mutation rule, the fourth choice is **Re-enter file values**. Otherwise the
+fourth choice is **Create a new temporary file**.
+Pre-existing, unknown-origin, conflicting, retained or unreadable inputs
+must not be offered the Re-enter command.
+
+- **Re-enter file values** — only for an eligible `recipe-created: true`
+  input. Have the user refill that recorded file with the gated command
+  below, then retry that service's merge before continuing.
+- **Create a new temporary file** — rerun Step 4's creation recipe. Collect
+  the new path and ask its origin question again. Keep the old path in
+  `RETAINED_ENV_INPUT_PATHS` and exclude it from cleanup, including when
+  another service uses it. Replace only the affected service's input record
+  with the new path and its new `recipe-created` flag, then retry that
+  service's merge. Preserve earlier `MERGED_ENV_INPUTS` entries. If creation
+  is abandoned, keep the old record and use the stopping instructions.
+- **I edited my file — retry** — after the user confirms their private edit
+  or access repair, retry the merge at the same recorded path. Preserve its
+  origin flag and do not supply a command that writes to that input.
+- **Continue without file values** — remove only that service's input record
+  from the merge loop, preserving any env values already in its saved spec.
+  Keep the input file in `RETAINED_ENV_INPUT_PATHS` for the retained-file recap;
+  exclude that path from cleanup even if another service uses it. Continue
+  with the remaining service merges. This also handles a service that needs
+  no env values.
+- **Cancel** — stop authoring via **Stopping after the draft was saved**:
+  report contributing services and retained paths, warn about saved env
+  values, and offer eligible temporary-file cleanup.
+
+Only for **Re-enter file values** with `recipe-created: true`, consistent
+origin confirmations and no retained-path decision, give this command in
+the user's separate `bash` terminal. The input must be readable; for an
+unreadable file use the other recovery choices:
+
+```bash
+cat > 'ENV_RETRY_FILE'
+```
+
+Replace `'ENV_RETRY_FILE'` with that service's recorded `env-file-path` as a
+properly shell-escaped literal, including any apostrophes. Do not use
+`ENV_INPUT_PATH`: repeated recipes leave it pointing at the last file,
+which may belong to another service. Keep the existing input record and
+its confirmed `recipe-created: true` flag; this command reuses that temporary file.
+
+The terminal shows no prompt while `cat` waits for input. Type or paste the
+KEY=VALUE lines there, press Enter, then Ctrl+D. When the shell prompt
+returns, retry the merge with that same recorded path. Another empty result
+returns to the choices above. Do not report the spec as ready while a file
+input is awaiting the user's retry, skip or cancel choice.
+
+### Revalidate the saved spec
 
 After the merge phase (whether or not any env files were actually merged),
 refresh `META_HASH` from the on-disk spec — re-loading + re-validating is
@@ -494,9 +598,55 @@ drift surface a "did we merge anything?" branch creates. Re-load the saved
 spec via `Read` (returns the spec as a structured tool result; any merged
 env values enter your context here) and re-call `build_manifest_preview`
 with `{ services: SAVED_SPEC.services }`. If validation fails, report the
-errors and leave the draft for repair; do not report it as ready to deploy. Capture the new `meta_hash_hex` and overwrite
+errors and follow **Stopping after the draft was saved**, leaving the draft
+for repair. Capture the new `meta_hash_hex` and overwrite
 `META_HASH` so Step 8 reports the generated Fred manifest hash for the
 saved services. It is not a hash of the surrounding spec file's bytes.
+On success, continue to Step 8; offer cleanup there after its checks pass.
+
+### Env input cleanup
+
+Use this section when Step 8 or **Stopping after the draft was saved** calls
+for cleanup. On successful completion, after revalidation and the saved image
+checks pass, offer cleanup once the user confirms the merged spec looks right.
+On cancellation or another stop, offer the same eligible cleanup
+without requiring confirmation of a completed spec. Suggest they delete only
+the temporary input files they created with this recipe. Preserve pre-existing
+files and files of unknown origin. Use only records with `recipe-created: true`, and
+wait until every service using that file has merged successfully. Preserve
+the file if its origin confirmations conflict or its path is in
+`RETAINED_ENV_INPUT_PATHS`; pending and failed inputs stay in place.
+
+Only for eligible paths with `recipe-created: true`, give one command per
+distinct path in the same `bash` session:
+
+```bash
+rm -- 'TEMP_ENV_INPUT_FILE'
+```
+
+Replace `'TEMP_ENV_INPUT_FILE'` with the confirmed temporary file's path as
+a properly shell-escaped literal, including any apostrophes. Repeating the
+recipe reassigns `ENV_INPUT_PATH`, so that variable names only the last file.
+List the paths of pre-existing or unconfirmed input files, files with
+conflicting origin confirmations, pending/failed inputs, and files retained
+by **Continue without file values** or **Create a new temporary file**,
+without their contents. Do not claim a file was deleted until the user
+confirms it. Contribution and retention are independent: a path shared by
+a merged service and a skipped service appears in both recaps, with the
+respective service names. Any merged values remain in `$SAVED_PATH` (mode
+0600) and are the user's responsibility to manage.
+
+### Stopping after the draft was saved
+
+On cancellation or any other early stop, keep the draft. Report `SAVED_PATH`,
+the contributing services and input paths from `MERGED_ENV_INPUTS` (keys
+only), and the retained input paths. If env values were saved, including
+values entered in chat, warn: do not commit or share this draft without
+checking for and redacting secrets. Apply **Env input cleanup** to offer
+commands only for eligible merged temporary inputs, even though the user
+has not confirmed a completed spec. Keep pending, failed and retained inputs.
+Do not report the draft as ready or give a deployment command. End authoring
+after this recap; do not continue into the success report.
 
 ## Step 8 — Report
 
@@ -508,8 +658,8 @@ node "$MANIFEST_PLUGIN_ROOT/scripts/check-image-references.cjs" --spec-file "$SA
 ```
 
 For **every entry** in the checker's `images` array, show its exact `image`
-and the status below. A failed check means the draft needs repair; do not
-report it as ready to deploy.
+and the status below. A failed check means the draft needs repair; follow
+**Stopping after the draft was saved** instead of reporting it as ready.
 
 - `digest`: **User-supplied digest** — the digest syntax is valid and the reference is preserved; registry
   contents and availability have not been verified. If the user replaced
@@ -518,7 +668,8 @@ report it as ready to deploy.
 - `tag`: **Mutable tag retained by choice; digest unresolved** — the provider may
   pull different contents at deployment time.
 - `malformed-digest`: **Malformed digest; repair required** — never call
-  this a pin. Return to Step 3 for a corrected reference or cancel.
+  this a pin. Follow **Stopping after the draft was saved** and retain the
+  draft for repair.
 
 Use full references, without abbreviating the digest. Report from the saved
 file so the recap reflects any repairs. An image changed during validation
@@ -551,13 +702,19 @@ Repeat the storage cost limitation from 4a: the upstream plan omits its
 price, and the fee estimate omits its extra lease item.
 
 **Version control caveat — check for secrets before committing.** If
-the user picked "From a file" for env in Step 4 (single-service or
-per-service in stacks), the saved spec at `<SAVED_PATH>` now contains
-those merged env *values* (DB passwords, API tokens, etc.) verbatim.
+Step 7 merged any nonempty env inputs, the saved spec at `<SAVED_PATH>`
+contains those env *values* (DB passwords, API tokens, etc.) verbatim.
 Tell the user explicitly: "this spec contains the env values you merged
 from `<file paths>` — do NOT commit it to a public repository or share
-it without redacting those values first." Values typed in chat can also be sensitive. Recommend version control
+it without redacting those values first." List only paths that contributed
+values in this contribution recap. Independently list retained input paths;
+a shared path may appear in both recaps when one service merged and another
+skipped it. Values typed in
+chat can also be sensitive. Recommend version control
 only after confirming the spec contains no secrets, regardless of input mode.
+
+After these checks pass and the user confirms the merged spec looks right,
+apply **Env input cleanup**. Then continue to Step 9.
 
 ## Step 9 — Record this run in the journal
 
