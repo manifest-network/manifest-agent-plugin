@@ -82,7 +82,10 @@ the remaining host acceptance requirements.
 
 ## Make config-update recovery diagnostics actionable
 
-Two offline fixtures reproduce the current behavior of
+Status: implemented in [ENG-1011](eng-1011-plan.md). Fresh release acceptance
+is tracked in the [0.5.1 checklist](release-0.5.1.md).
+
+Two offline fixtures reproduced the v0.5.0 behavior of
 [update-config.cjs](../scripts/update-config.cjs):
 
 - With no `activeChain`, `--refresh-chains` refuses the update but recommends
@@ -93,11 +96,11 @@ Two offline fixtures reproduce the current behavior of
   network's file under `chains/`. A refresh only merges existing files; it
   does not download a missing file.
 
-The [script guide](scripts.md) now distinguishes these data sources. The
-follow-up should correct the recovery messages and make an explicit decision
-about retaining or changing the gas-token disk-file requirement. Tests must
-verify refused updates preserve config bytes and release the config lock,
-and that following the suggested remedy succeeds.
+The [script guide](scripts.md) distinguishes these data sources. Recovery
+messages now identify the required chain selection or metadata refresh;
+gas-token selection validates the current registry file. Tests verify refused
+updates preserve config bytes and release the config lock, and that following
+the suggested remedy succeeds.
 
 ## Reject collisions between normalized fragment names
 

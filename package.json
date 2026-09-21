@@ -1,6 +1,6 @@
 {
   "name": "manifest-agent-plugin",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Shared runtime dependencies for the Manifest Agent Claude Code and Codex plugins",
   "engines": {

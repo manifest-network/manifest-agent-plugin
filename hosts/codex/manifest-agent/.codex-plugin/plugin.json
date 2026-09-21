@@ -1,6 +1,6 @@
 {
   "name": "manifest-agent",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Author complete Manifest deployment specs, deploy applications and manage leases from Codex.",
   "author": {
     "name": "The Lifted Initiative",
