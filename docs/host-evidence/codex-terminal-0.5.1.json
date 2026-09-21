@@ -1,0 +1,855 @@
+{
+  "schemaVersion": 2,
+  "evidenceKind": "interactive-terminal-local-fixture",
+  "source_status": "historical",
+  "observedAt": "2026-09-21T14:54:25.537Z",
+  "head": "237fc195a80c21cb8040af265cb6b1370e1f03c2",
+  "sourceHashes": {
+    "ci/build-packages.cjs": "ace8ab10d26482b5d441fc9cdd026e92453df5303c7a82100e21f36275ef1712",
+    "ci/codex-host-smoke.cjs": "2e6b218c7fa32f91bacd11695da7f98e2b338776ae97ddcfef47ff4ad36a9bdd",
+    "docs/codex.md": "9e1f6297b58ba5afb587431e759c320a4015cfb2f8aebfe897a94778c8de8e3e",
+    "docs/identity.md": "f32d698de5b233ee5f97106f8c1694f60eb0c9ec90431a428a719d3bb13f5da5",
+    "hooks/hooks.json": "81aea5599bbdde695da2f45bf1c40e64f5b15c2f172a569868a770e451510822",
+    "hosts/claude/restart-confirmation.md": "159cb357c11444cdadf5959aa06663af09b4b226b492ce04698e8ad29ae9e1b9",
+    "hosts/codex/env.sh": "f96fe3ceaea07ca5ae6812ec981f0c616c53a81fdac29abf082a4db79c9f5dde",
+    "hosts/codex/manifest-agent/.codex-plugin/plugin.json": "083463a3ad65d7327476df7f2ee7d15d49b9ded4ea496060777486bf646a6fa7",
+    "hosts/codex/manifest-agent/.mcp.json": "29068fb19ab4e1ddd3601d32053d8b0b6a49c67bec4a3775044b19190e6d26c3",
+    "hosts/codex/restart-confirmation.md": "9363ba23d915f10db0a6b5f1e9590476a630acecd76e7fb718c7bc722104913e",
+    "package-lock.json": "9650a7cbda470c7b9e0bf8c553154389faf4be6e48ee77d7cbc571bd87862310",
+    "package.json": "3fa081441e23a8349c46b2a96ba6ad3d7731bb02a0a72a7af51b72b7eb9e49db",
+    "scripts/_chain-config.cjs": "1febb1f2b7a393f7cbc8eea64cc4db15893551c997ee0216dea16d3a02e923f7",
+    "scripts/_chain-registry.cjs": "13997d78dd1976b2289a62c48e68e0479966df645ec7232fe8c55af9073f7199",
+    "scripts/_credentials.cjs": "695cf19737706dc6be5fd780419a858e3c34ce0a19ba52663e88e0396ad8369b",
+    "scripts/_gas-price.cjs": "4c12338026c01d1a17c3d5f8af28c5eb0646a5d74941f2c887ef0fbf6941d4b2",
+    "scripts/_host.cjs": "393b76ea1e6f60e391919f014e18c37a3303179b6f63e1ce9dd97d1c95c88507",
+    "scripts/_https-json.cjs": "3759edcc2b2fc4676c0004119a5cce396bc9d823ce3e65d2a506c5b4c6c768e3",
+    "scripts/_image-ref.cjs": "f9daaae4689298747cb7f4f5fa09884066a49ac4cd968709697bd909f34139e4",
+    "scripts/_io.cjs": "f022384ca4320a0cc5eefb26c930796772deb1ec7312c420a1d6f32f2d842e8c",
+    "scripts/_journal.cjs": "0702d7003f3efce65f0dad3d6f46f4db569bc004a7351f6ba0d7f750f05ea7db",
+    "scripts/_lease-state.cjs": "3d2d69ef7aaa181b60c2e3e9f53d5e47eae3e2f668d845e90863d4d839db3583",
+    "scripts/_mcp-bridge.cjs": "79bea2475042046450817cb91542772a23f2de622775f2b430bd17f85948dfc1",
+    "scripts/_runtime.cjs": "a6743b45d56eeee779aa179a3e7aa3acb09540e4e76e053000f25acc0f2d4bbe",
+    "scripts/_spec.cjs": "3ce8d37290ba7694693f14646d90f2fd84da6a710aa5a21c3fda9dc5efd1bc69",
+    "scripts/_uuid.cjs": "cd2e0288e7c00f2d9dd941aabf16d60118a439ebc51c94a4b70e7c93005859f4",
+    "scripts/_wincred.ps1": "67faa7cddb4f3d9a922869088267d1939631c3cc1c26438b63cdae850766cc26",
+    "scripts/check-image-references.cjs": "f3c95dc5579ade66fce11ff3ce1048d8675bcb7a1c14672664fd307142a845e1",
+    "scripts/check-storage-selection.cjs": "6c806576c56d1bdd547428e4676d82e9ef540b5556b7d6647bddbd04484d2cc0",
+    "scripts/codex-server.cjs": "d6175981d5dc3e34894189171cdb0c7861189ba101f15160659e44bc372143f4",
+    "scripts/decode-lease-state.cjs": "47f5c454a7492034374085c2e392571a8f480cec4c97dc292efba2c6ca54b511",
+    "scripts/fetch-chain-registry.cjs": "5b884d8d3eefa8ff523f59d8c1632d340ebf552ec7d37c050b38743ba854d692",
+    "scripts/gen-agent-key.cjs": "eefe8c734d2bb6e1d3fb08faa8b08f1c010bbb69c64cd8ed584c8f46449c1dac",
+    "scripts/host-env.cjs": "cb506ae0ac34b25bf0ff914e8ed1b606dea12f6bffee37d9dd5f1b24592d64db",
+    "scripts/humanize-denom.cjs": "c1533b0952b8603570380a3bdc06ab24edd0c914cca7268bf7a121361adb25ce",
+    "scripts/import-key.cjs": "ee719770f54e13d1c7aeafe97dd1b935659c09f5c067e4db5ca64d31d8e149d9",
+    "scripts/journal-read.cjs": "05831d3009955951639e72c8a4c8386b6d5684bd8835904ba49cae3aa0ac047d",
+    "scripts/journal-write.cjs": "d7c71bca01b8d0f757fae5ac0c9948e3d1f119a4df66019ac1820a528d9dd6cc",
+    "scripts/list-saved-manifests.cjs": "f1dfd3e3dd6b7f0795a637fb48976552f743258a53f7a48af3c0965344c09052",
+    "scripts/merge-env.cjs": "2638ff0e8162359b518ca72da0d4b1d8f93ed62055cbc4b00d46ed45794fcc4b",
+    "scripts/migrate-credentials.cjs": "792f287c46d99da9a3060887190cc667e72dd8d93b57e554ef9d4ebce6fffcc1",
+    "scripts/pre-tool-use.cjs": "5751786575c7c1d563b4bcf99779881777a2bac9454bcaf432ed4c155fd3e03c",
+    "scripts/pre-tool-use.sh": "a9aa07b4b2fff19053d3249ab86e52ebcce99a38d35d5c4cc78b97da50f2fb19",
+    "scripts/render-balance.cjs": "bb54ad119c159fbdde215f34a8d1f4116536c81e400a8eeb41391bc8812da5cc",
+    "scripts/render-providers.cjs": "36e6042b5f3f731a4c5772af498b8025290331e5ec4ed4f1cf6e1fd7e403f228",
+    "scripts/render-releases.cjs": "b0e92af516b7b096386f4e3252f54c7c2fdfb69d3ff17c81383cb49c7f0ea6e3",
+    "scripts/save-manifest-draft.cjs": "ea72c014d6f338ae400ee61f0c87b2024dece44273f4b50085738e4b9fb839b9",
+    "scripts/session-hook.cjs": "5f0c118d8c12d64d75cb709efce7223caa4622c6276aac250969f79a9b298f9b",
+    "scripts/session-identity.cjs": "f0cbd1a1359b2c4f8e8406291911e714b804968514eb1f3c1487d8e58dcb377f",
+    "scripts/session-start.sh": "0a56968eafc48855822775a2bce49480e16e0f1231a8c46a76b081ac712892cd",
+    "scripts/setup-runtime.cjs": "bc9979a96da195042e637d7f9ed8715094020203faacb0116de12e86353ac6ed",
+    "scripts/start-server.cjs": "6b335990ce8ddf36fb7f1faa6f2cf3bd9f71aa97e85578b463b7031bd9047fc3",
+    "scripts/summarize-manifest.cjs": "3dedef40d45aa9e8ad98ef49441a975f21e41fa70f35f5e044edc1d60cb47fd2",
+    "scripts/update-config.cjs": "a217cebf23feb62291a95dd777f514ccbf23fff6ff1649e793e07f43a2c1205f",
+    "scripts/write-config.cjs": "d2458605da611bec6e0d53bc874d8df87b013b90a6b4d98e0bd567f0a4123615",
+    "tests/fixtures/json-rpc-peer.cjs": "f10549f9697cc42a2c905831caaddad063716cb9ff087694f3429c62209d01c3",
+    "tests/fixtures/native-host-fixture.cjs": "dddab5d597ebb4d37700223a0803eb8f1fbe4229959199af85a0a809a3e88e50",
+    "workflows/author-manifest.md": "831b8e2c322e06d9f3ac821f9e4ecdffc81680ea80cfa97321c7119d63ed32db",
+    "workflows/balance.md": "603e27d5a819043607074a12f4f0f201f2bdaf9f1d66d0454423030f12e8507b",
+    "workflows/deploy-app.md": "2679614df74165b7cc646b4fba91f468ba5cce840eda300451432f033d82bd2a",
+    "workflows/fragments/journal-write.md": "efc0752dcbf357abf82f92803578d892b3adce615c8463fe2158abb74255cb47",
+    "workflows/fragments/verify-wallet-config.md": "0e0460b6b4539cbde6c0854883d859ff9290ccaebddfacc34b8f4bbab1d30015",
+    "workflows/import-key.md": "d816645cf569bc78b3d3605321db8195f3770f1add661ba642a49a6a523d8136",
+    "workflows/init-agent.md": "ab2b1f703cf682ce7bf18cd4874269a03170167c75f944eea26117985ef61674",
+    "workflows/journal.md": "8ee82286846c1dab3b2de55ee9911a3a56d13f9a84be2ace990dfdb7f84ead1e",
+    "workflows/list-providers.md": "b7094a821ba1187437fec45f011e91b32c45a2d22eb3851ca926397fb77d60eb",
+    "workflows/list-releases.md": "34df9afd7ba2066f79f7603e44d5dd3bebc8d45fc43e6e8214ae51a2e62d0288",
+    "workflows/manage-domain.md": "08fd1ec36e2edbc0bfffa19650b6e21584f9f8e277a26d70e3531354b9345444",
+    "workflows/refresh-registry.md": "9fdc6ac03158476013f1822a552c0268d94ce1866905447a17a7799d21a34a03",
+    "workflows/restart-app.md": "95f4afb22668a2e13b884d6231ef9b0e1c26e10d40b92df97616452ba92ffb64",
+    "workflows/set-gas-price.md": "4e95b53d7a71341e7388478949ca9c081d1a76014c2a49fc67bf1406cb76d36c",
+    "workflows/switch-chain.md": "f2634abb464712df0ce409fe0d1548bc1d8f70ed8b3f2cd0fc03cd7ff1bf4701",
+    "workflows/troubleshoot-deployment.md": "365562dc3fc1d5c0986d58669cdb9230b06202ffd58ee83967452c2cc1f28f18",
+    "ci/terminal-host-smoke.cjs": "965113639f82bb7b5fb14f81395ca3051db40e9f0f5726dcba306e1733423749",
+    "tests/fixtures/terminal-model.cjs": "908213f277b11f07f0e25e2943529a02ac1a6fb6fa57c0f5ae918c3b3471ac47",
+    ".mcp.json": "7bcf37f1cd0745ebba7de5c22bab3346bf5e9e48d366b34357f4a79313e22c6b",
+    ".claude-plugin/plugin.json": "d808b984af5df12c1703fe924767051a3039216dc188afbc89c82173e7b214af",
+    "skills/author-manifest/SKILL.md": "14c26d3b3c2225889266072d9c2c1b04a3c0bc4beb7aac046593a0cc30c7f1c0",
+    "skills/balance/SKILL.md": "22eb32e80033d956361100407d5ecc49148cdf7c26e184363bc8734c225dca6e",
+    "skills/deploy-app/SKILL.md": "b0a418387da3e8d61db14938de16e4c120d30f1d8bd34450712243bf4b5fafcf",
+    "skills/import-key/SKILL.md": "46f2933f52519860329905c5e7967117a7251f0d40ed9efa8adca02544836d9e",
+    "skills/init-agent/SKILL.md": "10d5dcbb6aa753c79fe89684f6c46b9ace9aa2e9287af1bd28778756bf1df4ef",
+    "skills/journal/SKILL.md": "5ee5c2a5fdcf354b064dfbba05f99604b9b871bf68a0b26c942cfd0499338f7f",
+    "skills/list-providers/SKILL.md": "e5cee6df171ec2b02fd823d77aba4a9b4709bef6dfa52394f74d8581922331d5",
+    "skills/list-releases/SKILL.md": "875b8f0f856f3dadc9ed7ef72bc44932410910931188247f87fcbcce870dcde4",
+    "skills/manage-domain/SKILL.md": "2c1c476be5eac4db9bc4b6b70bf01e91120fa0a9b87c90d22b72801bf454c865",
+    "skills/refresh-registry/SKILL.md": "9dc7b5c773ea719e76ea12d525e095fe614ea3b4dba1993235820386a0b0fd57",
+    "skills/restart-app/SKILL.md": "fb446d1bbc7a284b0df62633caacd015c6ea0e36ec34bb0cf2987b637d0154c6",
+    "skills/set-gas-price/SKILL.md": "eca7de4179feba1f46fa4da65954974470dfb844510fb1a556e03d77258ffbd7",
+    "skills/switch-chain/SKILL.md": "ce4ec24c6222634b1bac4548c833837c66477df0c311fd3702a9abc5bdd19a12",
+    "skills/troubleshoot-deployment/SKILL.md": "fb4d5615128f14f242e55b97e5fcff6f54181cebf6347a753cb76a375bf6723d"
+  },
+  "host": "codex",
+  "hostVersion": "codex-cli 0.154.0",
+  "nodeVersion": "v24.15.0",
+  "tmuxVersion": "tmux 3.7c",
+  "pluginVersion": "0.5.1",
+  "upstreamPin": "0.22.0",
+  "runtime": "marker-only 0.0.0-fixture",
+  "installation": "temporary local marketplace, codex plugin add",
+  "cases": [
+    {
+      "name": "discovery-read-only",
+      "toolCalls": 1,
+      "mutationMarkers": 0,
+      "keys": [
+        "type /skills",
+        "Enter",
+        "Enter",
+        "Escape",
+        "C-u",
+        "type Call the harmless fixture tool once.",
+        "Enter"
+      ],
+      "snapshots": [
+        {
+          "label": "ready",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work"
+        },
+        {
+          "label": "skills",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› $\n\n  Image Gen         [Skill] Generate or edit images for websites, games, and more\n  Import Key        [Skill] Manifest import-key workflow for Codex.\n  Init Agent        [Skill] Manifest init-agent workflow for Codex.\n  Journal           [Skill] Manifest journal workflow for Codex.\n  OpenAI Docs       [Skill] OpenAI and Codex docs for models, skills, tasks, and setup\n  Plugin Creator    [Skill] Scaffold plugins and marketplace entries\n  Refresh Registry  [Skill] Manifest refresh-registry workflow for Codex.\n  Review Agent      [Skill] Find actionable bugs in code changes\n\n  Press enter to insert or esc to close"
+        },
+        {
+          "label": "result",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n• Called manifest-lease.query_leases({})\n  └ {\"status\": \"read_only\", \"lease_uuid\": \"11111111-1111-4111-8111-111111111111\"}\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• Fixture result: read_only; lease 11111111-1111-4111-8111-111111111111. Terminal fixture finished.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work · Manifest fixture"
+        }
+      ],
+      "sequence": [
+        {
+          "server": "lease",
+          "kind": "request",
+          "method": "tools/call",
+          "tool": "query_leases"
+        }
+      ],
+      "modelReceivedToolResult": true,
+      "servers": [
+        "agent",
+        "chain",
+        "cosmwasm",
+        "fred",
+        "lease"
+      ],
+      "cleanup": {
+        "processesStopped": true,
+        "apiClosed": true,
+        "temporaryRootRemoved": true
+      }
+    },
+    {
+      "name": "outer-deny",
+      "toolCalls": 0,
+      "mutationMarkers": 0,
+      "keys": [
+        "type Call the harmless fixture tool once.",
+        "Enter",
+        "Down",
+        "Enter"
+      ],
+      "snapshots": [
+        {
+          "label": "ready",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Start a fresh idea with /new; the previous session stays in history.\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work"
+        },
+        {
+          "label": "outer-permission",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Start a fresh idea with /new; the previous session stays in history.\n\n› Call the harmless fixture tool once.\n\n• Calling manifest-agent.deploy_app_orchestrated({})\n\n  Field 1/1\n  Allow the manifest-agent MCP server to run tool \"deploy_app_orchestrated\"?\n  › 1. Allow   Run the tool and continue.\n    2. Cancel  Cancel this tool call\n\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "result",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Start a fresh idea with /new; the previous session stays in history.\n\n› Call the harmless fixture tool once.\n\n• Called manifest-agent.deploy_app_orchestrated({})\n  └ Error: user cancelled MCP tool call\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• Fixture result: host denied or interrupted tool. Terminal fixture finished.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work · Manifest fixture"
+        }
+      ],
+      "sequence": [],
+      "modelReceivedToolResult": true,
+      "servers": [
+        "agent",
+        "chain",
+        "cosmwasm",
+        "fred",
+        "lease"
+      ],
+      "cleanup": {
+        "processesStopped": true,
+        "apiClosed": true,
+        "temporaryRootRemoved": true
+      }
+    },
+    {
+      "name": "direct-decline",
+      "toolCalls": 0,
+      "mutationMarkers": 0,
+      "keys": [
+        "type Call the harmless fixture tool once.",
+        "Enter",
+        "Enter",
+        "Enter"
+      ],
+      "snapshots": [
+        {
+          "label": "ready",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: NEW: Worktrees can now be enabled from /experimental. Restart Codex after enabling it.\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work"
+        },
+        {
+          "label": "outer-permission",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: NEW: Worktrees can now be enabled from /experimental. Restart Codex after enabling it.\n\n› Call the harmless fixture tool once.\n\n• Calling manifest-fred.restart_app({})\n\n  Field 1/1\n  Allow the manifest-fred MCP server to run tool \"restart_app\"?\n  › 1. Allow   Run the tool and continue.\n    2. Cancel  Cancel this tool call\n\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "native-confirmation",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: NEW: Worktrees can now be enabled from /experimental. Restart Codex after enabling it.\n\n› Call the harmless fixture tool once.\n\n◦ Calling manifest-fred.restart_app({})\n\n  Field 1/1\n  Allow Manifest restart_app?\n  This starts the requested mutation. Review the action and any applicable fee recap before confirming.\n\n  Allow this operation\n    1. True\n  › 2. False\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "result",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: NEW: Worktrees can now be enabled from /experimental. Restart Codex after enabling it.\n\n› Call the harmless fixture tool once.\n\n• Called manifest-fred.restart_app({})\n  └ {\"error\": true, \"code\": \"OPERATION_CANCELLED\", \"message\": \"Operation cancelled before execution; no mutation was sent.\", \"details\":\n        {\"phase\": \"before_execution\", \"broadcast\": false}}\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• Fixture result: OPERATION_CANCELLED. Terminal fixture finished.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work · Manifest fixture"
+        }
+      ],
+      "sequence": [],
+      "modelReceivedToolResult": true,
+      "servers": [
+        "agent",
+        "chain",
+        "cosmwasm",
+        "fred",
+        "lease"
+      ],
+      "cleanup": {
+        "processesStopped": true,
+        "apiClosed": true,
+        "temporaryRootRemoved": true
+      }
+    },
+    {
+      "name": "direct-success",
+      "toolCalls": 1,
+      "mutationMarkers": 1,
+      "keys": [
+        "type Call the harmless fixture tool once.",
+        "Enter",
+        "Enter",
+        "Up",
+        "Enter"
+      ],
+      "snapshots": [
+        {
+          "label": "ready",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work"
+        },
+        {
+          "label": "outer-permission",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n• Calling manifest-fred.restart_app({})\n\n  Field 1/1\n  Allow the manifest-fred MCP server to run tool \"restart_app\"?\n  › 1. Allow   Run the tool and continue.\n    2. Cancel  Cancel this tool call\n\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "native-confirmation",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n◦ Calling manifest-fred.restart_app({})\n\n  Field 1/1\n  Allow Manifest restart_app?\n  This starts the requested mutation. Review the action and any applicable fee recap before confirming.\n\n  Allow this operation\n    1. True\n  › 2. False\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "result",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 1
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n• Called manifest-fred.restart_app({})\n  └ {\"status\": \"complete\", \"leaseState\": \"LEASE_STATE_ACTIVE\", \"lease_uuid\": \"11111111-1111-4111-8111-111111111111\"}\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• Fixture result: complete LEASE_STATE_ACTIVE; lease 11111111-1111-4111-8111-111111111111. Terminal fixture finished.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work · Manifest fixture"
+        }
+      ],
+      "sequence": [
+        {
+          "server": "fred",
+          "kind": "request",
+          "method": "tools/call",
+          "tool": "restart_app"
+        },
+        {
+          "server": "fred",
+          "kind": "mutation",
+          "tool": "restart_app"
+        },
+        {
+          "server": "fred",
+          "kind": "progress",
+          "phase": "broadcast_complete"
+        }
+      ],
+      "modelReceivedToolResult": true,
+      "servers": [
+        "agent",
+        "chain",
+        "cosmwasm",
+        "fred",
+        "lease"
+      ],
+      "cleanup": {
+        "processesStopped": true,
+        "apiClosed": true,
+        "temporaryRootRemoved": true
+      }
+    },
+    {
+      "name": "orchestrated-decline",
+      "toolCalls": 1,
+      "mutationMarkers": 0,
+      "keys": [
+        "type Call the harmless fixture tool once.",
+        "Enter",
+        "Enter",
+        "Enter"
+      ],
+      "snapshots": [
+        {
+          "label": "ready",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Press Tab to queue a message when a task is running; otherwise it sends immediately (except !).\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work"
+        },
+        {
+          "label": "outer-permission",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Press Tab to queue a message when a task is running; otherwise it sends immediately (except !).\n\n› Call the harmless fixture tool once.\n\n• Calling manifest-agent.deploy_app_orchestrated({})\n\n  Field 1/1\n  Allow the manifest-agent MCP server to run tool \"deploy_app_orchestrated\"?\n  › 1. Allow   Run the tool and continue.\n    2. Cancel  Cancel this tool call\n\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "native-confirmation",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Press Tab to queue a message when a task is running; otherwise it sends immediately (except !).\n\n› Call the harmless fixture tool once.\n\n◦ Calling manifest-agent.deploy_app_orchestrated({})\n\n  Field 1/1\n  Approve a harmless fixture operation? No chain or provider is contacted.\n\n  confirm\n    1. True\n  › 2. False\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "result",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Press Tab to queue a message when a task is running; otherwise it sends immediately (except !).\n\n› Call the harmless fixture tool once.\n\n• Called manifest-agent.deploy_app_orchestrated({})\n  └ {\"code\": \"OPERATION_CANCELLED\", \"broadcast\": false}\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• Fixture result: OPERATION_CANCELLED. Terminal fixture finished.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work · Manifest fixture"
+        }
+      ],
+      "sequence": [
+        {
+          "server": "agent",
+          "kind": "request",
+          "method": "tools/call",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "server": "agent",
+          "kind": "progress",
+          "phase": "plan_ready"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation",
+          "phase": "plan"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation_result",
+          "phase": "plan",
+          "action": "accept",
+          "accepted": false
+        }
+      ],
+      "modelReceivedToolResult": true,
+      "servers": [
+        "agent",
+        "chain",
+        "cosmwasm",
+        "fred",
+        "lease"
+      ],
+      "cleanup": {
+        "processesStopped": true,
+        "apiClosed": true,
+        "temporaryRootRemoved": true
+      }
+    },
+    {
+      "name": "orchestrated-cancel",
+      "toolCalls": 1,
+      "mutationMarkers": 0,
+      "keys": [
+        "type Call the harmless fixture tool once.",
+        "Enter",
+        "Enter",
+        "Escape"
+      ],
+      "snapshots": [
+        {
+          "label": "ready",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work"
+        },
+        {
+          "label": "outer-permission",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n• Calling manifest-agent.deploy_app_orchestrated({})\n\n  Field 1/1\n  Allow the manifest-agent MCP server to run tool \"deploy_app_orchestrated\"?\n  › 1. Allow   Run the tool and continue.\n    2. Cancel  Cancel this tool call\n\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "native-confirmation",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n◦ Calling manifest-agent.deploy_app_orchestrated({})\n\n  Field 1/1\n  Approve a harmless fixture operation? No chain or provider is contacted.\n\n  confirm\n    1. True\n  › 2. False\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "result",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n• Called manifest-agent.deploy_app_orchestrated({})\n  └ {\"code\": \"OPERATION_CANCELLED\", \"broadcast\": false}\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• Fixture result: OPERATION_CANCELLED. Terminal fixture finished.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work · Manifest fixture"
+        }
+      ],
+      "sequence": [
+        {
+          "server": "agent",
+          "kind": "request",
+          "method": "tools/call",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "server": "agent",
+          "kind": "progress",
+          "phase": "plan_ready"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation",
+          "phase": "plan"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation_result",
+          "phase": "plan",
+          "action": "cancel",
+          "accepted": false
+        }
+      ],
+      "modelReceivedToolResult": true,
+      "servers": [
+        "agent",
+        "chain",
+        "cosmwasm",
+        "fred",
+        "lease"
+      ],
+      "cleanup": {
+        "processesStopped": true,
+        "apiClosed": true,
+        "temporaryRootRemoved": true
+      }
+    },
+    {
+      "name": "orchestrated-success",
+      "toolCalls": 1,
+      "mutationMarkers": 1,
+      "keys": [
+        "type Call the harmless fixture tool once.",
+        "Enter",
+        "Enter",
+        "Up",
+        "Enter"
+      ],
+      "snapshots": [
+        {
+          "label": "ready",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work"
+        },
+        {
+          "label": "outer-permission",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n• Calling manifest-agent.deploy_app_orchestrated({})\n\n  Field 1/1\n  Allow the manifest-agent MCP server to run tool \"deploy_app_orchestrated\"?\n  › 1. Allow   Run the tool and continue.\n    2. Cancel  Cancel this tool call\n\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "native-confirmation",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n◦ Calling manifest-agent.deploy_app_orchestrated({})\n\n  Field 1/1\n  Approve a harmless fixture operation? No chain or provider is contacted.\n\n  confirm\n    1. True\n  › 2. False\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "result",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 1
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n• Called manifest-agent.deploy_app_orchestrated({})\n  └ {\"status\": \"complete\", \"leaseState\": \"LEASE_STATE_ACTIVE\", \"lease_uuid\": \"11111111-1111-4111-8111-111111111111\"}\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• Fixture result: complete LEASE_STATE_ACTIVE; lease 11111111-1111-4111-8111-111111111111. Terminal fixture finished.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work · Manifest fixture"
+        }
+      ],
+      "sequence": [
+        {
+          "server": "agent",
+          "kind": "request",
+          "method": "tools/call",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "server": "agent",
+          "kind": "progress",
+          "phase": "plan_ready"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation",
+          "phase": "plan"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation_result",
+          "phase": "plan",
+          "action": "accept",
+          "accepted": true
+        },
+        {
+          "server": "agent",
+          "kind": "mutation",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "server": "agent",
+          "kind": "progress",
+          "phase": "broadcast_complete"
+        }
+      ],
+      "modelReceivedToolResult": true,
+      "servers": [
+        "agent",
+        "chain",
+        "cosmwasm",
+        "fred",
+        "lease"
+      ],
+      "cleanup": {
+        "processesStopped": true,
+        "apiClosed": true,
+        "temporaryRootRemoved": true
+      }
+    },
+    {
+      "name": "paid-partial-recovery-decline",
+      "toolCalls": 1,
+      "mutationMarkers": 1,
+      "keys": [
+        "type Call the harmless fixture tool once.",
+        "Enter",
+        "Enter",
+        "Up",
+        "Enter",
+        "Enter"
+      ],
+      "snapshots": [
+        {
+          "label": "ready",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work"
+        },
+        {
+          "label": "outer-permission",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n• Calling manifest-agent.deploy_app_orchestrated({\"fixture_scenario\":\"partial\"})\n\n  Field 1/1\n  Allow the manifest-agent MCP server to run tool \"deploy_app_orchestrated\"?\n\n  fixture_scenario: partial\n\n  › 1. Allow   Run the tool and continue.\n    2. Cancel  Cancel this tool call\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "native-confirmation",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n◦ Calling manifest-agent.deploy_app_orchestrated({\"fixture_scenario\":\"partial\"})\n\n  Field 1/1\n  Approve a harmless fixture operation? No chain or provider is contacted.\n\n  confirm\n    1. True\n  › 2. False\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "recovery",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 1
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n◦ Calling manifest-agent.deploy_app_orchestrated({\"fixture_scenario\":\"partial\"})\n\n  Field 1/1\n  Harmless partial deployment 11111111-1111-4111-8111-111111111111. Keep this fixture record?\n\n  confirm\n    1. True\n  › 2. False\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "result",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 1
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: New Build faster with Codex.\n\n› Call the harmless fixture tool once.\n\n• Called manifest-agent.deploy_app_orchestrated({\"fixture_scenario\":\"partial\"})\n  └ {\"status\": \"partial\", \"lease_uuid\": \"11111111-1111-4111-8111-111111111111\", \"broadcast\": true, \"domainVerified\": false,\n        \"recoveryAccepted\": false}\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n• Fixture result: partial; lease 11111111-1111-4111-8111-111111111111. Terminal fixture finished.\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work · Manifest fixture"
+        }
+      ],
+      "sequence": [
+        {
+          "server": "agent",
+          "kind": "request",
+          "method": "tools/call",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "server": "agent",
+          "kind": "progress",
+          "phase": "plan_ready"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation",
+          "phase": "plan"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation_result",
+          "phase": "plan",
+          "action": "accept",
+          "accepted": true
+        },
+        {
+          "server": "agent",
+          "kind": "mutation",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "server": "agent",
+          "kind": "progress",
+          "phase": "broadcast_complete"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation",
+          "phase": "recovery"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation_result",
+          "phase": "recovery",
+          "action": "accept",
+          "accepted": false
+        }
+      ],
+      "modelReceivedToolResult": true,
+      "servers": [
+        "agent",
+        "chain",
+        "cosmwasm",
+        "fred",
+        "lease"
+      ],
+      "cleanup": {
+        "processesStopped": true,
+        "apiClosed": true,
+        "temporaryRootRemoved": true
+      }
+    },
+    {
+      "name": "cancel-after-broadcast",
+      "toolCalls": 1,
+      "mutationMarkers": 1,
+      "keys": [
+        "type Call the harmless fixture tool once.",
+        "Enter",
+        "Enter",
+        "Up",
+        "Enter",
+        "Escape"
+      ],
+      "snapshots": [
+        {
+          "label": "ready",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Use /status to see the current model, approvals, and token usage.\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work"
+        },
+        {
+          "label": "outer-permission",
+          "counts": {
+            "toolCalls": 0,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Use /status to see the current model, approvals, and token usage.\n\n› Call the harmless fixture tool once.\n\n• Calling manifest-agent.deploy_app_orchestrated({\"fixture_scenario\":\"wait_after_broadcast\"})\n\n  Field 1/1\n  Allow the manifest-agent MCP server to run tool \"deploy_app_orchestrated\"?\n\n  fixture_scenario: wait_after_broadcast\n\n  › 1. Allow   Run the tool and continue.\n    2. Cancel  Cancel this tool call\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "native-confirmation",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 0
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Use /status to see the current model, approvals, and token usage.\n\n› Call the harmless fixture tool once.\n\n◦ Calling manifest-agent.deploy_app_orchestrated({\"fixture_scenario\":\"wait_after_broadcast\"})\n\n  Field 1/1\n  Approve a harmless fixture operation? No chain or provider is contacted.\n\n  confirm\n    1. True\n  › 2. False\n  enter to submit | esc to cancel"
+        },
+        {
+          "label": "progress-after-broadcast",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 1
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Use /status to see the current model, approvals, and token usage.\n\n› Call the harmless fixture tool once.\n\n◦ Calling manifest-agent.deploy_app_orchestrated({\"fixture_scenario\":\"wait_after_broadcast\"})\n\n• Working (1s • esc to interrupt)\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work · Manifest fixture"
+        },
+        {
+          "label": "after-cancel",
+          "counts": {
+            "toolCalls": 1,
+            "mutationMarkers": 1
+          },
+          "screen": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home\n: AbsolutePathBuf(\"<fixture>/config\"))\n╭─────────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.154.0)                          │\n│                                                     │\n│ model:     gpt-5.6-terra low   /model to change     │\n│ directory: <fixture>/work │\n╰─────────────────────────────────────────────────────╯\n\n  Tip: Use /status to see the current model, approvals, and token usage.\n\n› Call the harmless fixture tool once.\n\n• Called manifest-agent.deploy_app_orchestrated({\"fixture_scenario\":\"wait_after_broadcast\"})\n  └ Error: interrupted\n\n■ Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.\n\n› Ask Codex to do anything\n\n  gpt-5.6-terra low · <fixture>/work · Manifest fixture"
+        }
+      ],
+      "sequence": [
+        {
+          "server": "agent",
+          "kind": "request",
+          "method": "tools/call",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "server": "agent",
+          "kind": "progress",
+          "phase": "plan_ready"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation",
+          "phase": "plan"
+        },
+        {
+          "server": "agent",
+          "kind": "elicitation_result",
+          "phase": "plan",
+          "action": "accept",
+          "accepted": true
+        },
+        {
+          "server": "agent",
+          "kind": "mutation",
+          "tool": "deploy_app_orchestrated"
+        },
+        {
+          "server": "agent",
+          "kind": "progress",
+          "phase": "broadcast_complete"
+        }
+      ],
+      "modelReceivedToolResult": false,
+      "servers": [
+        "agent",
+        "chain",
+        "cosmwasm",
+        "fred",
+        "lease"
+      ],
+      "cancellationObservation": {
+        "observationWindowMs": 2000,
+        "mcpCancellationReceived": false,
+        "warningEmitted": false,
+        "warningVisible": false,
+        "leaseVisible": false,
+        "renderedProgress": []
+      },
+      "cleanup": {
+        "processesStopped": true,
+        "apiClosed": true,
+        "temporaryRootRemoved": true
+      }
+    }
+  ],
+  "cleanup": {
+    "processesStopped": true,
+    "apiClosed": true,
+    "temporaryRootRemoved": true
+  },
+  "limitations": [
+    "Scripted terminal input and local model responses; no model reasoning or human usability signoff.",
+    "Production launchers and hooks, fake MCP runtime. No live chain/provider, real wallet, funds or GUI.",
+    "Fresh local installs only; published-version upgrades and preservation of real saved records require separate acceptance.",
+    "Progress and late cancellation visibility are observations in the captured screens, not assumed from emitted notifications."
+  ]
+}

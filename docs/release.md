@@ -22,7 +22,7 @@ CI fails fast if they drift (`Verify version consistency across manifests` step 
 
 ```bash
 # 1. Update all manifests in a chore commit. Pick the new version once.
-NEW_VERSION="0.5.0"
+NEW_VERSION="0.5.1"
 node -e "
   const fs = require('fs');
   for (const p of ['package.json', '.claude-plugin/plugin.json', 'hosts/codex/manifest-agent/.codex-plugin/plugin.json']) {

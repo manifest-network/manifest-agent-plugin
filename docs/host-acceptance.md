@@ -5,10 +5,32 @@ is measured at three layers: deterministic local fixtures, the real host
 protocol, and actual interactive/live workflows. A pass in one layer does
 not fill another layer's missing evidence.
 
-The post-release [ENG-1008 registry fix](eng-1008-plan.md) changes the shared
-source covered by all four release-evidence rows. Those rows are pending
-fresh acceptance before the next release; the v0.5.0 observations below
-remain unchanged evidence for their recorded source.
+## 0.5.1 acceptance
+
+Fresh Linux acceptance on **2026-09-21** passed against frozen source
+`237fc195a80c21cb8040af265cb6b1370e1f03c2`, plugin **0.5.1** and MCP **0.22.0**.
+The [release notes and validation](release-0.5.1.md) cover the registry,
+gas-setting, config-recovery and secret-input fixes since 0.5.0.
+
+- Claude Code 2.1.270 and Codex CLI 0.154.0 each passed nine terminal cases.
+  Codex CLI 0.153.4 passed eight app-server cases.
+- Both hosts passed native 0.4.0 to 0.5.1 credential migration, reinstall,
+  saved-state preservation, offline wallet signing and automatic runtime repair.
+- Both hosts passed all 11 live-testnet lifecycle checks. Both leases are
+  closed, domains are unclaimed, and temporary keys, profiles and processes
+  were removed after a private-value scan.
+- All four [release rows](host-acceptance-release.json) pass strict source,
+  coverage and cleanup validation; the Codex archive is eligible.
+
+The [live record](host-evidence/live-testnet-0.5.1.json) retains a transient
+Codex `restarting` observation followed by a new read proving readiness and
+a changed container ID. Testnet receipts reconcile 1.632190 MFX in transaction
+fees and 0.400500 PWR in lease costs; remaining wallet tokens and 2.099500 PWR
+of unused billing credit are recorded separately from resource cleanup.
+The CLI, deterministic-model, file-credential and interruption limitations
+remain explicit. Native macOS/Windows credential stores and GUI behavior are
+not established. The 0.5.0 observations below remain historical evidence for
+their original source.
 
 ## 0.5.0 preparation status
 
