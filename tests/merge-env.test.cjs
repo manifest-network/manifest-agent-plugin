@@ -28,6 +28,36 @@ function recoveryChoices(text) {
   return choices;
 }
 
+function assertEnvInputOriginGates(rendered) {
+  // Select references to input paths, regardless of command verb. This is a
+  // guard for the workflow's placeholder/variable conventions, not a shell
+  // parser. Draft and journal staging have separate ownership contracts.
+  const envText = rendered.slice(rendered.indexOf('**env** —'), rendered.indexOf('**labels**'))
+    + rendered.slice(rendered.indexOf('**If the user picked "From a file"'), rendered.indexOf('## Step 8'));
+  const commands = [...envText.matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)];
+  let creations = 0, gated = 0;
+  for (const block of commands) {
+    const command = block[2].trimEnd();
+    if (command.includes('ENV_INPUT_PATH=$(mktemp)')) {
+      assert.equal(command, 'umask 077\nENV_INPUT_PATH=$(mktemp)\ncat > "$ENV_INPUT_PATH"');
+      creations++;
+      continue;
+    }
+    // Printing just the path is the only argument-use exception. Matching the
+    // entire block prevents an appended write from borrowing this exemption.
+    if (command === 'printf \'%s\\n\' "$ENV_INPUT_PATH"') continue;
+    // A plain stdin redirection reads its path. Do not exempt heredocs or
+    // here-strings, or another occurrence of the path elsewhere in the block.
+    const withoutStdinSources = command.replace(/(?<!<)<[ \t]*(?:'[A-Z][A-Z0-9_]*'|"?\$(?:ENV_(?:INPUT|FILE)_PATH\b|\{ENV_(?:INPUT|FILE)_PATH\})"?)/g, '');
+    if (!/'[A-Z][A-Z0-9_]*'|\$(?:ENV_(?:INPUT|FILE)_PATH\b|\{ENV_(?:INPUT|FILE)_PATH\})/.test(withoutStdinSources)) continue;
+    const intro = envText.slice(0, block.index).trimEnd().split(/\n\s*\n/).at(-1);
+    assert.match(intro, /^Only for[\s\S]*`recipe-created: true`/, `origin gate required for input path use: ${command}`);
+    gated++;
+  }
+  assert.equal(creations, 1, 'only the initial capture creates a fresh input');
+  assert.ok(gated >= 2, 'retry and cleanup both require an origin gate');
+}
+
 function withDataDir(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'manifest-merge-env-test-'));
   mkdirSync(join(dir, 'manifests-drafts'), { recursive: true });
@@ -139,8 +169,9 @@ for (const host of ['claude', 'codex']) {
     const recovery = section(rendered, 'Env input recovery');
     assert.ok(recovery.includes(host === 'claude' ? '`AskUserQuestion`' : '`request_user_input`'));
     const eligibility = recovery.split('\n- **')[0];
-    assert.match(eligibility, /readable,[\s\S]*confirmed temporary input eligible under the mutation rule/);
-    assert.match(eligibility, /Otherwise offer[\s\S]*Create a new[\s\S]*temporary file[\s\S]*I edited my file — retry/);
+    assert.match(eligibility, /Always\s+include \*\*I edited my file — retry\*\*, \*\*Continue without file values\*\*, and\s+\*\*Cancel\*\*/);
+    assert.match(eligibility, /For a readable, confirmed temporary input eligible under the\s+mutation rule, the fourth choice is \*\*Re-enter file values\*\*/);
+    assert.match(eligibility, /Otherwise the\s+fourth choice is \*\*Create a new temporary file\*\*/);
     assert.match(eligibility, /Pre-existing, unknown-origin, conflicting, retained or unreadable inputs\s+must not be offered the Re-enter command/);
     const choices = recoveryChoices(rendered);
     const reenter = choices.get('Re-enter file values');
@@ -165,7 +196,7 @@ for (const host of ['claude', 'codex']) {
     assert.match(recovery, /recorded `env-file-path`[\s\S]*shell-escaped literal/);
     assert.match(recovery, /Do not use\s+`ENV_INPUT_PATH`/);
     assert.match(recovery, /Keep the existing input record[\s\S]*confirmed `recipe-created: true` flag/);
-    assert.match(recovery, ENTRY_ORDER);
+    assert.match(recovery, new RegExp('no prompt[\\s\\S]*' + ENTRY_ORDER.source));
     assert.match(recovery, /Do not report the spec as ready while a file\s+input is awaiting/);
     const errors = rendered.match(/If the script errors out[\s\S]*?(?=\n###)/)?.[0];
     assert.match(errors, /Invalid dotenv input and unreadable files use \*\*Env input recovery\*\*[\s\S]*recorded path and origin flag/);
@@ -173,29 +204,41 @@ for (const host of ['claude', 'codex']) {
     assert.match(errors, /recovery is abandoned[\s\S]*Stopping after\s+the draft was saved/);
   });
 
-  test(`${host} every env overwrite or removal example has an adjacent origin gate`, () => {
+  test(`${host} env input path uses require an adjacent origin gate except creation, path display and stdin sources`, () => {
     const rendered = envInstructions();
     assert.match(rendered, /commands that overwrite or remove an existing\s+env input require `recipe-created: true`/);
     assert.match(rendered, /Apply this rule to every retry,\s+error-recovery and cleanup command/);
-    // Scope this rule to env collection/recovery, excluding unrelated draft
-    // and journal staging files, which have their own ownership contracts.
-    const envText = rendered.slice(rendered.indexOf('**env** —'), rendered.indexOf('**labels**'))
-      + rendered.slice(rendered.indexOf('**If the user picked "From a file"'), rendered.indexOf('## Step 8'));
-    const commands = [...envText.matchAll(/^([ \t]*)```bash\n([\s\S]*?)^\1```[ \t]*$/gm)];
-    let creations = 0, gated = 0;
-    for (const block of commands) {
-      if (!/\brm\s|>/.test(block[2])) continue;
-      if (block[2].includes('ENV_INPUT_PATH=$(mktemp)')) {
-        assert.match(block[2], /^umask 077\nENV_INPUT_PATH=\$\(mktemp\)\ncat > "\$ENV_INPUT_PATH"\s*$/);
-        creations++;
-        continue;
-      }
-      const intro = envText.slice(0, block.index).trimEnd().split(/\n\s*\n/).at(-1);
-      assert.match(intro, /^Only for[\s\S]*`recipe-created: true`/, block[2]);
-      gated++;
+    assertEnvInputOriginGates(rendered);
+  });
+
+  test(`${host} origin gate selects input path targets across command verbs and argument positions`, () => {
+    const rendered = envInstructions();
+    const insert = (command, intro) => rendered.replace('**labels**',
+      () => `${intro}\n\n\`\`\`bash\n${command}\n\`\`\`\n\n**labels**`);
+    const ungated = 'Use the following command:';
+    const gated = 'Only for eligible inputs with `recipe-created: true`, use:';
+    for (const command of [
+      "cp -- 'SOURCE_FILE' 'RECORDED_ENV_PATH'",
+      "mv -- 'SOURCE_FILE' 'RECORDED_ENV_PATH'",
+      "truncate -s 0 -- 'RECORDED_ENV_PATH'",
+      "unlink 'RECORDED_ENV_PATH'",
+      "tee 'RECORDED_ENV_PATH'",
+      "dd if='SOURCE_FILE' of='RECORDED_ENV_PATH'",
+      "rm -f -- 'SOME_ENV_PATH'",
+      'cp -- source "$ENV_INPUT_PATH"',
+      'tee "${ENV_INPUT_PATH}"',
+      'dd of=$ENV_FILE_PATH',
+      'cp -- source "${ENV_FILE_PATH}"',
+      'tee "$ENV_INPUT_PATH" < "$ENV_INPUT_PATH"',
+      'printf \'%s\\n\' "$ENV_INPUT_PATH"\ntruncate -s 0 "$ENV_INPUT_PATH"',
+    ]) {
+      assert.throws(() => assertEnvInputOriginGates(insert(command, ungated)), /origin gate required/, command);
+      assert.doesNotThrow(() => assertEnvInputOriginGates(insert(command, gated)), command);
     }
-    assert.equal(creations, 1, 'only the initial capture creates a fresh input');
-    assert.equal(gated, 2, 'retry and cleanup both require an origin gate');
+    for (const path of ['"$ENV_INPUT_PATH"', '"${ENV_FILE_PATH}"', "'RECORDED_ENV_PATH'"]) {
+      const command = `node "$MANIFEST_PLUGIN_ROOT/scripts/merge-env.cjs" --spec-file "$SAVED_PATH" < ${path}`;
+      assert.doesNotThrow(() => assertEnvInputOriginGates(insert(command, ungated)), command);
+    }
   });
 
   test(`${host} env retry refills the recorded service input without overwriting the last collected file`, () => {
@@ -255,12 +298,12 @@ for (const host of ['claude', 'codex']) {
     });
   });
 
-  test(`${host} replacing pre-existing or unknown-origin input preserves its bytes and mode`, () => {
-    for (const origin of ['pre-existing', 'unknown']) withDataDir(dataDir => {
+  test(`${host} new-input command fixture creates a distinct private file beside an untouched supplied template`, () => {
+    withDataDir(dataDir => {
       const rendered = envInstructions();
       const choices = recoveryChoices(rendered);
       assert.match(choices.get('Create a new temporary file'), /new path and ask its origin question again/);
-      const supplied = join(dataDir, `${origin}.env.example`);
+      const supplied = join(dataDir, 'supplied.env.example');
       const original = '# project template\n# preserve these comments\n';
       writeFileSync(supplied, original);
       chmodSync(supplied, 0o644);
@@ -278,8 +321,8 @@ for (const host of ['claude', 'codex']) {
         return JSON.parse(result.stdout);
       };
       assert.deepEqual(merge(supplied).keys_merged, []);
-      // The driver chooses Create for a false/unknown origin, collects the
-      // fresh path and supplies the user's new origin confirmation.
+      // The driver chooses Create and passes the resulting path to the merge.
+      // This checks commands, not the model's choice or origin bookkeeping.
       const replacement = captureEnvRecipe(rendered, dataDir);
       assert.notEqual(replacement, supplied);
       assert.deepEqual(merge(replacement).keys_merged, ['KEY1', 'KEY2']);
@@ -302,6 +345,13 @@ for (const host of ['claude', 'codex']) {
     assert.match(stopping, /Do not report the draft as ready or give a deployment command/);
     assert.match(section(rendered, 'Env input cleanup'), /On cancellation or another stop[\s\S]*without requiring confirmation of a completed spec/);
     assert.match(section(rendered, 'Revalidate the saved spec'), /If validation fails[\s\S]*Stopping after the draft was saved/);
+    const step7 = rendered.split('## Step 7')[1].split('## Step 8')[0];
+    assert.match(step7, /For any stop after the\s+draft was saved[\s\S]*?follow \*\*Stopping after the draft was saved\*\*/);
+    const report = rendered.split('## Step 8')[1].split('## Step 9')[0];
+    assert.match(report, /A failed check means the draft needs repair; follow\s+\*\*Stopping after the draft was saved\*\*/);
+    const malformed = report.match(/^- `malformed-digest`: [^\n]*(?:\n[ \t]+[^\n]+)*/m)?.[0];
+    assert.match(malformed, /Follow \*\*Stopping after the draft was saved\*\*[\s\S]*draft for repair/);
+    assert.doesNotMatch(malformed, /Return to Step 3/);
     withDataDir(dataDir => {
       const completed = join(dataDir, 'completed.env');
       const failed = join(dataDir, 'failed.env');
@@ -343,6 +393,17 @@ for (const host of ['claude', 'codex']) {
     });
   });
 
+  test(`${host} successful authoring invokes input cleanup after validation and image checks`, () => {
+    const rendered = envInstructions();
+    assert.ok(rendered.indexOf('### Revalidate the saved spec') < rendered.indexOf('### Env input cleanup'));
+    assert.match(section(rendered, 'Revalidate the saved spec'), /On success, continue to Step 8; offer cleanup there after its checks pass/);
+    const cleanup = section(rendered, 'Env input cleanup');
+    assert.match(cleanup, /Use this section when Step 8 or \*\*Stopping after the draft was saved\*\* calls\s+for cleanup/);
+    assert.match(cleanup, /On successful completion, after revalidation and the saved image\s+checks pass, offer cleanup once the user confirms/);
+    const report = rendered.split('## Step 8')[1].split('## Step 9')[0];
+    assert.match(report, /After these checks pass and the user confirms the merged spec looks right,\s+apply \*\*Env input cleanup\*\*/);
+  });
+
   test(`${host} env file origin confirmation is carried into cleanup eligibility and the retained-file recap`, () => {
     const rendered = envInstructions();
     const origin = rendered.match(/For each path they type back[\s\S]*?(?=\nYou may combine)/)?.[0];
@@ -352,8 +413,13 @@ for (const host of ['claude', 'codex']) {
     for (const label of ['Yes, created with this recipe', 'No, existing file', 'Not sure']) {
       assert.ok(origin.replace(/\s+/g, ' ').includes(`**${label}**`), label);
     }
-    assert.match(origin, /`recipe-created` to true only for an explicit Yes/);
-    assert.match(origin, /false for an\s+existing file, No, Not sure, or missing\/unclear confirmation/);
+    assert.match(origin, /`recipe-created` to true only for an\s+explicit Yes/);
+    assert.match(origin, /copy that answer into the new record[\s\S]*one origin flag\s+shared by all its service records/);
+    assert.match(origin, /explicit Yes, including an inherited Yes/);
+    assert.match(origin, /false for an existing file, No\s+or Not sure/);
+    assert.match(origin, /Missing\/unclear confirmation defaults to false only when the path\s+has no earlier answer/);
+    assert.match(origin, /Different explicit origin answers for the same path\s+constitute a conflict[\s\S]*every record[\s\S]*flag to false/);
+    assert.match(origin, /Inheriting an answer or receiving no new answer is not a\s+conflict/);
     const record = '(service-name, env-file-path, recipe-created)';
     assert.ok(origin.includes(record));
     const step7 = rendered.split('## Step 7')[1].split('## Step 8')[0];

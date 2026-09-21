@@ -206,22 +206,40 @@ The retry path includes spaces, an apostrophe and shell syntax, which must
 remain literal. Both refill and merge subprocesses run in the fixture
 directory so its sentinel catches accidental path execution.
 
-Each env overwrite/removal example requires an adjacent `recipe-created: true`
-gate; the initial capture must create a fresh private file. This guard is
-scoped to env instructions, excluding draft and journal staging. Per-option
-assertions bind each recovery choice to its own rules, including origin
+Command guards should select by the referenced paths, not the command verbs.
+The env guard scans Bash blocks in the env collection/recovery sections for
+single-quoted uppercase placeholders and references to `ENV_INPUT_PATH` or
+`ENV_FILE_PATH` (including braced variables). Those uses require an adjacent
+`recipe-created: true` gate, except the exact fresh-file capture, the exact
+path-display command, and paths used only as plain `<` stdin sources.
+It rejects ungated `cp`, `mv`, `truncate`, `unlink`, `tee`, `dd` and `rm`
+examples and accepts their gated equivalents. A second use of a stdin path,
+or a command appended to path display, still requires the gate. This guard
+checks the documented placeholder/variable conventions; it is not a shell
+parser or proof about arbitrary literals, aliases or model-generated commands.
+Draft and journal staging are outside its env-section scope.
+
+Per-option assertions bind each recovery choice to its own rules, including origin
 restrictions, collection/confirmation of replacement paths, retention of old
 inputs, and skip/cancel semantics. Error handling must use the same recovery
-rules. Readiness and last-file-variable prohibitions are checked explicitly.
+rules. The private-edit retry must be offered for both origin cases. Recovery
+must explain the waiting terminal's lack of a prompt before Enter/Ctrl+D.
+Readiness and last-file-variable prohibitions are checked explicitly.
 
-Replacement fixtures preserve supplied and unknown-origin comment-only files
-at mode `0644`, creating separate mode `0600` inputs for the new values.
+New-input command fixtures explicitly choose creation and pass the fresh path
+to the merge. They verify a distinct mode `0600` input and an untouched mode
+`0644` supplied template; they do not test the origin-based choice itself.
 Cancellation fixtures retain a partial draft and failed input while executing
-cleanup only for a completed temporary input. Prose guards require contributing
-services, the saved-values caveat, and eligible cleanup on every early stop.
+cleanup only for a completed temporary input. Prose guards cover Cancel,
+abandoned recovery, failed revalidation, failed image checks and the general
+post-save stop rule. Their shared stop section requires contributing services,
+the saved-values caveat and eligible cleanup. Successful cleanup is ordered
+after revalidation and explicitly invoked from Step 8 after its checks pass.
 Contribution and retention recaps may share a path used by different services.
-The origin question, conservative defaults and cleanup eligibility rules remain
-guarded. These assertions do not execute a model's recovery or provenance decisions.
+The origin question, inherited answers for shared paths, conservative defaults,
+explicit-conflict rule and cleanup eligibility are guarded. These assertions
+do not execute a model's recovery or provenance decisions; moving that state
+into a tested script is tracked in [ENG-1045](https://linear.app/liftedinit/issue/ENG-1045).
 Cleanup command cases provide confirmed recipe-created paths,
 including spaces, apostrophes and shell syntax, while `ENV_INPUT_PATH` refers
 only to the last file. Those temporaries must be removed while supplied

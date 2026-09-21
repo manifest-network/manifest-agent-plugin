@@ -269,9 +269,15 @@ type the path back in chat. For each path they type back after you offered
 the recipe, use
 `{{ask}}`: "Did you create `<path>` with this temporary-file recipe?"
 Offer **Yes, created with this recipe**, **No, existing file**, and **Not
-sure**. Skip this question if they already explicitly confirmed its origin.
-Set `recipe-created` to true only for an explicit Yes; use false for an
-existing file, No, Not sure, or missing/unclear confirmation. Store
+sure**. Skip this question if they already explicitly confirmed this path's
+origin, and copy that answer into the new record. A path has one origin flag
+shared by all its service records. Set `recipe-created` to true only for an
+explicit Yes, including an inherited Yes; use false for an existing file, No
+or Not sure. Missing/unclear confirmation defaults to false only when the path
+has no earlier answer. Different explicit origin answers for the same path
+constitute a conflict: mark every record for that path as conflicting and set
+its flag to false. Inheriting an answer or receiving no new answer is not a
+conflict. Store
 `(service-name, env-file-path, recipe-created)` for each input through Step 7.
 The values are merged into the spec file there — they do not flow through
 this conversation at collection time.
@@ -530,10 +536,10 @@ the draft was saved**.
 ### Env input recovery
 
 Use `{{ask}}` for the affected service and its recorded input path. Always
-include **Continue without file values** and **Cancel**. For a readable,
-confirmed temporary input eligible under the mutation rule, also offer
-**Re-enter file values** (three choices). Otherwise offer **Create a new
-temporary file** and **I edited my file — retry** instead (four choices).
+include **I edited my file — retry**, **Continue without file values**, and
+**Cancel**. For a readable, confirmed temporary input eligible under the
+mutation rule, the fourth choice is **Re-enter file values**. Otherwise the
+fourth choice is **Create a new temporary file**.
 Pre-existing, unknown-origin, conflicting, retained or unreadable inputs
 must not be offered the Re-enter command.
 
@@ -581,10 +587,27 @@ returns, retry the merge with that same recorded path. Another empty result
 returns to the choices above. Do not report the spec as ready while a file
 input is awaiting the user's retry, skip or cancel choice.
 
+### Revalidate the saved spec
+
+After the merge phase (whether or not any env files were actually merged),
+refresh `META_HASH` from the on-disk spec — re-loading + re-validating is
+idempotent and cheap, and unconditionally re-validating eliminates the
+drift surface a "did we merge anything?" branch creates. Re-load the saved
+spec via `{{read_tool}}` (returns the spec as a structured tool result; any merged
+env values enter your context here) and re-call `build_manifest_preview`
+with `{ services: SAVED_SPEC.services }`. If validation fails, report the
+errors and follow **Stopping after the draft was saved**, leaving the draft
+for repair. Capture the new `meta_hash_hex` and overwrite
+`META_HASH` so Step 8 reports the generated Fred manifest hash for the
+saved services. It is not a hash of the surrounding spec file's bytes.
+On success, continue to Step 8; offer cleanup there after its checks pass.
+
 ### Env input cleanup
 
-On completion, offer cleanup once the user confirms the merged spec looks
-right. On cancellation or another stop, offer the same eligible cleanup
+Use this section when Step 8 or **Stopping after the draft was saved** calls
+for cleanup. On successful completion, after revalidation and the saved image
+checks pass, offer cleanup once the user confirms the merged spec looks right.
+On cancellation or another stop, offer the same eligible cleanup
 without requiring confirmation of a completed spec. Suggest they delete only
 the temporary input files they created with this recipe. Preserve pre-existing
 files and files of unknown origin. Use only records with `recipe-created: true`, and
@@ -623,20 +646,6 @@ has not confirmed a completed spec. Keep pending, failed and retained inputs.
 Do not report the draft as ready or give a deployment command. End authoring
 after this recap; do not continue into the success report.
 
-### Revalidate the saved spec
-
-After the merge phase (whether or not any env files were actually merged),
-refresh `META_HASH` from the on-disk spec — re-loading + re-validating is
-idempotent and cheap, and unconditionally re-validating eliminates the
-drift surface a "did we merge anything?" branch creates. Re-load the saved
-spec via `{{read_tool}}` (returns the spec as a structured tool result; any merged
-env values enter your context here) and re-call `build_manifest_preview`
-with `{ services: SAVED_SPEC.services }`. If validation fails, report the
-errors and follow **Stopping after the draft was saved**, leaving the draft
-for repair. Capture the new `meta_hash_hex` and overwrite
-`META_HASH` so Step 8 reports the generated Fred manifest hash for the
-saved services. It is not a hash of the surrounding spec file's bytes.
-
 ## Step 8 — Report
 
 Check the saved file again after any repairs or env merges. Set `SAVED_PATH`
@@ -657,7 +666,8 @@ and the status below. A failed check means the draft needs repair; follow
 - `tag`: **Mutable tag retained by choice; digest unresolved** — the provider may
   pull different contents at deployment time.
 - `malformed-digest`: **Malformed digest; repair required** — never call
-  this a pin. Return to Step 3 for a corrected reference or cancel.
+  this a pin. Follow **Stopping after the draft was saved** and retain the
+  draft for repair.
 
 Use full references, without abbreviating the digest. Report from the saved
 file so the recap reflects any repairs. An image changed during validation
@@ -700,6 +710,9 @@ a shared path may appear in both recaps when one service merged and another
 skipped it. Values typed in
 chat can also be sensitive. Recommend version control
 only after confirming the spec contains no secrets, regardless of input mode.
+
+After these checks pass and the user confirms the merged spec looks right,
+apply **Env input cleanup**. Then continue to Step 9.
 
 ## Step 9 — Record this run in the journal
 

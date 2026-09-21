@@ -31,11 +31,15 @@ Ctrl+D instructions in prose, and print the path after the shell prompt
 returns. Authoring records explicit file-origin confirmation and pauses on
 empty or invalid input for recovery. Overwrite/removal commands require a
 confirmed recipe-created input; other inputs use a new private temporary
-file or a retry after the user's private edit. Skipped and replaced inputs
+file; every input also offers a retry after the user's private edit. Shared
+paths inherit their earlier origin confirmation. Skipped and replaced inputs
 are retained and listed. Cancellation reports values already saved and offers
-cleanup for eligible completed inputs. Rendering
+cleanup for eligible completed inputs; successful cleanup follows revalidation
+and the saved-image checks. Rendering
 and command regressions cover both hosts. The builder's broad tool-name
 rewrite is tracked separately in [ENG-1029](https://linear.app/liftedinit/issue/ENG-1029).
+Moving env-input provenance and cleanup bookkeeping into a tested script is
+tracked in [ENG-1045](https://linear.app/liftedinit/issue/ENG-1045).
 
 ## Preserve reinitialization settings and clarify import recovery
 

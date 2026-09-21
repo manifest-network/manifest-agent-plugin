@@ -208,18 +208,19 @@ creates a fresh file with mode `0600`; an older file's permissions cannot carry
 over. Values flow through a script pipe into the spec file; they never enter
 the chat input box and the agent never echoes them in summaries. This uses the
 same fresh-file pattern as mnemonic import in `init-agent` / `import-key`.
-After every service using an input file has merged successfully and you have
-confirmed the saved spec, remove that temporary input from the same Bash
-session with `rm -- "$ENV_INPUT_PATH"`. For several input files, use the
-agent's confirmed temporary-path list; `ENV_INPUT_PATH` names only the most
+After every service using an input file has merged successfully, validation
+and image checks pass, and you have confirmed the saved spec, remove that
+temporary input from the same Bash session with `rm -- "$ENV_INPUT_PATH"`.
+For several input files, use the agent's confirmed temporary-path list;
+`ENV_INPUT_PATH` names only the most
 recent file. Cleanup applies only to files created with this recipe. Keep
 supplied pre-existing files, inputs whose origin is uncertain, and files you
 chose to skip.
 
-Recovery overwrites only confirmed recipe-created inputs. For a supplied
-or uncertain file, create a new temporary input with the recipe above, or
-retry after editing your file privately. If you cancel after some merges,
-the draft keeps those values; the agent reports the contributing services,
+Recovery overwrites only confirmed recipe-created inputs. You can edit any
+input privately and retry. For a supplied or uncertain file, you can also
+create a new temporary input with the recipe above. If you cancel after some
+merges, the draft keeps those values; the agent reports the contributing services,
 retained inputs and any completed temporary inputs eligible for cleanup.
 
 Note: env values still appear in `build_manifest_preview` and

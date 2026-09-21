@@ -88,6 +88,19 @@ identified an unsafe retry for supplied files and gaps in early-stop handling.
 | 3: recovery assertions borrow semantics from another option | Capture each option's own indented bullet and assert its rules there. Moving Skip rules into Cancel must fail. |
 | Nits | Treat contributions and retained paths as independent recaps; run merge subprocesses in the sentinel directory; accept `i.e.` in keypress guidance; pin the last-file-variable/readiness prohibitions; mark the earlier recovery resolution as superseded. |
 
+The [sixth review of 4d56fee](https://github.com/manifest-network/manifest-agent-plugin/pull/24#issuecomment-5761468706)
+identified narrower-than-documented guards and two recovery-choice gaps.
+
+| Finding | Resolution |
+| --- | --- |
+| 1: the mutation guard selects command verbs instead of input paths | Select single-quoted uppercase placeholders and input-path variable references in env command blocks. Exempt only the exact fresh-file/path-display blocks and plain stdin-source uses. Tracked negative and positive controls cover seven command verbs and different argument positions; document the conventions this guard covers and its limits. |
+| 2–4: image-check stops and the waiting-terminal warning are unguarded; stop coverage is overstated | Assert the failed-image-check route, general post-save stop route and recovery's no-prompt warning. Describe the particular routes checked instead of claiming that prose guards execute every early stop. |
+| 5: the plan misattributes the supplied-file truncation reproduction | Identify the old `0644` truncation as a review-time scratch check. Tracked new-input fixtures choose a fresh path and verify its commands; they do not exercise model provenance decisions. |
+| 6: confirmed temporary inputs lack a private-edit retry choice | Offer private-edit retry, Continue and Cancel for every origin. The fourth choice is Re-enter for eligible temporary inputs or Create-new for other inputs. |
+| 7: reusing a path can lose its explicit origin answer | Copy the existing answer into new service records. Default missing confirmation to false only without an earlier answer; define conflicts as different explicit origin answers, not inherited/defaulted flags. |
+| Nits | Move Revalidate before cleanup, dispatch successful cleanup explicitly from Step 8 after its checks, and route malformed saved digests through the same stop section. Rename the new-input command fixture to state its actual reach. Pin the PR body's plan link to a commit. |
+| Follow-up | Track a tested CJS ledger for origins, contributions, retention and cleanup eligibility in [ENG-1045](https://linear.app/liftedinit/issue/ENG-1045); keep that architectural change separate from this PR. |
+
 ## Release boundary
 
 Published v0.5.0 evidence and source hashes remain unchanged. All four host
@@ -102,7 +115,7 @@ macOS/Windows compatibility.
 - Before the corrections, regressions detected the contradictory Codex warning,
   missing per-file cleanup command, and both hosts' literal-`^D` parse errors.
   Further guards reproduced the unscoped cleanup advice and combined mnemonic
-  input/instruction blocks. All 109 package, env and wallet workflow tests pass.
+  input/instruction blocks. Package, env and wallet workflow regressions pass.
 - Isolated source mutations confirmed that the recipe guidance test fails when
   its adjacent advice is removed or a capitalized shell name becomes
   `exec_command` in the Codex render.
@@ -122,15 +135,25 @@ macOS/Windows compatibility.
   Eighteen isolated regressions were rejected, including retrying through the
   last-file variable, omitted origin/cleanup rules, cross-sentence ordering
   and reversed Enter/Ctrl+D instructions. Both valid ordering controls passed.
-- Fifth-review fixtures reproduce the old supplied-file truncation at mode
-  `0644` even with `umask 077`. Replacement inputs are mode `0600` while the
-  supplied templates retain their bytes and permissions. Empty and invalid
+- A fifth-review scratch command check reproduced the old supplied-file
+  truncation at mode `0644` even with `umask 077`; this was a review-time check,
+  not a tracked fixture. Tracked new-input command fixtures explicitly select
+  a fresh mode `0600` input while the supplied template retains its bytes and
+  permissions. Empty and invalid
   confirmed temporary inputs recover without changing another service's file
   or losing earlier merged values. Cancellation preserves the partial draft
   and failed input while allowing completed temporary-file cleanup.
   Fourteen isolated regressions were rejected, including removed origin gates,
   missing early-stop handling and Skip rules moved into Cancel. The `press
   Enter (i.e. Return)` control passed.
+- Sixth-review tracked controls reject 13 ungated input-path command variants
+  per host, accept their gated equivalents, and accept plain stdin-source
+  uses. Twelve isolated source regressions fail their intended tests on both
+  hosts: ungated copying, omitted stop routes or no-prompt guidance, missing
+  private-edit choice, lost origin inheritance/default/conflict rules, early
+  cleanup and missing success dispatches. Valid Enter parenthetical and origin
+  hard-wrap controls pass. These source mutations run only the relevant env
+  tests, so a stale generated-file check cannot mask a missing guard.
 - Both hosts' generated env commands create mode `0600` files, merge sample
   input through stdin, preserve private spec permissions, and emit no values.
   Cleanup fixtures remove both recipe-created paths despite a reassigned input
@@ -150,16 +173,16 @@ macOS/Windows compatibility.
   review-time checks, not native macOS or Windows acceptance.
 - Removing only the broad `Bash` rewrite changes none of the current 14 Codex
   renders, confirming the independent builder follow-up's reproduction.
-- The full Linux suite passed 1,009 tests with zero failures using
+- The full Linux suite passed 1,013 tests with zero failures using
   `--test-concurrency=1`; three PowerShell checks were skipped because `pwsh`
   is unavailable. Subprocess fixtures ran outside the workspace sandbox.
 - Claude generation, Codex packaging, all 14 generated-skill checks, affected
   workflow regressions, policy completeness, CJS/Bash syntax, version
   consistency and diff whitespace checks passed. Published evidence and the
   four pending release rows remain unchanged.
-- The standalone skill-creator validator is no longer available at its local
-  path for this follow-up. Frontmatter is unchanged; repository generation
-  and package validation passed.
+- The standalone skill-creator validator is available again for the sixth
+  review; the affected Codex skills pass its validation. Frontmatter is
+  unchanged and repository generation/package checks also pass.
 
 The fixtures supply user input and collected paths; they validate rendering
 and executable commands, not an interactive model's choices or UI behavior.
